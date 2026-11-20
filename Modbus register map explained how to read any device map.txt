@@ -1,0 +1,207 @@
+Modbus register map explained: how to read any device map
+Modbus register map explained for installers. The four register types, Modicon vs wire addressing, 32-bit word order, and a worked Eastron SDM630 example.
+
+Published on 7 September 2026
+Updated on 28 September 2026
+11 min read
+
+On this page
+
+Key takeaways
+What is a Modbus register map?
+The four Modbus register types
+How do you find the register address?
+Reading values that span more than one register
+A worked example: reading the Eastron SDM630 map
+Why the same address means different things on every brand
+Troubleshooting register map problems
+Modbus register map with four register types and Modicon to wire address mapping
+A Modbus register map is the table a manufacturer publishes to tell you which value sits at which address inside a device. Every energy meter, heat pump and inverter ships one, and every map looks slightly different. Once you understand the model behind them, though, you can read any register map on any brand without guessing. This guide teaches that model.
+
+You will learn the four register types Modbus defines, how a datasheet address like 40001 maps to the address on the wire, how a 32-bit value hides across two registers, and how to turn a real Eastron SDM630 map into working polls. Written for installers and integrators, not for software developers.
+
+Key takeaways
+Modbus defines exactly four register types: coils and discrete inputs (1 bit each) and input and holding registers (16 bit each).
+The 1-based Modicon notation (40001) and the 0-based wire address (0x0000) are the same register: drop the leading digit and subtract 1.
+A 32-bit value spans two registers, and the word order (big-endian or little-endian) is not fixed by the standard, so the wrong order returns a plausible but wrong number.
+RS485 and Modbus RTU checklist (PDF)
+Free pre-commissioning checklist for every RS485 bus.
+
+Wiring: A/B polarity, GND and shielding
+Termination and biasing, with the multimeter checks
+The ten most common faults and how to spot them
+Email address
+you@company.com
+
+I agree to the privacy policy
+Send me the PDF
+What is a Modbus register map?
+A Modbus register map is a manufacturer-supplied table that lists every readable and writable data point in a device, together with its address, data type, unit, and access rights. It is the Rosetta Stone between the raw 16-bit values on the RS485 or TCP link and the temperatures, voltages and setpoints they represent.
+
+The Modbus standard itself, defined in the Modbus Application Protocol Specification V1.1b3 maintained by the Modbus Organization, fixes only the transport and the four data blocks. It says nothing about what any given address means. That is why every device needs its own map, and why the map is the first document you request before commissioning a new device. For the wider context of how Modbus works, see our complete Modbus guide.
+
+The four Modbus register types
+Modbus organises all data into exactly four tables, and every address you ever read belongs to one of them. They differ on two axes only: size (a single bit or a full 16-bit word) and access (read-only or read-write).
+
+Register type
+Size
+Access
+Function codes
+Coils
+0xxxx
+1 bit
+Read / write
+01 / 05, 15
+Discrete Inputs
+1xxxx
+1 bit
+Read only
+02
+Input Registers
+3xxxx
+16 bit
+Read only
+04
+Holding Registers
+4xxxx
+16 bit
+Read / write
+03 / 06, 16
+The four Modbus register types. Coils and discrete inputs are single bits; input and holding registers are 16-bit words. Around 80 percent of installer reads sit in the two accented rows.
+The same four blocks appear in the specification's data model, section 4.3. Each block has its own address space of 0 to 65535, so address 0 exists four times, once per block. The function code you send is what tells the slave which of the four tables you mean.
+
+Coils and discrete inputs: the single-bit blocks
+Coils are single read-write bits, typically a relay, a pump enable, or an on/off command. You read them with function code 01 and write them with 05 (single) or 15 (multiple). Discrete inputs are single read-only bits, typically an alarm contact or a run/stop status, read with function code 02. In HVAC and refrigeration you meet these less often than registers, but alarm and status monitoring lives here.
+
+Input and holding registers: the 16-bit blocks
+Input registers are 16-bit read-only values, read with function code 04. They carry measured data: a voltage, a temperature, an instantaneous power. Holding registers are 16-bit read-write values, read with function code 03 and written with 06 (single) or 16 (multiple). They carry setpoints, configuration and, on many devices, measured values too. Roughly 80 percent of what an installer reads sits in these two blocks.
+
+Info
+
+A register type is not the same thing as a function code. The register type is where the data lives; the function code is the verb you use to reach it. Reading a holding register always uses function code 03, whatever the device. For the full list, see our Modbus function codes reference.
+
+Read a Modbus device on your laptop with ModbusCloud Diagnostics
+Plug in a USB-RS485 cable or enter an IP address. The app looks for the speed, parity and address itself, recognises the device type from its built-in library and explains errors in plain language.
+
+Go to the free download
+Free for Windows and macOS, no account needed.
+
+Video: adding an energy meter over the network. The app finds it, recognises it as an Eastron SDM630 and shows voltage, current and power per phase.
+How do you find the register address?
+Here is the single biggest source of off-by-one errors on the job. Datasheets quote addresses in two different notations, and mixing them up sends you one register too high or too low on every read.
+
+The wire address, also called the PDU address, is what actually travels in the Modbus frame. It is 0-based, so the first holding register is address 0x0000. The Modicon notation, the classic five-digit "4xxxx" style, is 1-based and hides the register type in the leading digit: 40001 is the first holding register, 30001 the first input register, 10001 the first discrete input, 00001 the first coil.
+
+1-based, 5 digits
+Modicon (datasheet)
+0-based hex
+Wire address (PDU)
+40001
+0x0000
+40002
+0x0001
+40003
+0x0002
+40100
+0x0063
+49999
+0x270E
+highest holding register
+0x270E
+Drop the leading digit and subtract 1: 40001 becomes 0x0000.
+
+How a holding register in datasheet notation maps to the address that travels on the wire.
+To convert, drop the leading digit and subtract 1. So datasheet 40001 is wire address 0x0000, and 40100 is 0x0063. Some modern datasheets skip Modicon entirely and quote the 0-based hex address directly. Neither is wrong; you just have to know which convention the sheet in front of you uses before you type a single address into your tool.
+
+Tip
+
+When a value reads exactly one register off from what you expect, suspect the addressing convention before anything else. Read the register above and below your target; if the expected value appears one address away, the datasheet is in Modicon notation and your tool is on the wire address, or the reverse.
+
+Reading values that span more than one register
+A single register holds 16 bits, which tops out at 65535. Any value larger than that, and every floating-point number, spreads across two or more consecutive registers. A 32-bit float or int32 takes two registers; a 64-bit value takes four.
+
+The catch is that the Modbus specification does not define the order of those words. A manufacturer is free to send the high word first (big-endian) or the low word first (little-endian, sometimes called a word swap). Read them in the wrong order and you get a plausible-looking but wrong number, often off by a huge factor or negative.
+
+One 32-bit float = 100.0
+0x42C8
+0x0000
+High word
+Low word
+Big-endian: high word first
+0x42C8
+0x0000
+Register N
+Register N+1
+✓ reads 100.0
+Little-endian: low word first
+0x0000
+0x42C8
+✗ reads garbage
+The same two registers, read two ways. Big-endian (Eastron, Carlo Gavazzi, most European meters) reads 100.0; swap the words and the value is wrong.
+Eastron, Carlo Gavazzi and most European energy meters use big-endian word order. Some Asian brands and many PLCs default to little-endian. The datasheet almost always states it, usually as "MSW first" or "float, ABCD/CDAB". When it does not, and the value is clearly wrong by a factor, try the swapped order first before you suspect the wiring.
+
+Info
+
+Byte order and word order are two separate settings. Word order decides which 16-bit register comes first; byte order decides which of the two bytes inside a register comes first. Most devices keep byte order standard and only vary word order, but a stubborn "ABCD versus BADC" case means checking both.
+
+A worked example: reading the Eastron SDM630 map
+The Eastron SDM630 is a three-phase DIN-rail energy meter that exposes its measurements as 32-bit floats in input registers, read with function code 04. Here is the top of its map in wire (PDU) notation.
+
+Wire address	Value	Type	Unit
+0x0000	Voltage L1 to neutral	Float32	V
+0x0006	Current L1	Float32	A
+0x000C	Active power L1	Float32	W
+0x0034	Total system active power	Float32	W
+0x0048	Total active energy import	Float32	kWh
+To read voltage L1, you send function code 04 with start address 0x0000 and quantity 2 (two registers, because the value is a 32-bit float). The meter returns four data bytes, which you decode as a big-endian float. According to the Eastron SDM630 Modbus protocol datasheet, every measurement register follows this same pattern, so once you have decoded one you have decoded them all.
+
+Notice that the SDM630 puts measurements in input registers (function code 04), while a device like a heat pump often puts the same kind of data in holding registers (function code 03). Always check the register type column of the map, not just the address. If you would rather skip the byte-level work entirely, the SDM630 is a ready-made template that maps every register for you.
+
+Why the same address means different things on every brand
+Because the standard fixes no meaning per address, register 0x0000 is a voltage on one meter, a firmware version on the next, and a setpoint on a third. There is no universal map, and no gateway can auto-detect what a register means. This is the single fact that surprises installers moving from BACnet, which carries self-describing object names, to raw Modbus.
+
+Take one concrete case. Register 0x0000 returns voltage L1 to neutral on an Eastron SDM630, the flow temperature setpoint on a typical heat pump, and the device firmware version on an inverter. Same address, three meanings, and only the device's own register map tells you which one you are reading.
+
+The one real exception is SunSpec, a standardised Modbus register model that more than 100 solar inverter and meter manufacturers implement, so a single map fits many brands. Outside SunSpec, treat every device as unique and get its map before you start. To discover which devices and addresses are even present on a bus, run a Modbus network scan first.
+
+Troubleshooting register map problems
+When a value comes back wrong rather than missing, walk these four in order before you touch the wiring.
+
+Symptom	Probable cause	Fix
+Value is one register off	Modicon vs wire address mixed up	Subtract 1 and drop the leading digit, or add it back
+Value off by a large factor or negative	Wrong word order on a 32-bit value	Swap high and low word (big-endian vs little-endian)
+Read fails with exception 02	Address outside the device's map	Read only addresses the map lists; some ranges are gaps
+Read fails with exception 03	Too many registers requested at once	Function code 03 and 04 read at most 125 registers per request
+For a bus that answers nothing at all, the problem is addressing or the physical layer rather than the map. Start with our RS485 wiring guide and Modbus RTU explainer.
+
+This is where the ModbusCloud Gateway fits. The Gateway reads your Modbus RTU and TCP devices into a cloud dashboard using ready-made register templates, so you pick the device instead of decoding its map by hand. It handles the addressing offset and the word order for you.
+
+What are the four types of Modbus registers?
+Modbus defines coils and discrete inputs, which are single bits, and input and holding registers, which are 16-bit words. Coils and holding registers are read-write; discrete inputs and input registers are read-only. Each type has its own function codes and address space.
+
+What is a Modbus register map?
+A Modbus register map is a manufacturer table that lists every data point in a device with its address, data type, unit and access rights. Because the standard fixes no meaning per address, each device needs its own map to translate raw values into real measurements.
+
+How do I find a Modbus register address?
+Check whether the datasheet uses Modicon notation (1-based, five digits like 40001) or the wire address (0-based hex like 0x0000). To convert Modicon to wire address, drop the leading digit and subtract one, so 40001 becomes 0x0000.
+
+What is the difference between input and holding registers?
+Both are 16-bit registers. Input registers are read-only measured values, read with function code 04. Holding registers are read-write and hold setpoints, configuration and often measurements too, read with function code 03 and written with 06 or 16.
+
+How many bits is a Modbus register?
+A Modbus register is 16 bits, or two bytes, holding a value from 0 to 65535. Coils and discrete inputs are single bits. Values larger than 65535, and all floating-point numbers, span two or more consecutive registers.
+
+Why does my Modbus value read as garbage?
+A 32-bit value spans two registers, and the Modbus standard does not fix their order. If the device is big-endian and your tool assumes little-endian, or the reverse, the words combine wrongly and the value looks off by a large factor. Swap the word order to fix it.
+
+Can you write to a Modbus holding register?
+Yes. Holding registers are read-write. Write a single holding register with function code 06 and multiple registers with function code 16. Input registers and discrete inputs are read-only and cannot be written. Always confirm the access column in the register map first.
+
+Ready to stop decoding register maps by hand? The ModbusCloud Gateway reads your Modbus devices into a cloud dashboard using ready-made templates, handling the addressing offset and word order automatically. See how a complete monitoring chain looks for your installations.
+
+Want to see how it works?
+Explore the portal of a fictional installation company, without an account.
+
+Try the demo
+Shop
+Question about your setup?
