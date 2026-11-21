@@ -1,0 +1,522 @@
+BPC02 MODBUS REGISTER TESTING CHECKLIST
+========================================
+
+CONNECTION SETTINGS
+-------------------
+Connection: Serial
+Port: COM4
+Protocol: Modbus RTU
+Baud Rate: 9600
+Data Bits: 8
+Parity: None
+Stop Bits: 1
+Slave ID: 1
+
+IMPORTANT:
+Use decimal addresses exactly as written.
+Do not add 4xxxx or 3xxxx prefixes.
+All tests below are READ-ONLY.
+Do not use write functions.
+
+
+========================================
+PART 1 — WORD ADDRESS TESTS
+========================================
+
+Function 03 = Read Holding Registers
+
+
+TEST 01 — DISPLAYED PAGE NUMBER
+-------------------------------
+Status: [DATA RECEIVED]
+
+Function: 03 — Read Holding Registers
+Address: 0
+Quantity: 1
+
+Description:
+Address 0 — Displayed Page Number
+
+Previously received:
+Address 0 = 0
+
+Remaining:
+Compare with the actual controller display.
+
+
+TEST 02 — PRESSURE, VOLTAGES AND FREQUENCIES
+--------------------------------------------
+Status: [DATA RECEIVED]
+
+Function: 03 — Read Holding Registers
+Address: 2
+Quantity: 9
+
+Registers:
+2  — System Pressure (0.01 Bar)
+3  — Vrn (Volt)
+4  — Vsn (Volt)
+5  — Vtn (Volt)
+6  — Vrs (Volt)
+7  — Vst (Volt)
+8  — Vtr (Volt)
+9  — Frequency (0.01 Hz)
+10 — Drive Frequency (scale unspecified)
+
+Previously received:
+Addresses 2–9 = 0
+Address 10 = 1000
+
+Note:
+Addresses 2–9 came from the address 0–9 read.
+Address 10 came from the address 10–19 read.
+
+Remaining:
+Compare values with the controller display.
+Determine the scale of Drive Frequency.
+
+
+TEST 03 — PUMP WORKING TIMES
+----------------------------
+Status: [PARTIAL DATA]
+
+Function: 03 — Read Holding Registers
+Address: 34
+Quantity: 12
+
+Registers:
+34 — Pump 1 Seconds
+35 — Pump 1 Minutes
+36 — Pump 1 Hours
+
+37 — Pump 2 Seconds
+38 — Pump 2 Minutes
+39 — Pump 2 Hours
+
+40 — Pump 3 Seconds
+41 — Pump 3 Minutes
+42 — Pump 3 Hours
+
+43 — Pump 4 Seconds
+44 — Pump 4 Minutes
+45 — Pump 4 Hours
+
+Previously received:
+34 = 14 (observed changing)
+35 = 54
+36 = 0
+37 = 57 (observed changing and rolling over)
+38 = 53
+39 = 0
+
+Addresses 34–39 were received during the earlier
+address 30, quantity 10 test.
+
+Remaining:
+Read addresses 40–45.
+Verify seconds roll over at 60.
+Verify minutes and hours.
+Compare with actual pump operating times.
+
+
+TEST 04 — ANALOG OUTPUTS
+------------------------
+Status: [PENDING]
+
+Function: 03 — Read Holding Registers
+Address: 50
+Quantity: 2
+
+Registers:
+50 — Analog Output 0 Manual (0.1 Hz)
+51 — Analog Output 1 Manual (0.1 Hz)
+
+Remaining:
+Receive both values.
+Record their decimal and hexadecimal values.
+
+DO NOT change or activate outputs.
+
+
+TEST 05 — SYSTEM ERROR
+----------------------
+Status: [PENDING]
+
+Function: 03 — Read Holding Registers
+Address: 80
+Quantity: 1
+
+Description:
+Address 80 — System Error Bitfield
+
+Documented bits:
+Bit 3  — Floater Error
+Bit 4  — Maximum Pressure Error
+Bit 5  — Pressure Sensor Disconnected
+Bit 6  — Phase Sensitivity Error
+Bit 7  — Maximum Phase Voltage Error
+Bit 8  — Minimum Phase Voltage Error
+Bit 9  — Phase Sequence Error
+Bit 10 — Pump 1 Error
+
+Remaining:
+Receive register value.
+Record decimal and hexadecimal values.
+Decode individual error bits.
+
+
+TEST 06 — CONTROL STATUS
+------------------------
+Status: [PENDING]
+
+Function: 03 — Read Holding Registers
+Address: 4173
+Quantity: 1
+
+Description:
+Control Status
+Expected range: 0–1
+
+
+TEST 07 — SLEEP GAP
+-------------------
+Status: [PENDING]
+
+Function: 03 — Read Holding Registers
+Address: 4175
+Quantity: 1
+
+Description:
+Sleep Gap
+Scale: 0.01 Bar
+Documented range: 1–100
+
+
+TEST 08 — AUTOMATIC SERVICE SETTINGS
+------------------------------------
+Status: [PENDING]
+
+Function: 03 — Read Holding Registers
+Address: 4177
+Quantity: 3
+
+Registers:
+4177 — Auto Service Off Time (Hour)
+4178 — Auto Service On Time (0.1 Sec)
+4179 — Auto Service Interval (Min)
+
+Note:
+The manual appears to print 417B for address 4178.
+Use decimal address 4178.
+
+
+TEST 09 — MFI / MFO TYPES
+-------------------------
+Status: [PENDING]
+
+Function: 03 — Read Holding Registers
+Address: 4180
+Quantity: 7
+
+Registers:
+4180 — MFI 1 Type
+4181 — MFI 2 Type
+4182 — MFI 3 Type
+4183 — MFI 4 Type
+4184 — MFO 1 Type
+4185 — MFO 2 Type
+4186 — MFO 3 Type
+
+Documented range: 0–5
+
+Note:
+The manual's printed address for the first MFI entry
+appears to be 41B0. The research transcription identifies
+it as 4180. This address should be verified against the PDF.
+
+
+TEST 10 — MODBUS ADDRESS
+------------------------
+Status: [PENDING]
+
+Function: 03 — Read Holding Registers
+Address: 4195
+Quantity: 1
+
+Description:
+ModBus Address
+Manual shows: 1
+
+
+========================================
+PART 2 — BIT ADDRESS TESTS
+========================================
+
+We need to discover whether the controller exposes
+these addresses using FC01 or FC02.
+
+FC01 = Read Coils
+FC02 = Read Discrete Inputs
+
+Test BOTH functions for every group.
+
+
+TEST 11A — STATUS BITS (FC01)
+-----------------------------
+Status: [PENDING]
+
+Function: 01 — Read Coils
+Address: 0
+Quantity: 34
+
+
+TEST 11B — STATUS BITS (FC02)
+-----------------------------
+Status: [PENDING]
+
+Function: 02 — Read Discrete Inputs
+Address: 0
+Quantity: 34
+
+
+Expected bit descriptions:
+
+0  — Output 0 Status
+1  — Output 1 Status
+2  — Output 2 Status
+3  — Output 3 Status
+4  — Output 4 Status
+5  — Output 5 Status
+6  — Output 6 Status
+7  — Output 7 Status
+8  — Output 8 Status
+9  — Output 9 Status
+10 — DR Status
+11 — PR1 Status
+12 — PR2 Status
+13 — PR3 Status
+14 — PR4 Status
+15 — MFI1 Status
+16 — MFI2 Status
+17 — MFI3 Status
+18 — MFI4 Status
+19 — Pump 1 Status
+20 — Pump 2 Status
+21 — Pump 3 Status
+22 — Pump 4 Status
+23 — Pump 5 Status
+24 — Pump 6 Status
+25 — Drive Fail
+26 — Pump 1 Fail
+27 — Pump 2 Fail
+28 — Pump 3 Fail
+29 — Pump 4 Fail
+30 — Pump 5 Fail
+31 — Pump 6 Fail
+32 — Floater L Level
+33 — Floater H Level
+
+
+TEST 12A — MANUAL OUTPUT BITS (FC01)
+------------------------------------
+Status: [PENDING]
+
+Function: 01 — Read Coils
+Address: 50
+Quantity: 10
+
+
+TEST 12B — MANUAL OUTPUT BITS (FC02)
+------------------------------------
+Status: [PENDING]
+
+Function: 02 — Read Discrete Inputs
+Address: 50
+Quantity: 10
+
+
+Expected descriptions:
+
+50 — Output 0 Manual
+51 — Output 1 Manual
+52 — Output 2 Manual
+53 — Output 3 Manual
+54 — Output 4 Manual
+55 — Output 5 Manual
+56 — Output 6 Manual
+57 — Output 7 Manual
+58 — Output 8 Manual
+59 — Output 9 Manual
+
+
+TEST 13A — PUMP ACTIVATION BITS (FC01)
+--------------------------------------
+Status: [PENDING]
+
+Function: 01 — Read Coils
+Address: 4096
+Quantity: 6
+
+
+TEST 13B — PUMP ACTIVATION BITS (FC02)
+--------------------------------------
+Status: [PENDING]
+
+Function: 02 — Read Discrete Inputs
+Address: 4096
+Quantity: 6
+
+
+Expected descriptions:
+
+4096 — Pump 1 Activation
+4097 — Pump 2 Activation
+4098 — Pump 3 Activation
+4099 — Pump 4 Activation
+4100 — Pump 5 Activation
+4101 — Pump 6 Activation
+
+
+TEST 14A — HARDWARE CONFIGURATION BITS (FC01)
+---------------------------------------------
+Status: [PENDING]
+
+Function: 01 — Read Coils
+Address: 4106
+Quantity: 5
+
+
+TEST 14B — HARDWARE CONFIGURATION BITS (FC02)
+---------------------------------------------
+Status: [PENDING]
+
+Function: 02 — Read Discrete Inputs
+Address: 4106
+Quantity: 5
+
+
+Expected descriptions:
+
+4106 — Control Phase Activation
+4107 — OFF Changing Activation
+4108 — Time Changing Activation
+4109 — Automatic Reserve Activation
+4110 — Automatic Reserve Type (NO / NC)
+
+
+========================================
+PART 3 — FUNCTION CODE VERIFICATION
+========================================
+
+
+TEST 15 — FC04 COMPARISON
+-------------------------
+Status: [ATTEMPTED — INVALID RESPONSE]
+
+Function: 04 — Read Input Registers
+Address: 2
+Quantity: 1
+
+Previous attempt:
+QModMaster sent:
+01 04 00 02 00 01 90 0A
+
+Received:
+01 04 01 E3
+
+The response was incomplete/invalid for a standard
+single-register response.
+
+Remaining:
+Repeat this test using Modbus Poll.
+Compare FC04 with the previously successful FC03 read.
+
+Expected:
+A valid FC04 response should contain two data bytes
+for one register.
+
+
+========================================
+PART 4 — ADDITIONAL DATA ALREADY COLLECTED
+========================================
+
+These addresses were scanned during earlier investigation.
+They are not documented Word Address entries in the manual.
+
+FC03 — Address 10, Quantity 10
+
+10 = 1000
+11 = 1000
+12 = 20703 (variable)
+13 = 9602  (variable)
+14 = 9605  (variable)
+15 = 0
+16 = 0
+17 = 0
+18 = 0
+19 = 0
+
+
+FC03 — Address 20, Quantity 10
+
+20 = 0
+21 = 0
+22 = 0
+23 = 10
+24 = 0
+25 = 5000
+26 = 5000
+27 = 0
+28 = 0
+29 = 0
+
+
+FC03 — Address 30, Quantity 10
+
+30–33 = changing values around 3200
+34 = 14 (observed changing)
+35 = 54
+36 = 0
+37 = 57 (observed changing)
+38 = 53
+39 = 0
+
+These readings were valid Modbus responses.
+
+
+========================================
+PART 5 — SAFETY
+========================================
+
+READ-ONLY TESTING ONLY.
+
+Do not use:
+FC05 — Write Single Coil
+FC06 — Write Single Register
+FC15 — Write Multiple Coils
+FC16 — Write Multiple Registers
+
+Do not write to address 99.
+Do not change pump activation settings.
+Do not change hardware configuration.
+Do not activate manual outputs.
+
+The manual describes writing 1234 to address 99
+to enter manual mode. Do not perform this operation
+during register discovery.
+
+
+========================================
+FINAL TARGET
+========================================
+
+[ ] All documented Word Addresses read successfully.
+[ ] All documented Bit Addresses tested with FC01.
+[ ] All documented Bit Addresses tested with FC02.
+[ ] Correct function code identified for each address group.
+[ ] Register values compared with controller display.
+[ ] Units and scaling verified.
+[ ] Dynamic registers checked while equipment operates.
+[ ] Error bitfield decoded.
+[ ] Raw Tx/Rx data saved.
+[ ] Final BPC02 register map verified.
