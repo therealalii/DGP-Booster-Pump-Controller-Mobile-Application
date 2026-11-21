@@ -1,0 +1,485 @@
+DGP BPC02 / BPC04 CONTROLLER
+MODBUS FUNCTION-CODE AND REGISTER-ADDRESSING RESEARCH
+
+Research date: 21 November 2026
+Primary target for first hardware test: DGP BPC02
+Application: Android app communicating through an RS485-to-Ethernet converter on the company LAN
+
+======================================================================
+1. EXECUTIVE SUMMARY
+======================================================================
+
+The public BPC-02 manual confirms the following:
+
+- The controller's serial protocol is Modbus RTU over RS485.
+- The documented serial format is 9600 baud, 8 data bits, no parity, 1 stop bit (9600 8N1).
+- The manual publishes two separate address tables named "Bit Address" and "Word Address".
+- It publishes bit/status addresses, measurement words, error information, and some manual-control operations.
+- It describes a special manual-mode operation using value 1234 at a "Register Function Multi" address 99, use of Bit addresses 50-59 for outputs, Word addresses 50-51 for analogue speed outputs, and value 0 at address 99 to return to automatic mode.
+
+What the public manual DOES NOT specify:
+
+- It does not say whether the Bit Address table is exposed as Modbus Coils (Function 01/05/15), Discrete Inputs (Function 02), or an overlapping implementation.
+- It does not say whether the Word Address table is exposed as Holding Registers (Function 03/06/16), Input Registers (Function 04), or an overlapping implementation.
+- It does not explicitly identify the function code for the special address 99 operation.
+- It does not explicitly state whether its numeric addresses should be passed directly as zero-based PDU offsets or translated from a one-based/documentation reference scheme.
+- It does not fully document signedness, data types, byte/word order for multi-register values, or all scaling factors.
+
+Therefore, an exact BPC02 function-code map cannot honestly be claimed from the public documentation alone. The report below gives the standard function-code choices and the best test hypotheses, clearly marked as hypotheses rather than confirmed DGP specifications.
+
+IMPORTANT: Do not test pump start/stop, manual output, or drive-speed writes on an operating installation without written authorization from the responsible electrical/controls engineer and an approved safe test setup.
+
+======================================================================
+2. VERIFIED DEVICE-SIDE COMMUNICATION SETTINGS
+======================================================================
+
+Source: DGP BPC-02 User Manual, Network menu / RS485 communication section.
+
+Setting                     Documented value
+------------------------------------------------
+Protocol                    Modbus RTU
+Physical interface          RS485
+Baud rate                   9600 bps
+Data bits                   8
+Parity                      None (N)
+Stop bits                   1
+Serial format               9600 8N1
+
+The manual says the controller's Network menu is used for its RS485 network address and identifies the protocol as Modbus RTU. It also prints the serial settings above.
+
+These are the manual's settings, not settings for the Ethernet converter. The converter must be configured to match the controller's serial parameters.
+
+Still unknown:
+- The active RTU slave address configured in the actual BPC02 unit.
+- The converter model and its exact mode.
+- The converter's LAN IP address and TCP port.
+- Whether the converter is a true Modbus TCP-to-RTU gateway or a transparent serial-over-TCP bridge.
+
+Do not assume TCP port 502 until the converter's manual confirms it. Port 502 is common for Modbus TCP gateways, but a transparent serial server may use another port and a different framing method.
+
+======================================================================
+3. MODBUS STANDARD: WHAT THE FUNCTION CODES MEAN
+======================================================================
+
+The Modbus Application Protocol defines four primary data tables:
+
+Table                  Data size       Access        Standard functions
+-----------------------------------------------------------------------
+Coils                  1 bit           Read/write    01 read, 05 write one,
+                                                     0F write multiple
+Discrete Inputs        1 bit           Read-only     02 read
+Holding Registers      16-bit word     Read/write    03 read, 06 write one,
+                                                     10 write multiple
+Input Registers        16-bit word     Read-only     04 read
+
+Function code numbers:
+
+01 (0x01)  Read Coils
+02 (0x02)  Read Discrete Inputs
+03 (0x03)  Read Holding Registers
+04 (0x04)  Read Input Registers
+05 (0x05)  Write Single Coil
+06 (0x06)  Write Single Holding Register
+15 (0x0F)  Write Multiple Coils
+16 (0x10)  Write Multiple Holding Registers
+
+Important distinction:
+- A "bit" in a vendor table does NOT prove that it is a Modbus Coil. It could be a Discrete Input, or the vendor could expose overlapping tables.
+- A "word" in a vendor table does NOT prove that it is a Holding Register. It could be an Input Register, a Holding Register, or an overlapping mapping.
+- Modbus permits a device application to overlay the four tables. Consequently, a device may expose some internal data through more than one table/function code.
+- The function codes above are standard Modbus options. They are NOT verified BPC02-supported function codes until tested or confirmed by DGP.
+
+======================================================================
+4. WHAT THE BPC-02 MANUAL ACTUALLY SAYS
+======================================================================
+
+4.1 Bit Address table
+
+The manual labels this table "Bit Address" and provides 0/1 status values.
+
+Addresses and descriptions transcribed from the manual:
+
+Address      Description
+-----------------------------------
+0-9          Output 0-9 status
+10           DR status
+11-14        1PR-4PR status
+15-18        1MFI-4MFI status
+19-24        Pump 1-6 status
+25           Drive failure status
+26-31        Pump 1-6 failure status
+32           Low-level floater status
+33           High-level floater status
+
+The manual also identifies Bit addresses 50-59 as Manual Output 0-9, with 0 = OFF and 1 = ON.
+
+The manual's Bit Address table does not identify whether these values are Modbus Coils or Discrete Inputs. The manual's separate statement that outputs 50-59 can be used in manual mode makes them control-related bits, but it still does not state the actual Modbus function code used to write them.
+
+4.2 Word Address table
+
+The manual labels this table "Word Address". The following is the usable interpretation of the extracted table:
+
+Address      Description                         Documented unit / scale
+--------------------------------------------------------------------------
+0            Displayed page number               Number
+2            System pressure                      0.01 bar
+3            R-N voltage                          Volt
+4            S-N voltage                          Volt
+5            T-N voltage                          Volt
+6            R-S voltage                          Volt
+7            S-T voltage                          Volt
+8            T-R voltage                          Volt
+9            System frequency                     0.01 Hz
+10           Drive frequency                      Range 0-1600; scale/unit unclear
+34           Pump 1 operating seconds              Seconds
+35           Pump 1 operating minutes              Minutes
+36           Pump 1 operating hours                Hours
+37           Pump 2 operating seconds              Seconds
+38           Pump 2 operating minutes              Minutes
+39           Pump 2 operating hours                Hours
+40           Pump 3 operating seconds              Seconds
+41           Pump 3 operating minutes              Minutes
+42           Pump 3 operating hours                Hours
+43           Pump 4 operating seconds              Seconds
+44           Pump 4 operating minutes              Minutes
+45           Pump 4 operating hours                Hours
+50           Manual analogue output 0             Range 0-500; 0.1 Hz
+51           Manual analogue output 1             Range 0-500; 0.1 Hz
+80           System error information             Bit field
+
+The Word Address table does not fully specify signedness or Modbus register-table type (Input vs Holding).
+
+4.3 System error word at address 80
+
+The manual describes the error word as a bit field and identifies these bit positions:
+
+Bit position     Error description
+--------------------------------------------
+3                Floater error
+4                Pressure maximum error
+5                Pressure sensor disconnected
+6                Phase control sensitivity error
+7                Phase control maximum voltage error
+8                Phase control minimum voltage error
+9                Phase sequence error
+10               Pump 1 error (as listed in the table)
+
+Do not invent definitions for bits not documented in the table. The manual's separate pump failure bits 26-31 are also available in the Bit Address table.
+
+4.4 Special manual-mode instruction
+
+The manual's narrative says:
+
+- Write value 1234 to "Register Function Multi" at address 99 to enter manual mode.
+- Use Bit addresses 50-59 to turn controller outputs ON/OFF.
+- Use Word addresses 50 and 51 to change pump/drive speed outputs.
+- Write 0 to Register Function Multi to leave manual mode and return to automatic operation.
+
+Important limitation: address 99 is described in the narrative but is not clearly classified in the published Word Address table. Its actual Modbus table and function code are therefore not proven by the manual. Treat address 99 as a special control operation requiring DGP confirmation.
+
+4.5 Hardware configuration registers
+
+The manual lists additional configuration addresses (including the 4096+ and 4173+ ranges). It warns that incorrect hardware-setting changes may damage the booster-pump hardware. Do not make these registers writable in the app unless DGP provides an explicit, approved read/write specification.
+
+======================================================================
+5. FUNCTION-CODE HYPOTHESES FOR BPC02 (NOT CONFIRMED)
+======================================================================
+
+The following are sensible test candidates based on standard Modbus semantics and the manual's Bit/Word terminology. They are not manufacturer-confirmed mappings.
+
+BPC manual item                    Candidate read         Candidate write
+--------------------------------------------------------------------------------
+Bit status addresses 0-33          FC01 and/or FC02        Usually read-only;
+                                                          no write unless specified
+Manual output bits 50-59           FC01 and/or FC02        FC05 (one bit) or
+                                                          FC0F (multiple bits)
+Word measurements 2-10, 34-45     FC03 and/or FC04        Usually read-only;
+                                                          verify individually
+Manual analogue Word 50-51         FC03 and/or FC04        FC06 (one word) or
+                                                          FC10 (multiple words)
+System error Word 80               FC03 and/or FC04        Do not write
+Special control address 99         Not established         FC06 is a plausible
+                                                          candidate only, not proven
+
+Why there are two read candidates:
+- FC01 reads Coils; FC02 reads Discrete Inputs.
+- FC03 reads Holding Registers; FC04 reads Input Registers.
+- The manual does not say which underlying Modbus table each BPC address belongs to.
+
+Why there are two write candidates:
+- FC05 writes one Coil; FC0F writes multiple Coils.
+- FC06 writes one Holding Register; FC10 writes multiple Holding Registers.
+- The manual does not state whether DGP's implementation accepts these particular write functions.
+
+Do not conclude that FC01/FC05 or FC03/FC06 must be correct just because the table is called Bit Address or Word Address. Confirm by DGP or controlled testing.
+
+======================================================================
+6. REGISTER ADDRESSING: ZERO-BASED VS ONE-BASED
+======================================================================
+
+Modbus protocol PDU addresses are zero-based (0 through 65535). The Modbus specification explains that a logical data-model element numbered 1 maps to PDU address 0, element 2 maps to PDU address 1, etc. Vendor documentation can still print addresses using its own reference convention, so the device's map must be checked.
+
+Evidence from the BPC manual:
+- Its Bit Address table begins with address 0.
+- Its Word Address table includes address 0 for displayed page number.
+- Therefore, the best initial hypothesis is that the printed BPC numeric addresses are intended as zero-based address values and should initially be tested directly as PDU offsets.
+
+This is a strong hypothesis, not a definitive DGP statement. Verify against the real unit by comparing known readings with the controller display.
+
+Recommended read-only verification:
+- For pressure, request Word address 2 first as PDU offset 2. Compare the returned scaled value with the LCD pressure.
+- If it is invalid or clearly unrelated, check the documented convention with DGP before trying offsets. Do not silently apply an offset to every address.
+- Repeat with another known measurement (for example, system frequency at Word address 9).
+- Record the exact raw request address and raw response so the chosen offset is documented.
+
+A Modbus client library may display addresses as 00001/40001-style references or as zero-based PDU offsets. Check the specific library's API. Do not blindly subtract one because a UI label looks like a Modbus reference number.
+
+======================================================================
+7. DATA TYPES, BYTE ORDER, AND SCALING
+======================================================================
+
+Confirmed by the BPC manual:
+
+- Bit status values are 0/1.
+- Word values are presented as numeric values in the Word Address table.
+- System pressure at Word address 2 is in 0.01 bar increments.
+- System frequency at Word address 9 is in 0.01 Hz increments.
+- Manual analogue outputs at Word addresses 50 and 51 have range 0-500 and unit 0.1 Hz.
+- Word address 80 is an error bit field.
+- Pump operating time for pumps 1-4 is represented as separate seconds, minutes and hours addresses.
+
+Examples of scaling, if confirmed from the manual and checked on the device:
+
+- Pressure display in bar = raw register value * 0.01.
+- System frequency in Hz = raw register value * 0.01.
+- Manual analogue output in Hz = raw register value * 0.1.
+
+Drive frequency at Word address 10:
+- The manual shows a value range of 0-1600.
+- It does not clearly state the engineering unit or scale factor for this entry.
+- Do not assume raw/10, raw/100, 0.01 Hz, or 0.1 Hz until confirmed by DGP or comparison with the controller display.
+
+Data-type limitations:
+- A standard Modbus register is 16 bits.
+- The BPC manual does not clearly declare every word as UINT16, INT16, signed, unsigned, or a larger multi-register type.
+- The manual does not establish that any BPC measurement is a 32-bit IEEE-754 floating-point value.
+- Do not parse values as FLOAT32 or combine adjacent words without an explicit data-type definition.
+- Modbus transmits multi-byte quantities big-endian (most-significant byte first) within a register. This standard does not by itself reveal any vendor-specific 32-bit word order, because the BPC map does not document such multi-register values.
+- For bitfield address 80, confirm the bit-number interpretation with DGP or known status conditions before using it for alarms.
+
+In software, keep each register's raw value, declared type, unit, scale factor, access permission and verification status in one central register map.
+
+======================================================================
+8. ADDRESS AND FUNCTION-CODE TEST PLAN
+======================================================================
+
+Phase A — obtain missing gateway details first
+
+1. Identify the exact RS485-to-Ethernet converter manufacturer and model.
+2. Obtain its manual.
+3. Confirm whether it is configured as a Modbus TCP-to-RTU gateway or transparent TCP-to-serial bridge.
+4. Confirm the LAN IP, TCP port and RTU Unit ID/Slave ID.
+5. Configure its serial side to 9600 8N1 to match the BPC controller.
+6. Confirm the BPC02 slave address from the controller's Network menu.
+
+Phase B — read-only testing
+
+Use a Modbus test client (for example, Modbus Poll or QModMaster) before implementing the Android UI.
+
+Record every test:
+- Gateway IP and port.
+- Gateway mode.
+- RTU Unit ID.
+- Function code.
+- Starting PDU address.
+- Quantity.
+- Raw hexadecimal response.
+- Raw decimal response.
+- Value displayed on the controller LCD.
+- Whether the response matched.
+- Any Modbus exception code.
+
+Suggested read-only checks:
+
+1. Read Word address 2 (system pressure) with FC03, then FC04 if needed. Confirm against the LCD and the documented 0.01-bar scale.
+2. Read Word address 9 (system frequency) with FC03, then FC04 if needed. Confirm against the LCD and 0.01-Hz scale.
+3. Read Word address 10 (drive frequency). Record raw value and LCD value to establish its scale.
+4. Read Bit address 19 (Pump 1 status) with FC01, then FC02 if needed. Compare with the physical/controller status while the pump is known to be on/off.
+5. Read Word address 80 (system error bitfield) with the appropriate word-read function. Do not create an artificial fault just for testing; observe normal state or use an approved test condition.
+
+A valid Modbus response alone is not proof that the address mapping is correct. The returned value must match the controller's displayed or known state.
+
+Common exception responses that help diagnose a test:
+- 01 Illegal Function: the server does not support that function for this request.
+- 02 Illegal Data Address: the requested address/range is not supported for that function.
+- 03 Illegal Data Value: a value/quantity is not accepted.
+- 04 Server Device Failure: the server encountered an unrecoverable error while processing.
+
+An exception can also be caused by gateway configuration or the wrong Unit ID, so interpret it in context.
+
+Phase C — write testing (only after written DGP confirmation and engineer approval)
+
+Do not run these tests on a live pump installation.
+
+DGP must first confirm:
+- The Modbus table type for manual bits 50-59.
+- The permitted write function code(s).
+- The table type and write function code for Word addresses 50-51.
+- The table type and write function code for address 99.
+- Safe conditions, valid values, and the exact physical meaning of each output bit.
+
+Use an isolated bench/test arrangement approved by the responsible electrical engineer. Begin with the least consequential verified write and read back the resulting state. Never send writes just to discover whether an output starts a pump.
+
+Application safeguards:
+- Do not enter manual mode automatically.
+- Do not issue any output writes on app startup or reconnect.
+- Do not queue control commands for later replay.
+- Require explicit confirmation for manual mode and output changes.
+- Display a persistent MANUAL MODE warning while active.
+- Log requested value, raw response, time and result.
+- Provide a clearly labelled return-to-automatic action, but do not call it an emergency stop.
+- Keep all hardware configuration addresses read-only unless DGP explicitly approves their write access.
+
+======================================================================
+9. EXACT QUESTIONS TO SEND TO DGP / ELECTRONICS ENGINEER
+======================================================================
+
+Please confirm the following items for the exact BPC02 hardware/firmware version that will be supplied:
+
+1. In the BPC manual's Bit Address table, are the status addresses exposed as Modbus Coils (FC01), Discrete Inputs (FC02), or both? For manual output addresses 50-59, which write function code is supported: FC05, FC0F, or another method?
+
+2. In the Word Address table, are the measurement addresses exposed as Holding Registers (FC03), Input Registers (FC04), or both? For writable words 50-51, which write function code is supported: FC06, FC10, or another method?
+
+3. Is the printed address value the direct zero-based Modbus PDU offset, or should the client use an offset of +1/-1? Please provide one worked request/response example for Word address 2 (pressure).
+
+4. What is the exact data type, signedness, scale factor and valid range for each Word entry? In particular, please confirm Word address 10 (drive frequency), Word addresses 50-51, and Word address 80.
+
+5. Is the special Function Multi address 99 a Holding Register? Which function code should write 1234 to enter manual mode and 0 to return to automatic mode? Is any read-back/status register available to verify the mode?
+
+6. Are BPC02-24, BPC02-220 and BPC04-220 register maps and function-code behaviors identical, or is there a model/firmware-specific table?
+
+7. What is the exact Ethernet converter model? Does it support true Modbus TCP-to-RTU gateway mode or only transparent serial-over-TCP? What TCP port, Unit ID forwarding mode and timeout settings should be used?
+
+8. Can DGP supply a Modbus Poll/QModMaster example, packet capture, or one known-good request and response for reading system pressure?
+
+======================================================================
+10. SOFTWARE IMPLEMENTATION GUIDANCE
+======================================================================
+
+Keep the following as configurable fields instead of hardcoding assumptions:
+
+- Gateway transport mode (Modbus TCP gateway vs transparent TCP serial tunnel).
+- Gateway host/IP and TCP port.
+- Unit ID / RTU slave address.
+- Serial settings.
+- Register table (Coil, Discrete Input, Holding Register, Input Register).
+- Function code per operation.
+- PDU address offset.
+- Raw data type and signedness.
+- Byte/word ordering for any confirmed multi-register value.
+- Engineering unit and scale factor.
+- Read-only vs writable permission.
+
+Recommended register metadata fields:
+
+- model (BPC02 / BPC04)
+- label
+- documented address
+- PDU address (after verification)
+- table type
+- read function code
+- write function code (if approved)
+- raw data type
+- scale factor
+- unit
+- min/max values
+- read/write permission
+- evidence/source
+- verification status (documented / inferred / hardware-verified)
+
+Use separate read-only and write APIs. The UI must not directly construct raw Modbus packets.
+
+======================================================================
+11. PUBLIC SOURCES AND EVIDENCE
+======================================================================
+
+A. DGP / BPC product sources
+
+1. DGP official website:
+   https://dgparsian.com/
+
+2. DGP official BPC02-24 product page:
+   https://dgparsian.com/product/bpc02-24/
+
+3. DGP official BPC02-220 product page:
+   https://dgparsian.com/product/bpc02-220/
+
+4. DGP official BPC04-220 product page:
+   https://dgparsian.com/product/bpc04-220/
+
+5. DGP official product catalog page (lists separate BPC-02 and BPC-04 catalog downloads):
+   https://dgparsian.com/کاتالوگ-محصولات/
+
+6. DGP-hosted BPC-02 manual download URL (the official site catalog points to this file; automated retrieval may fail due to file size):
+   https://dgp-co.ir/Catalogue-Farsi/BPC/BPC-02.pdf
+
+7. DGP-hosted BPC-04 manual download URL (the official site catalog points to this file; automated retrieval may fail due to file size):
+   https://dgp-co.ir/Catalogue-Farsi/BPC/BPC-04.pdf
+
+8. Accessible copy of the BPC-02 User Manual, Version V1 dated 1401-03-15:
+   https://teslaplccnc.com/wp-content/uploads/2022/05/BPC02-User-Manual-V1-.pdf
+
+9. Another accessible copy of the BPC-02 manual:
+   https://azandautomation.com/wp-content/uploads/2024/10/دیتاشیت-کنترلر-بوستر-پمپ-BPC02-برند-DGP.pdf
+
+10. ManualsLib listing for DGP BPC-02 User Manual; its Modbus section is listed as page 25:
+    https://www.manualslib.com/manual/3457108/Dgp-Bpc-02.html
+
+B. Modbus standard sources
+
+11. Official Modbus Application Protocol Specification V1.1b3:
+    https://www.modbus.org/file/secure/modbusprotocolspecification.pdf
+
+    Relevant subjects:
+    - Section 4.2: big-endian data encoding.
+    - Section 4.3: four primary data tables and their access characteristics.
+    - Section 4.4: addressing model and zero-based PDU references.
+    - Section 5.1: public function code definitions.
+    - Section 6: individual function-code request/response formats.
+
+12. Modbus Organization introduction:
+    https://www.modbus.org/introduction-to-modbus
+
+13. NI overview of Modbus data types and register model:
+    https://www.ni.com/en/shop/labview/introduction-to-modbus-using-labview.html
+
+======================================================================
+12. FINAL CONCLUSION
+======================================================================
+
+The most defensible answer to the original research questions is:
+
+A. Function Codes
+
+Not publicly confirmed for this DGP BPC02. The standard candidates are:
+- Bit reads: FC01 and/or FC02.
+- Bit writes for the documented manual output bits: FC05 and/or FC0F, subject to DGP confirmation.
+- Word reads: FC03 and/or FC04.
+- Word writes for documented manual analogue words: FC06 and/or FC10, subject to DGP confirmation.
+- Special address 99: its table type and write function code remain unconfirmed; FC06 is only a plausible test candidate, not a verified answer.
+
+B. Addressing
+
+The Modbus PDU is zero-based. Because the BPC manual itself publishes address 0 in both its Bit/Word maps, the best initial hypothesis is to use the manual's printed numeric addresses directly as PDU offsets. Still validate this on a real unit with known values and a documented example from DGP.
+
+C. Data types and scaling
+
+The manual confirms several scales (pressure 0.01 bar, system frequency 0.01 Hz, manual analogue outputs 0.1 Hz), but it does not fully document signedness or all raw data encodings. Drive frequency Word 10 is particularly unclear. Do not assume 32-bit floats or undocumented scales.
+
+D. Remaining blocker
+
+The only reliable way to close the unresolved questions is to obtain a written register/function-code clarification or a known-good request/response example from DGP, then verify the result against the actual BPC02 unit through the selected Ethernet converter.
+
+Do not treat generic Modbus tutorials, standard function-code tables, or a successful TCP connection as proof of DGP's implementation.
+
+END OF REPORT
