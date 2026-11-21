@@ -13,10 +13,19 @@ Stop Bits: 1
 Slave ID: 1
 
 IMPORTANT:
-Use decimal addresses exactly as written.
+Use decimal addresses exactly as written (zero-based PDU addresses).
 Do not add 4xxxx or 3xxxx prefixes.
 All tests below are READ-ONLY.
 Do not use write functions.
+
+EARLY FINDINGS ALREADY OBSERVED ON COM4:
+- FC03 (Read Holding Registers) works at 9600 8N1, Slave ID 1.
+- Zero-based addressing (offset = 0) is strongly indicated because
+  addresses 34–39 showed live changing timer values matching
+  Pump 1 & Pump 2 operating seconds/minutes/hours.
+- After completing COM4 RS485 discovery, repeat at least one Word
+  read (Address 2) and one Bit read (Address 0) over Modbus TCP
+  through the ENTES ETMO-10 gateway to confirm gateway pass-through.
 
 
 ========================================
@@ -41,7 +50,8 @@ Previously received:
 Address 0 = 0
 
 Remaining:
-Compare with the actual controller display.
+Compare with the actual controller display (try navigating to
+another menu page on the LCD and check if Address 0 changes).
 
 
 TEST 02 — PRESSURE, VOLTAGES AND FREQUENCIES
@@ -72,8 +82,12 @@ Addresses 2–9 came from the address 0–9 read.
 Address 10 came from the address 10–19 read.
 
 Remaining:
-Compare values with the controller display.
-Determine the scale of Drive Frequency.
+Compare values with the controller display when non-zero readings
+are present (at least one live voltage such as Vrn, mains frequency
+~5000 = 50.00 Hz, and pressure sensor reading) to confirm both
+address alignment and scaling.
+Record the exact Drive Frequency shown on the LCD when Address 10
+reads 1000 (or while running) to determine its unit and scale.
 
 
 TEST 03 — PUMP WORKING TIMES
@@ -206,8 +220,10 @@ Registers:
 4179 — Auto Service Interval (Min)
 
 Note:
-The manual appears to print 417B for address 4178.
-Use decimal address 4178.
+BPC-02.pdf (page 28) visually prints 417B between 4177 and 4179
+(apparent font/print typo for 4178). Use decimal address 4178.
+If Quantity 3 returns Exception 02, read 4177, 4178 and 4179
+individually (Quantity 1 each) to confirm which addresses respond.
 
 
 TEST 09 — MFI / MFO TYPES
@@ -230,9 +246,10 @@ Registers:
 Documented range: 0–5
 
 Note:
-The manual's printed address for the first MFI entry
-appears to be 41B0. The research transcription identifies
-it as 4180. This address should be verified against the PDF.
+BPC-02.pdf (page 28) visually prints 41B0 between 4179 and 4181
+(apparent font/print typo for 4180). Use decimal address 4180.
+If Quantity 7 returns Exception 02, read addresses 4180–4186
+individually (Quantity 1 each) to isolate any non-existent address.
 
 
 TEST 10 — MODBUS ADDRESS
@@ -246,6 +263,24 @@ Quantity: 1
 Description:
 ModBus Address
 Manual shows: 1
+
+
+TEST 10B — MULTI FUNCTION REGISTER (READ-ONLY CHECK)
+----------------------------------------------------
+Status: [PENDING]
+
+Function: 03 — Read Holding Registers (READ-ONLY — DO NOT WRITE)
+Address: 99
+Quantity: 1
+
+Description:
+BPC-02.pdf (page 28) mentions Multi Function Register at address 99
+for manual mode (1234 = manual, 0 = automatic) but omits it from
+the Word table. This read-only check determines whether address 99
+is readable as a Holding Register (e.g., returns 0 in Auto mode)
+or returns Exception 02.
+
+DO NOT write any value to address 99.
 
 
 ========================================
@@ -315,6 +350,10 @@ Expected bit descriptions:
 31 — Pump 6 Fail
 32 — Floater L Level
 33 — Floater H Level
+
+Tip: Cross-check Bits 19–24 (running pumps), Bits 32–33 (tank
+floaters), and active relay outputs (Bits 0–9) against the
+controller LCD / physical LEDs to verify bit numbering and alignment.
 
 
 TEST 12A — MANUAL OUTPUT BITS (FC01)
@@ -424,16 +463,19 @@ QModMaster sent:
 Received:
 01 04 01 E3
 
-The response was incomplete/invalid for a standard
-single-register response.
+The response was only 4 bytes — truncated/invalid as a Modbus RTU
+frame (a valid 1-register response is 7 bytes, and even a Modbus
+exception response must be 5 bytes including CRC).
 
 Remaining:
-Repeat this test using Modbus Poll.
+Repeat this test using Modbus Poll and record the full raw hex.
 Compare FC04 with the previously successful FC03 read.
+If FC04 returns Exception 01 (Illegal Function) or fails again,
+Words are confirmed as FC03-only.
 
 Expected:
 A valid FC04 response should contain two data bytes
-for one register.
+for one register (7 bytes total: ID, 04, 02, HI, LO, CRC_L, CRC_H).
 
 
 ========================================
@@ -510,13 +552,18 @@ during register discovery.
 FINAL TARGET
 ========================================
 
-[ ] All documented Word Addresses read successfully.
+Completing this checklist produces a HARDWARE-VERIFIED READ-ONLY
+BPC02 Register Table (write function codes remain unverified and
+locked until confirmed by DGP and approved for bench testing).
+
+[ ] All documented Word Addresses read successfully (including 99 read-only check).
 [ ] All documented Bit Addresses tested with FC01.
 [ ] All documented Bit Addresses tested with FC02.
 [ ] Correct function code identified for each address group.
-[ ] Register values compared with controller display.
-[ ] Units and scaling verified.
+[ ] Register values compared with controller display (non-zero live values).
+[ ] Units and scaling verified (especially Word 10 Drive Frequency).
 [ ] Dynamic registers checked while equipment operates.
 [ ] Error bitfield decoded.
 [ ] Raw Tx/Rx data saved.
-[ ] Final BPC02 register map verified.
+[ ] One Word + one Bit read repeated via ENTES ETMO-10 Ethernet gateway.
+[ ] Final READ-ONLY BPC02 register map verified.

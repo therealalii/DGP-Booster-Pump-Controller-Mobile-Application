@@ -16,7 +16,10 @@ Slave ID: 1
 
 CURRENTLY CONFIRMED
 -------------------
-FC03 communication: CONFIRMED
+FC03 communication: CONFIRMED (9600 8N1, Slave ID 1)
+Zero-based addressing (offset = 0): STRONGLY SUPPORTED
+(Addresses 34–39 matched Pump 1 & Pump 2 operating seconds/minutes/hours,
+with addresses 34 and 37 counting up and rolling over.)
 
 Word addresses already read:
 0–9
@@ -25,6 +28,8 @@ Word addresses already read:
 30–39
 
 Previously observed:
+Address 0 = 0
+Addresses 2–9 = 0
 Address 10 = 1000
 Address 11 = 1000
 
@@ -40,7 +45,8 @@ Addresses 34 and 37 showed changing timer-like values.
 IMPORTANT:
 Receiving data does not automatically verify its meaning,
 unit, scaling or relationship with the controller.
-Those still need to be checked.
+For every test below, record raw Tx/Rx hex, decoded values,
+and what the physical BPC02 LCD / LEDs display at that moment.
 
 
 ================================
@@ -48,6 +54,41 @@ PART 1 — COMPLETE WORD REGISTER
 ================================
 
 Use FC03 unless otherwise specified.
+
+
+TEST 00 — LCD VERIFICATION (PAGE, PRESSURE, VOLTAGES & FREQUENCIES)
+-------------------------------------------------------------------
+Status: DATA RECEIVED EARLIER — LCD COMPARISON PENDING
+
+Function: 03 — Read Holding Registers
+Read A — Address: 0, Quantity: 1 (Displayed Page Number)
+Read B — Address: 2, Quantity: 9 (Addresses 2–10)
+
+Registers:
+0  — Displayed Page Number
+2  — System Pressure (0.01 Bar)
+3  — Vrn (Volt)
+4  — Vsn (Volt)
+5  — Vtn (Volt)
+6  — Vrs (Volt)
+7  — Vst (Volt)
+8  — Vtr (Volt)
+9  — Frequency (0.01 Hz)
+10 — Drive Frequency (scale unspecified; previously read 1000)
+
+Purpose:
+Compare non-zero values (when supply voltage / pressure sensor /
+drive are active) against the BPC02 LCD to confirm:
+- Exact address alignment (no +/-1 shift).
+- Pressure scale (raw * 0.01 = bar) and mains frequency (~5000 = 50.00 Hz).
+- Exact unit and scaling of Drive Frequency (Address 10).
+- Whether Address 0 changes when navigating menu pages on the LCD.
+
+Tx:
+Rx:
+Decoded values:
+Controller LCD display:
+
 
 TEST 01 — PUMP WORKING TIMES
 ----------------------------
@@ -75,11 +116,13 @@ Purpose:
 Read all 12 registers together.
 Verify the values for Pumps 1–4.
 Observe the counters while pumps operate, where safe.
-Check seconds/minutes rollover.
+Check seconds/minutes rollover at 60.
 Compare with actual operating times.
 
 Tx:
 Rx:
+Decoded values:
+Controller LCD / pump state:
 
 
 TEST 02 — ANALOG OUTPUTS
@@ -101,6 +144,7 @@ Do not activate or change outputs.
 
 Tx:
 Rx:
+Decoded values (dec / hex):
 
 
 TEST 03 — SYSTEM ERROR
@@ -127,12 +171,15 @@ Bit 10 — Pump 1 Error
 Purpose:
 Read the complete register.
 Record decimal and hexadecimal values.
-Decode the documented error bits.
+Decode the documented error bits and note if any undocumented
+bits (0–2, 11–15) are set.
 
 Do not create faults to test these bits.
 
 Tx:
 Rx:
+Decoded value (dec / hex / binary):
+Active LCD errors:
 
 
 TEST 04 — CONTROL STATUS
@@ -149,6 +196,7 @@ Expected range: 0–1
 
 Tx:
 Rx:
+Decoded value:
 
 
 TEST 05 — SLEEP GAP
@@ -166,6 +214,7 @@ Documented range: 1–100
 
 Tx:
 Rx:
+Decoded value / Controller menu value:
 
 
 TEST 06 — AUTOMATIC SERVICE SETTINGS
@@ -182,11 +231,14 @@ Registers:
 4179 — Auto Service Interval (Min)
 
 Note:
-The manual's printed address for 4178 appears as 417B.
-Use decimal address 4178 based on the transcription.
+BPC-02.pdf (page 28) visually prints 417B between 4177 and 4179
+(apparent font/print typo for 4178). Use decimal address 4178.
+Fallback: If Quantity 3 returns Exception 02, read 4177, 4178,
+and 4179 individually (Quantity 1 each).
 
 Tx:
 Rx:
+Decoded values / Controller menu values:
 
 
 TEST 07 — MFI / MFO TYPES
@@ -208,15 +260,15 @@ Registers:
 
 Documented range: 0–5
 
-IMPORTANT:
-The printed address for the first MFI entry appears
-as 41B0 in the manual.
-The research transcription identifies it as 4180.
-Verify this address against the original PDF before
-marking the complete range confirmed.
+Note:
+BPC-02.pdf (page 28) visually prints 41B0 between 4179 and 4181
+(apparent font/print typo for 4180). Use decimal address 4180.
+Fallback: If Quantity 7 returns Exception 02, read addresses
+4180–4186 individually (Quantity 1 each).
 
 Tx:
 Rx:
+Decoded values / Controller menu values:
 
 
 TEST 08 — MODBUS ADDRESS
@@ -233,6 +285,27 @@ Manual shows: 1
 
 Tx:
 Rx:
+Decoded value:
+
+
+TEST 08B — MULTI FUNCTION REGISTER (READ-ONLY CHECK)
+----------------------------------------------------
+Status: PENDING
+
+Function: 03 — Read Holding Registers (READ-ONLY — DO NOT WRITE)
+Address: 99
+Quantity: 1
+
+Purpose:
+Check whether address 99 (Multi Function Register described on
+BPC-02.pdf page 28) is readable as a Holding Register (for example,
+returning 0 in Automatic mode) or returns Exception 02.
+
+DO NOT write any value to address 99.
+
+Tx:
+Rx:
+Decoded value / Exception:
 
 
 ================================
@@ -264,6 +337,7 @@ Quantity: 34
 
 Tx:
 Rx:
+Decoded bits / Exception:
 
 
 TEST 09B — STATUS BITS — FC02
@@ -276,6 +350,8 @@ Quantity: 34
 
 Tx:
 Rx:
+Decoded bits / Exception:
+Controller LCD / physical state (pumps running, floaters, LEDs):
 
 
 Expected descriptions:
@@ -301,6 +377,7 @@ Quantity: 10
 
 Tx:
 Rx:
+Decoded bits / Exception:
 
 
 TEST 10B — MANUAL OUTPUT BITS — FC02
@@ -313,6 +390,7 @@ Quantity: 10
 
 Tx:
 Rx:
+Decoded bits / Exception:
 
 
 Expected descriptions:
@@ -339,6 +417,7 @@ Quantity: 6
 
 Tx:
 Rx:
+Decoded bits / Exception:
 
 
 TEST 11B — PUMP ACTIVATION BITS — FC02
@@ -351,6 +430,8 @@ Quantity: 6
 
 Tx:
 Rx:
+Decoded bits / Exception:
+Controller Pump Activation menu state:
 
 
 Expected descriptions:
@@ -373,6 +454,7 @@ Quantity: 5
 
 Tx:
 Rx:
+Decoded bits / Exception:
 
 
 TEST 12B — HARDWARE CONFIGURATION BITS — FC02
@@ -385,6 +467,8 @@ Quantity: 5
 
 Tx:
 Rx:
+Decoded bits / Exception:
+Controller Hardware menu state:
 
 
 Expected descriptions:
@@ -402,7 +486,7 @@ PART 3 — FC04 VERIFICATION
 
 TEST 13 — INPUT REGISTER COMPARISON
 -----------------------------------
-Status: PREVIOUS ATTEMPT INVALID
+Status: PREVIOUS ATTEMPT INVALID (4-byte truncated frame: 01 04 01 E3)
 
 Function: 04 — Read Input Registers
 Address: 2
@@ -413,52 +497,81 @@ Determine whether FC04 is supported.
 Compare the result with the previously received FC03
 value at address 2.
 
-A valid single-register FC04 response should contain:
-- Slave ID
-- Function code 04
-- Byte count 02
-- Two data bytes
-- CRC
+A valid single-register FC04 response should contain 7 bytes:
+- Slave ID (01)
+- Function code (04)
+- Byte count (02)
+- Two data bytes (HI, LO)
+- CRC (2 bytes)
+(A valid Modbus exception response is 5 bytes: ID, 84, ExCode, CRC_L, CRC_H.)
 
 Use Modbus Poll for this test.
 
 Tx:
 Rx:
+Result / Exception:
 
 
 If FC04 works, test the remaining documented Word
 Address ranges with FC04 to determine whether they
 are also accessible through this function.
 
+If FC04 fails or returns Exception 01, mark Words as FC03-only.
 Do not assume FC04 works simply because FC03 works.
 
 
 ================================
-PART 4 — FINAL VERIFICATION
+PART 4 — GATEWAY PASS-THROUGH CHECK (AFTER COM4)
 ================================
+
+Once COM4 tests succeed and the BPC02 is connected to the
+ENTES ETMO-10 Ethernet Gateway (9600 8N1 on RS485 side):
+
+Gateway IP:
+TCP Port:
+ETMO-10 Working Mode (MODBUS TCP vs Transparent):
+Unit ID:
+
+TEST 14 — GATEWAY READ VERIFICATION (READ-ONLY)
+-----------------------------------------------
+1. Read Word Address 2 (Quantity 9) with FC03 over TCP.
+   Tx / Rx / Matches LCD?
+2. Read Bit Address 0 (Quantity 34) with the confirmed Bit FC (FC01 or FC02).
+   Tx / Rx / Matches COM4?
+
+
+================================
+PART 5 — FINAL VERIFICATION
+================================
+
+Completing these items produces a HARDWARE-VERIFIED READ-ONLY
+BPC02 Register Table (write commands remain locked/unverified
+until confirmed by DGP and approved for bench testing).
 
 After collecting all responses, verify the following:
 
-[ ] FC03 confirmed for all documented Word Addresses.
+[ ] FC03 confirmed for all documented Word Addresses (incl. 99 read-only check).
 [ ] FC04 support determined.
 [ ] Correct function code identified for each Bit Address group.
+[ ] Addresses 0–10 verified against non-zero LCD values (esp. Word 10 scale).
 [ ] Addresses 0–33 verified against actual controller states.
 [ ] Addresses 50–59 verified against actual controller states.
 [ ] Addresses 4096–4101 verified.
 [ ] Addresses 4106–4110 verified.
-[ ] Pump 1–4 timers verified.
+[ ] Pump 1–4 timers verified (incl. 40–45 and 60s rollover).
 [ ] Analog output values understood.
 [ ] System error bitfield decoded.
 [ ] Control status understood.
 [ ] Sleep gap scaling verified.
-[ ] Automatic service settings verified.
-[ ] MFI/MFO type values verified.
+[ ] Automatic service settings verified (incl. 4178 / printed 417B).
+[ ] MFI/MFO type values verified (incl. 4180 / printed 41B0).
 [ ] Modbus slave address verified.
 [ ] Units and scaling checked.
 [ ] Dynamic values checked against actual equipment behavior.
-[ ] Every address checked against the original PDF.
+[ ] Every address checked against BPC-02.pdf pages 25–28.
 [ ] All raw Tx/Rx messages saved.
-[ ] Final register map marked VERIFIED only where evidence supports it.
+[ ] Gateway pass-through checked on ENTES ETMO-10.
+[ ] Final READ-ONLY register map marked VERIFIED only where evidence supports it.
 
 
 ================================
