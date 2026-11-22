@@ -1,0 +1,124 @@
+﻿DGP BPC02 - MODBUS WRITE VERIFICATION TEST LOG
+Date: 2026-11-22 16:29:52 | Port: COM4 (9600 8N1) | Slave ID: 1
+================================================================
+Opened COM4 successfully.
+
+[BASE-1 Read Sleep Gap (Word 4175)]
+  TX (16:29:52.602): 01 03 10 4F 00 01 B1 1D
+  RX (16:29:52.789): 01 03 02 00 28 B8 5A  -->  OK (7 bytes, CRC OK)
+  Decoded Sleep Gap original = 40 (0.4 bar)
+
+[BASE-2 Read Pump 1-6 Activation (Coils 4096..4101)]
+  TX (16:29:53.142): 01 01 10 00 00 06 B8 C8
+  RX (16:29:53.318): 01 01 01 FF 11 C8  -->  OK (6 bytes, CRC OK)
+  Decoded Pump 1-6 Activation = [1,1,1,1,1,1] (Pump 6 original = True)
+
+[BASE-3 Read Output Status Coils 0..9]
+  TX (16:29:53.623): 01 01 00 00 00 0A BC 0D
+  RX (16:29:53.794): 01 01 02 3F 00 A8 0C  -->  OK (7 bytes, CRC OK)
+  Decoded Coils 0..9 = [1,1,1,1,1,1,0,0,0,0]
+
+[STEP 1A Enter Manual Mode (FC06 Addr 99 = 1234)]
+  TX (16:29:54.114): 01 06 00 63 04 D2 FB 49
+  RX (16:29:54.288): 01 06 00 63 04 D2 FB 49  -->  OK (8 bytes, CRC OK)
+
+[STEP 1B Read back Addr 99 (FC03)]
+  TX (16:29:54.601): 01 03 00 63 00 01 74 14
+  RX (16:29:54.773): 01 03 02 00 00 B8 44  -->  OK (7 bytes, CRC OK)
+  Decoded Addr 99 = [0]
+
+[STEP 1C Read Output Status Coils 0..9 in Manual Mode]
+  TX (16:29:55.085): 01 01 00 00 00 0A BC 0D
+  RX (16:29:55.263): 01 01 02 3F 00 A8 0C  -->  OK (7 bytes, CRC OK)
+  Decoded Coils 0..9 = [1,1,1,1,1,1,0,0,0,0]
+
+[STEP 2A Write Word 50 = 50 (5.0 Hz) via FC06]
+  TX (16:29:55.571): 01 06 00 32 00 32 A9 D0
+  RX (16:29:55.750): 01 86 02 C3 A1  -->  MODBUS EXCEPTION 0x02
+
+[STEP 2B Read back Words 50..51 (FC03)]
+  TX (16:29:56.063): 01 03 00 32 00 02 65 C4
+  RX (16:29:56.225): 01 03 04 00 00 00 00 FA 33  -->  OK (9 bytes, CRC OK)
+  Decoded Words 50..51 = [0,0]
+
+[STEP 2C Read Drive Frequency Word 10 (FC03)]
+  TX (16:29:56.535): 01 03 00 0A 00 01 A4 08
+  RX (16:29:56.734): 01 03 02 03 E8 B8 FA  -->  OK (7 bytes, CRC OK)
+  Decoded Drive Freq Word 10 = [1000]
+
+[STEP 2D Restore Word 50 = 0 via FC06]
+  TX (16:29:57.042): 01 06 00 32 00 00 28 05
+  RX (16:29:57.210): 01 86 02 C3 A1  -->  MODBUS EXCEPTION 0x02
+
+[STEP 3A Write Coil 56 (OUT6 Manual) ON via FC05]
+  TX (16:29:57.518): 01 05 00 38 FF 00 0D F7
+  RX (16:29:57.713): 01 85 02 C3 51  -->  MODBUS EXCEPTION 0x02
+
+[STEP 3A-ALT Fallback FC15 Coil 56 ON]
+  TX (16:29:58.025): 01 0F 00 38 00 01 01 01 4E 92
+  RX (16:29:58.178): 01 0F 40 24  -->  REJECTED (BPC02 4-byte unsupported-FC reply, CRC OK)
+
+[STEP 3B Read Manual Output Coils 50..59 (FC01)]
+  TX (16:29:58.491): 01 01 00 32 00 0A 1D C2
+  RX (16:29:58.678): 01 01 02 00 00 B9 FC  -->  OK (7 bytes, CRC OK)
+  Decoded Coils 50..59 = [0,0,0,0,0,0,0,0,0,0]
+
+[STEP 3C Read Output Status Coils 0..9 (FC01)]
+  TX (16:29:58.991): 01 01 00 00 00 0A BC 0D
+  RX (16:29:59.163): 01 01 02 3F 00 A8 0C  -->  OK (7 bytes, CRC OK)
+  Decoded Coils 0..9 = [1,1,1,1,1,1,0,0,0,0]
+
+[STEP 3D Restore Coil 56 OFF]
+  TX (16:29:59.481): 01 05 00 38 00 00 4C 07
+  RX (16:29:59.652): 01 85 02 C3 51  -->  MODBUS EXCEPTION 0x02
+
+[STEP 4 Exit Manual Mode (FC06 Addr 99 = 0)]
+  TX (16:29:59.965): 01 06 00 63 00 00 79 D4
+  RX (16:30:00.136): 01 86 03 02 61  -->  MODBUS EXCEPTION 0x03
+
+[STEP 5A Write Sleep Gap 4175 = 41 via FC06]
+  TX (16:30:00.455): 01 06 10 4F 00 29 7D 03
+  RX (16:30:00.693): 01 06 10 4F 00 29 7D 03  -->  OK (8 bytes, CRC OK)
+
+[STEP 5B Read back Sleep Gap 4175 (FC03)]
+  TX (16:30:01.006): 01 03 10 4F 00 01 B1 1D
+  RX (16:30:01.195): 01 03 02 00 29 79 9A  -->  OK (7 bytes, CRC OK)
+  Decoded Sleep Gap after FC06 = [41]
+
+[STEP 5C Restore Sleep Gap 4175 = 40 via FC06]
+  TX (16:30:01.509): 01 06 10 4F 00 28 BC C3
+  RX (16:30:01.759): 01 06 10 4F 00 28 BC C3  -->  OK (8 bytes, CRC OK)
+
+[STEP 5D Verify restored Sleep Gap 4175 (FC03)]
+  TX (16:30:02.071): 01 03 10 4F 00 01 B1 1D
+  RX (16:30:02.243): 01 03 02 00 28 B8 5A  -->  OK (7 bytes, CRC OK)
+  Decoded Sleep Gap restored = [40]
+
+[STEP 5E Safe FC16 check (Addr 4175 Qty 1 = 40 unchanged)]
+  TX (16:30:02.555): 01 10 10 4F 00 01 02 00 28 B9 B0
+  RX (16:30:02.727): 01 10 01 EC  -->  REJECTED (BPC02 4-byte unsupported-FC reply, CRC OK)
+
+[STEP 6A Write Pump 6 Activation 4101 = False via FC05]
+  TX (16:30:03.041): 01 05 10 05 00 00 D9 0B
+  RX (16:30:03.291): 01 05 10 05 00 00 D9 0B  -->  OK (8 bytes, CRC OK)
+
+[STEP 6B Read back Pump 1-6 Activation 4096..4101 (FC01)]
+  TX (16:30:03.632): 01 01 10 00 00 06 B8 C8
+  RX (16:30:03.804): 01 01 01 DF 10 10  -->  OK (6 bytes, CRC OK)
+  Decoded Pump 1-6 Activation = [1,1,1,1,1,0]
+
+[STEP 6C Restore Pump 6 Activation 4101 = True]
+  TX (16:30:04.116): 01 05 10 05 FF 00 98 FB
+  RX (16:30:04.365): 01 05 10 05 FF 00 98 FB  -->  OK (8 bytes, CRC OK)
+
+[STEP 6D Verify restored Pump 1-6 Activation (FC01)]
+  TX (16:30:04.678): 01 01 10 00 00 06 B8 C8
+  RX (16:30:04.850): 01 01 01 FF 11 C8  -->  OK (6 bytes, CRC OK)
+  Decoded Pump 1-6 Activation restored = [1,1,1,1,1,1]
+
+ALL BENCH WRITE TESTS FINISHED.
+
+[SAFETY-RESTORE Exit Manual Addr 99 = 0]
+  TX (16:30:05.163): 01 06 00 63 00 00 79 D4
+  RX (16:30:05.337): 01 86 03 02 61  -->  MODBUS EXCEPTION 0x03
+Closed COM4.
