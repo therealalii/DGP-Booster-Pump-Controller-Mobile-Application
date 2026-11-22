@@ -186,24 +186,24 @@ function Send-Frame($Serial, [string]$StepName, [byte[]]$TxFrame) {
 }
 
 function Parse-UInt16Regs([byte[]]$Rx) {
-    if ($null -eq $Rx -or $Rx.Length -lt 5 -or $Rx[1] -ne 0x03) { return ,@() }
+    if ($null -eq $Rx -or $Rx.Length -lt 5 -or $Rx[1] -ne 0x03) { return @() }
     $count = [int]($Rx[2] / 2)
     $vals = New-Object System.Collections.Generic.List[int]
     for ($i = 0; $i -lt $count; $i++) {
         $v = (([int]$Rx[3 + 2 * $i]) -shl 8) -bor ([int]$Rx[4 + 2 * $i])
         $vals.Add($v)
     }
-    return ,($vals.ToArray())
+    return $vals.ToArray()
 }
 
 function Parse-Coils([byte[]]$Rx, [int]$Qty) {
-    if ($null -eq $Rx -or $Rx.Length -lt 5 -or $Rx[1] -ne 0x01) { return ,@() }
+    if ($null -eq $Rx -or $Rx.Length -lt 5 -or $Rx[1] -ne 0x01) { return @() }
     $bits = New-Object System.Collections.Generic.List[int]
     for ($i = 0; $i -lt $Qty; $i++) {
         $b = [int]$Rx[3 + ($i -shr 3)]
         $bits.Add((($b -shr ($i % 8)) -band 1))
     }
-    return ,($bits.ToArray())
+    return $bits.ToArray()
 }
 
 # --- Main test execution ------------------------------------------------------
@@ -229,14 +229,14 @@ try {
     $r4175Base = Send-Frame $serial "BASE-1 Read Sleep Gap (Word 4175)" (Build-Read 0x03 4175 1)
     $vals4175 = @(Parse-UInt16Regs $r4175Base.Rx)
     if ($vals4175.Count -ge 1) {
-        $origSleepGap = $vals4175[0]
+        $origSleepGap = [int]$vals4175[0]
         Write-Log "  Decoded Sleep Gap original = $origSleepGap ($([Math]::Round($origSleepGap * 0.01, 2)) bar)" "White"
     }
 
     $r4096Base = Send-Frame $serial "BASE-2 Read Pump 1-6 Activation (Coils 4096..4101)" (Build-Read 0x01 4096 6)
     $bits4096 = @(Parse-Coils $r4096Base.Rx 6)
     if ($bits4096.Count -eq 6) {
-        $origPump6Act = ($bits4096[5] -eq 1)
+        $origPump6Act = ([int]$bits4096[5] -eq 1)
         Write-Log "  Decoded Pump 1-6 Activation = [$($bits4096 -join ',')] (Pump 6 original = $origPump6Act)" "White"
     }
 
