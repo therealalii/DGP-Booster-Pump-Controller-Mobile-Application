@@ -85,8 +85,12 @@ app/src/main/java/com/dgp/boosterpump/
 
 # Build debug APK
 ./gradlew assembleDebug
+
+# If dl.google.com is restricted on your network (HTTP 403/404), force mirrors first:
+./gradlew testDebugUnitTest assembleDebug -PuseMirrors=true
 ```
 The debug APK is generated at `app/build/outputs/apk/debug/app-debug.apk`.
+*(Fallback mirrors — Aliyun & Huawei Cloud — are also configured automatically in `settings.gradle.kts` whenever `dl.google.com` returns `Resource missing`.)*
 
 ---
 
