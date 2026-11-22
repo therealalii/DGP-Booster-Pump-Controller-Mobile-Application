@@ -178,6 +178,8 @@ fun DgpApp(
                 ControlAndConfigScreen(
                     uiState = uiState,
                     onReadHardwareConfig = monitoringViewModel::readHardwareConfiguration,
+                    onWriteParameter = monitoringViewModel::writeHardwareParameter,
+                    onDismissWriteNotice = monitoringViewModel::clearLastWriteNotice,
                 )
             }
             composable(Destination.DIAGNOSTICS.route) {

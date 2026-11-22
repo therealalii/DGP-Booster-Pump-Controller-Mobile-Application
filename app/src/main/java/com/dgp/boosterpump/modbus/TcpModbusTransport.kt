@@ -138,9 +138,14 @@ class TcpModbusTransport(
             if (fc != (pdu[0].toInt() and 0xFF)) {
                 throw ModbusException.InvalidResponse("RTU function %02X, expected %02X".format(fc, pdu[0]))
             }
-            val countByte = readFully(inp, 1, deadline)
-            val byteCount = countByte[0].toInt() and 0xFF
-            countByte + readFully(inp, byteCount + 2, deadline)
+            if (fc == WriteFunction.WRITE_SINGLE_COIL.code || fc == WriteFunction.WRITE_SINGLE_REGISTER.code) {
+                // FC05/FC06 echo: address (2) + value (2) + CRC (2)
+                readFully(inp, 4 + 2, deadline)
+            } else {
+                val countByte = readFully(inp, 1, deadline)
+                val byteCount = countByte[0].toInt() and 0xFF
+                countByte + readFully(inp, byteCount + 2, deadline)
+            }
         }
         val full = head + rest
         if (!Crc16.isValid(full)) throw ModbusException.InvalidResponse("RTU CRC mismatch (${full.toHex()})")

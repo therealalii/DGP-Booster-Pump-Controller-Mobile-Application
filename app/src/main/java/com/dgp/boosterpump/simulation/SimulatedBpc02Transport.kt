@@ -1,13 +1,16 @@
 package com.dgp.boosterpump.simulation
 
 import com.dgp.boosterpump.controller.SystemErrorBit
+import com.dgp.boosterpump.controller.register.AccessPolicy
 import com.dgp.boosterpump.controller.register.Bpc02RegisterMap
 import com.dgp.boosterpump.controller.register.VendorTable
 import com.dgp.boosterpump.gateway.ProtocolMapping
 import com.dgp.boosterpump.modbus.ModbusException
 import com.dgp.boosterpump.modbus.ModbusTransport
 import com.dgp.boosterpump.modbus.ReadFunction
+import com.dgp.boosterpump.modbus.WriteFunction
 import kotlinx.coroutines.delay
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
@@ -36,13 +39,9 @@ enum class SimulationScenario(val label: String, val description: String) {
 }
 
 /**
- * In-memory [ModbusTransport] that responds to standard Modbus read PDUs using the
- * documented BPC02 register addresses. Because it implements [ModbusTransport], the entire
- * [com.dgp.boosterpump.modbus.ModbusReadClient] and [com.dgp.boosterpump.controller.Bpc02Profile]
- * pipeline runs identically in simulation and live modes.
- *
- * Simulation values are clearly tagged as [com.dgp.boosterpump.gateway.DataSourceMode.SIMULATION]
- * by the session and never presented as live controller data.
+ * In-memory [ModbusTransport] simulating a DGP BPC02 across FC01, FC03, and verified
+ * hardware configuration writes (FC05, FC06). Also reproduces observed BPC02 exceptions
+ * for unverified manual-control addresses (50-59 / 99).
  */
 class SimulatedBpc02Transport(
     private val mapping: ProtocolMapping,
@@ -53,6 +52,45 @@ class SimulatedBpc02Transport(
     @Volatile
     private var open = false
     private var startMillis = 0L
+
+    /** Mutable simulated hardware configuration mirrors real controller EEPROM state. */
+    private val cfgBits = ConcurrentHashMap<Int, Boolean>().apply {
+        put(4096, true)
+        put(4097, true)
+        put(4098, true)
+        put(4099, true)
+        put(4100, true)
+        put(4101, true)
+        put(4106, false) // Matches BPC02_FULL_READ_RESULTS.txt (0xD0)
+        put(4107, false)
+        put(4108, false)
+        put(4109, false)
+        put(4110, true) // NC
+    }
+
+    private val cfgWords = ConcurrentHashMap<Int, Int>().apply {
+        put(4173, 0) // Control status
+        put(4175, 40) // 0.40 bar sleep gap
+        put(4177, 159) // 159 h
+        put(4178, 33) // 3.3 s
+        put(4179, 11) // 11 min
+        put(4180, 0) // MFI1..4 Disable
+        put(4181, 0)
+        put(4182, 0)
+        put(4183, 0)
+        put(4184, 0) // MFO1..3 Disable
+        put(4185, 0)
+        put(4186, 0)
+        put(4195, 1) // Modbus Slave ID
+    }
+
+    private val writableBitAddrs = Bpc02RegisterMap.configuration
+        .filter { it.table == VendorTable.BIT && it.access == AccessPolicy.READ_WRITE_VERIFIED }
+        .map { it.documentedAddress }.toSet()
+
+    private val writableWordAddrs = Bpc02RegisterMap.configuration
+        .filter { it.table == VendorTable.WORD && it.access == AccessPolicy.READ_WRITE_VERIFIED }
+        .associateBy { it.documentedAddress }
 
     override val isOpen: Boolean get() = open
 
@@ -77,24 +115,43 @@ class SimulatedBpc02Transport(
 
         if (requestPdu.size < 5) throw ModbusException.InvalidResponse("short request")
         val fcCode = requestPdu[0].toInt() and 0xFF
+        val pduAddr = ((requestPdu[1].toInt() and 0xFF) shl 8) or (requestPdu[2].toInt() and 0xFF)
+        val param = ((requestPdu[3].toInt() and 0xFF) shl 8) or (requestPdu[4].toInt() and 0xFF)
+        val docAddr = pduAddr - mapping.addressOffset
+
+        // Handle verified FC05 / FC06 writes
+        if (fcCode == WriteFunction.WRITE_SINGLE_COIL.code) {
+            if (param != 0xFF00 && param != 0x0000) return byteArrayOf(0x85.toByte(), 0x03)
+            if (docAddr !in writableBitAddrs) return byteArrayOf(0x85.toByte(), 0x02)
+            cfgBits[docAddr] = (param == 0xFF00)
+            return requestPdu.copyOf()
+        }
+        if (fcCode == WriteFunction.WRITE_SINGLE_REGISTER.code) {
+            if (docAddr == 99) {
+                return if (param == 1234) requestPdu.copyOf() else byteArrayOf(0x86.toByte(), 0x03)
+            }
+            val def = writableWordAddrs[docAddr] ?: return byteArrayOf(0x86.toByte(), 0x02)
+            val min = def.minValue ?: 0
+            val max = def.maxValue ?: 0xFFFF
+            if (param !in min..max) return byteArrayOf(0x86.toByte(), 0x03)
+            cfgWords[docAddr] = param
+            return requestPdu.copyOf()
+        }
+
         val function = ReadFunction.fromCode(fcCode)
             ?: return byteArrayOf((fcCode or 0x80).toByte(), 0x01)
-        val pduAddr = ((requestPdu[1].toInt() and 0xFF) shl 8) or (requestPdu[2].toInt() and 0xFF)
-        val qty = ((requestPdu[3].toInt() and 0xFF) shl 8) or (requestPdu[4].toInt() and 0xFF)
-
         val state = buildState(scenario, elapsedSeconds())
-        val docStart = pduAddr - mapping.addressOffset
 
         return if (function.isBitAccess) {
             if (function != mapping.bitReadFunction) {
                 return byteArrayOf((fcCode or 0x80).toByte(), 0x01)
             }
-            encodeBitResponse(fcCode, docStart, qty, state.bits)
+            encodeBitResponse(fcCode, docAddr, param, state.bits)
         } else {
             if (function != mapping.wordReadFunction) {
                 return byteArrayOf((fcCode or 0x80).toByte(), 0x01)
             }
-            encodeWordResponse(fcCode, docStart, qty, state.words)
+            encodeWordResponse(fcCode, docAddr, param, state.words)
         }
     }
 
@@ -142,50 +199,28 @@ class SimulatedBpc02Transport(
         val bits = mutableMapOf<Int, Boolean>()
         val words = mutableMapOf<Int, Int>()
 
-        // Initialise every documented polled & config address to a baseline value
-        for (def in Bpc02RegisterMap.polled + Bpc02RegisterMap.configuration) {
+        for (def in Bpc02RegisterMap.all) {
             when (def.table) {
                 VendorTable.BIT -> bits[def.documentedAddress] = false
                 VendorTable.WORD -> words[def.documentedAddress] = 0
             }
         }
 
-        // Baseline hardware configuration (read-only on demand)
-        bits[4096] = true // Pump 1 enabled
-        bits[4097] = true // Pump 2 enabled
-        bits[4098] = true // Pump 3 enabled
-        bits[4099] = true // Pump 4 enabled
-        bits[4106] = true // Control phase enabled
-        bits[4107] = true // OFF changing enabled
-        bits[4108] = true // Time changing enabled
-        bits[4109] = false
-        bits[4110] = false
-        words[4173] = 1 // Control status
-        words[4175] = 30 // 0.30 bar sleep gap
-        words[4177] = 24 // 24 h
-        words[4178] = 50 // 5.0 s
-        words[4179] = 15 // 15 min
-        words[4180] = 5 // MFI1: FL
-        words[4181] = 3 // MFI2: EMG
-        words[4182] = 0
-        words[4183] = 0
-        words[4184] = 3 // MFO1: Alarm
-        words[4185] = 2 // MFO2: Fan
-        words[4186] = 0
-        words[4195] = 1 // Modbus address
+        // Apply persistent simulated hardware configuration
+        bits.putAll(cfgBits)
+        words.putAll(cfgWords)
 
         // Baseline mains supply (3-phase 230/400 V, 50.00 Hz)
         val vShift = (ripple * 1.5).roundToInt()
-        words[0] = 1 // Displayed page number
+        words[0] = 0
         words[3] = 231 + vShift
         words[4] = 229 - vShift
         words[5] = 230
         words[6] = 400 + vShift
         words[7] = 399
         words[8] = 401 - vShift
-        words[9] = 5000 + (ripple * 4).roundToInt() // 50.00 Hz (0.01 Hz scale)
+        words[9] = 5000 + (ripple * 4).roundToInt()
 
-        // Baseline run times (advancing gently for running pumps)
         fun setRunTime(pump: Int, baseHours: Int, baseMin: Int, baseSec: Int, running: Boolean) {
             val totalSec = baseSec + if (running) tSec.toInt() else 0
             val sec = totalSec % 60
@@ -198,73 +233,72 @@ class SimulatedBpc02Transport(
             words[base + 2] = hrs
         }
 
-        // Tank floaters normally connected
         bits[32] = true // Floater L
         bits[33] = true // Floater H
         bits[10] = true // DR status
 
         when (scenario) {
             SimulationScenario.NORMAL_DUTY -> {
-                words[2] = (420 + ripple * 8).roundToInt() // 4.20 bar
-                words[10] = (980 + ripple * 25).roundToInt() // raw 0-1600 (scale unverified)
-                bits[19] = true // Pump 1 running
-                bits[0] = true // Output 0
-                bits[11] = true // PR1
-                setRunTime(1, 142, 35, 12, running = true)
-                setRunTime(2, 138, 10, 44, running = false)
-                setRunTime(3, 121, 52, 5, running = false)
-                setRunTime(4, 119, 4, 30, running = false)
+                words[2] = (420 + ripple * 8).roundToInt()
+                words[10] = (980 + ripple * 25).roundToInt()
+                bits[19] = cfgBits[4096] != false
+                bits[0] = bits[19] == true
+                bits[11] = bits[19] == true
+                setRunTime(1, 2, 44, 40, running = bits[19] == true)
+                setRunTime(2, 2, 42, 57, running = false)
+                setRunTime(3, 2, 41, 53, running = false)
+                setRunTime(4, 2, 40, 59, running = false)
                 words[80] = 0
             }
 
             SimulationScenario.PEAK_DEMAND -> {
-                words[2] = (385 + ripple * 12).roundToInt() // 3.85 bar
+                words[2] = (385 + ripple * 12).roundToInt()
                 words[10] = (1460 + ripple * 20).roundToInt()
-                bits[19] = true
-                bits[20] = true
-                bits[21] = true
-                bits[0] = true
-                bits[1] = true
-                bits[2] = true
-                bits[11] = true
-                bits[12] = true
-                bits[13] = true
-                bits[33] = false // High floater open while drawing down
-                setRunTime(1, 142, 35, 12, running = true)
-                setRunTime(2, 138, 10, 44, running = true)
-                setRunTime(3, 121, 52, 5, running = true)
-                setRunTime(4, 119, 4, 30, running = false)
+                bits[19] = cfgBits[4096] != false
+                bits[20] = cfgBits[4097] != false
+                bits[21] = cfgBits[4098] != false
+                bits[0] = bits[19] == true
+                bits[1] = bits[20] == true
+                bits[2] = bits[21] == true
+                bits[11] = bits[19] == true
+                bits[12] = bits[20] == true
+                bits[13] = bits[21] == true
+                bits[33] = false
+                setRunTime(1, 2, 44, 40, running = bits[19] == true)
+                setRunTime(2, 2, 42, 57, running = bits[20] == true)
+                setRunTime(3, 2, 41, 53, running = bits[21] == true)
+                setRunTime(4, 2, 40, 59, running = false)
                 words[80] = 0
             }
 
             SimulationScenario.FLOATER_LOW_ALARM -> {
-                words[2] = 115 // 1.15 bar
+                words[2] = 115
                 words[10] = 0
                 bits[10] = false
-                bits[32] = false // Floater L not connected
-                bits[33] = false // Floater H not connected
-                bits[15] = true // MFI1 triggered
-                setRunTime(1, 142, 35, 12, running = false)
-                setRunTime(2, 138, 10, 44, running = false)
-                setRunTime(3, 121, 52, 5, running = false)
-                setRunTime(4, 119, 4, 30, running = false)
+                bits[32] = false
+                bits[33] = false
+                bits[15] = true
+                setRunTime(1, 2, 44, 40, running = false)
+                setRunTime(2, 2, 42, 57, running = false)
+                setRunTime(3, 2, 41, 53, running = false)
+                setRunTime(4, 2, 40, 59, running = false)
                 words[80] = 1 shl SystemErrorBit.FLOATER.bit
             }
 
             SimulationScenario.PUMP_AND_DRIVE_FAULT -> {
-                words[2] = 685 // 6.85 bar
-                words[3] = 254 // high phase voltage
+                words[2] = 685
+                words[3] = 254
                 words[6] = 432
                 words[10] = 0
-                bits[19] = true // Pump 1 running direct
+                bits[19] = true
                 bits[0] = true
                 bits[11] = true
-                bits[25] = true // Drive fail
-                bits[27] = true // Pump 2 fail
-                setRunTime(1, 142, 35, 12, running = true)
-                setRunTime(2, 138, 10, 44, running = false)
-                setRunTime(3, 121, 52, 5, running = false)
-                setRunTime(4, 119, 4, 30, running = false)
+                bits[25] = true
+                bits[27] = true
+                setRunTime(1, 2, 44, 40, running = true)
+                setRunTime(2, 2, 42, 57, running = false)
+                setRunTime(3, 2, 41, 53, running = false)
+                setRunTime(4, 2, 40, 59, running = false)
                 words[80] = (1 shl SystemErrorBit.MAX_PRESSURE.bit) or
                     (1 shl SystemErrorBit.PHASE_MAX_VOLTAGE.bit)
             }

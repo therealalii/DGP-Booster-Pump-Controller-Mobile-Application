@@ -317,7 +317,7 @@ private fun TransactionLogTabContent(
             }
         }
 
-        items(uiState.transactions, key = { "${it.timestampMillis}-${it.function.code}-${it.pduAddress}-${it.durationMs}" }) { tx ->
+        items(uiState.transactions, key = { "${it.timestampMillis}-${it.functionCode}-${it.pduAddress}-${it.durationMs}-${it.requestHex}" }) { tx ->
             TerminalTxCard(tx)
         }
     }
@@ -332,7 +332,15 @@ private fun TerminalTxCard(tx: TransactionRecord) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(p.terminalBg)
-            .border(1.dp, if (ok) p.panelBorder else p.fault.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+            .border(
+                1.dp,
+                when {
+                    !ok -> p.fault.copy(alpha = 0.6f)
+                    tx.isWrite -> p.warning.copy(alpha = 0.55f)
+                    else -> p.panelBorder
+                },
+                RoundedCornerShape(12.dp),
+            )
             .padding(11.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
@@ -342,17 +350,29 @@ private fun TerminalTxCard(tx: TransactionRecord) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             LtrText(
-                text = "${formatTime(tx.timestampMillis)}  •  ID ${tx.unitId}  •  FC%02X @ %d (×%d)".format(
-                    tx.function.code,
-                    tx.pduAddress,
-                    tx.quantity,
-                ),
+                text = if (tx.isWrite) {
+                    "${formatTime(tx.timestampMillis)}  •  ID ${tx.unitId}  •  FC%02X @ %d".format(
+                        tx.functionCode,
+                        tx.pduAddress,
+                    )
+                } else {
+                    "${formatTime(tx.timestampMillis)}  •  ID ${tx.unitId}  •  FC%02X @ %d (×%d)".format(
+                        tx.functionCode,
+                        tx.pduAddress,
+                        tx.quantity,
+                    )
+                },
                 style = MonoStyle.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
                 color = p.textPrimary,
             )
-            StatusBadge(if (ok) "${tx.durationMs} ms" else "خطا", if (ok) BadgeTone.OK else BadgeTone.FAULT)
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (tx.isWrite) {
+                    StatusBadge("نوشتن", BadgeTone.WARNING)
+                }
+                StatusBadge(if (ok) "${tx.durationMs} ms" else "خطا", if (ok) BadgeTone.OK else BadgeTone.FAULT)
+            }
         }
-        LtrText("TX: ${tx.requestHex}", style = MonoStyle, color = p.cyan)
+        LtrText("TX: ${tx.requestHex}", style = MonoStyle, color = if (tx.isWrite) p.warning else p.cyan)
         tx.responseHex?.let { rx ->
             LtrText("RX: $rx", style = MonoStyle, color = p.ok)
         }
@@ -396,7 +416,7 @@ private fun RegisterMapTabContent(uiState: MonitoringUiState) {
         item {
             ScadaPanel(
                 title = "نقشه متمرکز رجیسترهای DGP BPC02",
-                subtitle = "مجموع ${Bpc02RegisterMap.all.size} رجیستر (کویل FC01 و هولدینگ FC03، آفست 0)",
+                subtitle = "مجموع ${Bpc02RegisterMap.all.size} رجیستر (کویل FC01/FC05 و هولدینگ FC03/FC06، آفست 0)",
                 icon = Icons.AutoMirrored.Outlined.ListAlt,
                 accentColor = p.cyan,
             ) {
@@ -488,15 +508,20 @@ private fun RegisterDirectoryCard(reading: RegisterReading) {
                 style = MonoStyle.copy(fontSize = 10.5.sp),
                 color = p.textSecondary,
             )
-            if (locked) {
-                StatusBadge("قفل نوشتن", BadgeTone.WARNING)
-            } else {
-                val tone = when (def.verification) {
-                    Verification.HARDWARE_VERIFIED -> BadgeTone.OK
-                    Verification.DOCUMENTED -> BadgeTone.NEUTRAL
-                    Verification.AMBIGUOUS -> BadgeTone.WARNING
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (def.isWritable) {
+                    StatusBadge("قابل ویرایش", BadgeTone.INFO)
                 }
-                StatusBadge(PersianLabels.verificationLabel(def.verification), tone)
+                if (locked) {
+                    StatusBadge("قفل نوشتن", BadgeTone.WARNING)
+                } else {
+                    val tone = when (def.verification) {
+                        Verification.HARDWARE_VERIFIED -> BadgeTone.OK
+                        Verification.DOCUMENTED -> BadgeTone.NEUTRAL
+                        Verification.AMBIGUOUS -> BadgeTone.WARNING
+                    }
+                    StatusBadge(PersianLabels.verificationLabel(def.verification), tone)
+                }
             }
         }
     }

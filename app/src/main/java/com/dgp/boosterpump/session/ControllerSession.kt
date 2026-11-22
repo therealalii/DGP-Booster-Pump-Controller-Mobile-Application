@@ -4,12 +4,15 @@ import com.dgp.boosterpump.controller.ControllerProfiles
 import com.dgp.boosterpump.controller.ControllerReader
 import com.dgp.boosterpump.controller.ControllerSnapshot
 import com.dgp.boosterpump.controller.RegisterReading
+import com.dgp.boosterpump.controller.register.AccessPolicy
+import com.dgp.boosterpump.controller.register.RegisterDefinition
+import com.dgp.boosterpump.controller.register.VendorTable
 import com.dgp.boosterpump.gateway.DataSourceMode
 import com.dgp.boosterpump.gateway.GatewayConfig
 import com.dgp.boosterpump.gateway.validate
-import com.dgp.boosterpump.modbus.ModbusException
 import com.dgp.boosterpump.modbus.ModbusReadClient
 import com.dgp.boosterpump.modbus.ModbusTransport
+import com.dgp.boosterpump.modbus.ModbusWriteClient
 import com.dgp.boosterpump.modbus.ReadFunction
 import com.dgp.boosterpump.modbus.TcpModbusTransport
 import com.dgp.boosterpump.modbus.TransactionRecord
@@ -50,7 +53,7 @@ sealed interface ConnectionState {
     ) : ConnectionState
 }
 
-/** Result of a single manual read-only probe (used during hardware verification). */
+/** Result of a single manual read-only probe. */
 data class ProbeResult(
     val function: ReadFunction,
     val pduAddress: Int,
@@ -60,11 +63,23 @@ data class ProbeResult(
     val timestampMillis: Long,
 )
 
-/** Result of an on-demand read of the hardware configuration addresses (read-only). */
+/** Result of a verified hardware configuration write (FC05/FC06) with immediate read-back check. */
+data class WriteResult(
+    val definition: RegisterDefinition,
+    val requestedValue: Int,
+    val readBackValue: Int?,
+    val success: Boolean,
+    val error: String?,
+    val timestampMillis: Long,
+)
+
+/** Result of an on-demand read of the hardware configuration addresses. */
 data class ConfigSnapshotState(
     val loading: Boolean = false,
+    val writingKey: String? = null,
     val readings: List<RegisterReading> = emptyList(),
     val errors: List<String> = emptyList(),
+    val lastWrite: WriteResult? = null,
     val timestampMillis: Long? = null,
 )
 
@@ -73,9 +88,11 @@ data class PressureSample(val timestampMillis: Long, val pressureBar: Double)
 
 /**
  * Coordinates the Modbus transport, read-only polling loop, transaction log, on-demand
- * configuration read, and manual read-only register probe.
+ * configuration read, verified FC05/FC06 configuration writes with immediate read-back
+ * confirmation, and single-request read probe.
  *
- * No write operation exists anywhere in this class.
+ * Writes are NEVER executed automatically on startup/reconnect and are strictly limited
+ * to registers marked [AccessPolicy.READ_WRITE_VERIFIED] within documented bounds.
  */
 class ControllerSession(
     private val scope: CoroutineScope,
@@ -110,7 +127,8 @@ class ControllerSession(
     private val ioMutex = Mutex()
     private var pollJob: Job? = null
     private var transport: ModbusTransport? = null
-    private var client: ModbusReadClient? = null
+    private var readClient: ModbusReadClient? = null
+    private var writeClient: ModbusWriteClient? = null
 
     fun setSimulationScenario(scenario: SimulationScenario) {
         _simulationScenario.value = scenario
@@ -120,7 +138,11 @@ class ControllerSession(
         _transactions.value = emptyList()
     }
 
-    /** Starts connecting and polling with [config]. Any previous session is stopped first. */
+    fun clearLastWriteNotice() {
+        _configSnapshot.update { it.copy(lastWrite = null) }
+    }
+
+    /** Starts connecting and read-only polling with [config]. Any previous session is stopped first. */
     fun connect(config: GatewayConfig) {
         val validation = config.validate()
         if (!validation.isValid) {
@@ -148,8 +170,8 @@ class ControllerSession(
             while (isActive) {
                 try {
                     ensureConnected(config, target, isSim)
-                    val activeClient = client ?: continue
-                    val reader = ControllerReader(activeClient, config.mapping)
+                    val activeReaderClient = readClient ?: continue
+                    val reader = ControllerReader(activeReaderClient, config.mapping)
 
                     val raw = ioMutex.withLock { reader.readBlocks(profile.pollBlocks) }
                     val now = clock()
@@ -178,7 +200,6 @@ class ControllerSession(
                 } catch (e: Exception) {
                     closeTransport()
                     val msg = e.message ?: e::class.java.simpleName
-                    // Back off before reconnecting so a missing gateway does not flood the LAN.
                     val retrySec = 3
                     for (rem in retrySec downTo 1) {
                         _connectionState.value = ConnectionState.Error(target, isSim, msg, retryInSeconds = rem)
@@ -197,35 +218,34 @@ class ControllerSession(
     }
 
     /**
-     * Reads the documented hardware configuration addresses once (read-only) using the
-     * hardware-verified contiguous block reads (4096..4101, 4106..4110 via FC01;
-     * 4173, 4175, 4177..4186, 4195 via FC03).
+     * Reads all documented hardware configuration registers once using the hardware-verified
+     * contiguous blocks (4096..4101, 4106..4110 via FC01; 4173, 4175, 4177..4186, 4195 via FC03).
      */
     fun readHardwareConfiguration() {
         val cfg = _activeConfig.value ?: return
-        val activeClient = client ?: return
+        val activeReaderClient = readClient ?: return
         val profile = ControllerProfiles.forModel(cfg.controllerModel)
 
         scope.launch(ioDispatcher) {
             _configSnapshot.update { it.copy(loading = true, errors = emptyList()) }
             try {
-                val reader = ControllerReader(activeClient, cfg.mapping)
+                val reader = ControllerReader(activeReaderClient, cfg.mapping)
                 val raw = ioMutex.withLock { reader.readBlocks(profile.configurationBlocks) }
                 val readings = profile.configuration.map { def ->
                     val value = when (def.table) {
-                        com.dgp.boosterpump.controller.register.VendorTable.BIT ->
-                            raw.bits[def.documentedAddress]?.let { if (it) 1 else 0 }
-                        com.dgp.boosterpump.controller.register.VendorTable.WORD ->
-                            raw.words[def.documentedAddress]
+                        VendorTable.BIT -> raw.bits[def.documentedAddress]?.let { if (it) 1 else 0 }
+                        VendorTable.WORD -> raw.words[def.documentedAddress]
                     }
                     RegisterReading(def, value)
                 }
-                _configSnapshot.value = ConfigSnapshotState(
-                    loading = false,
-                    readings = readings,
-                    errors = raw.blockErrors.map { "${it.block.label}: ${it.message}" },
-                    timestampMillis = clock(),
-                )
+                _configSnapshot.update {
+                    it.copy(
+                        loading = false,
+                        readings = readings,
+                        errors = raw.blockErrors.map { err -> "${err.block.label}: ${err.message}" },
+                        timestampMillis = clock(),
+                    )
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -237,12 +257,129 @@ class ControllerSession(
     }
 
     /**
-     * Executes a single read-only Modbus request (FC01-FC04) directly against the active link.
-     * Intended for hardware verification (testing FC03 vs FC04, FC01 vs FC02, and PDU offsets).
+     * Writes a single hardware-verified configuration register using FC05 (Coil) or FC06 (Word),
+     * then immediately reads it back via FC01/FC03 to verify the controller stored the new value.
+     *
+     * Guardrails:
+     *  - Rejects any register not marked [AccessPolicy.READ_WRITE_VERIFIED].
+     *  - Rejects out-of-range values before touching the wire.
+     *  - Never queued for later replay if disconnected.
      */
+    fun writeHardwareParameter(definition: RegisterDefinition, newValue: Int) {
+        if (definition.access != AccessPolicy.READ_WRITE_VERIFIED) {
+            _configSnapshot.update {
+                it.copy(
+                    lastWrite = WriteResult(
+                        definition = definition,
+                        requestedValue = newValue,
+                        readBackValue = null,
+                        success = false,
+                        error = "Write blocked by safety policy: ${definition.label} is not verified writable.",
+                        timestampMillis = clock(),
+                    ),
+                )
+            }
+            return
+        }
+        val min = definition.minValue ?: 0
+        val max = definition.maxValue ?: if (definition.table == VendorTable.BIT) 1 else 0xFFFF
+        if (newValue !in min..max) {
+            _configSnapshot.update {
+                it.copy(
+                    lastWrite = WriteResult(
+                        definition = definition,
+                        requestedValue = newValue,
+                        readBackValue = null,
+                        success = false,
+                        error = "Value $newValue outside allowed range $min..$max.",
+                        timestampMillis = clock(),
+                    ),
+                )
+            }
+            return
+        }
+
+        val cfg = _activeConfig.value
+        val activeWrite = writeClient
+        val activeRead = readClient
+        if (cfg == null || activeWrite == null || activeRead == null) {
+            _configSnapshot.update {
+                it.copy(
+                    lastWrite = WriteResult(
+                        definition = definition,
+                        requestedValue = newValue,
+                        readBackValue = null,
+                        success = false,
+                        error = "Not connected — write command discarded (writes are never queued).",
+                        timestampMillis = clock(),
+                    ),
+                )
+            }
+            return
+        }
+
+        scope.launch(ioDispatcher) {
+            _configSnapshot.update { it.copy(writingKey = definition.key) }
+            try {
+                val pduAddr = cfg.mapping.pduAddress(definition.documentedAddress)
+                val readBack: Int = ioMutex.withLock {
+                    when (definition.table) {
+                        VendorTable.BIT -> {
+                            activeWrite.writeSingleCoil(pduAddr, newValue != 0)
+                            val bits = activeRead.readBits(cfg.mapping.bitReadFunction, pduAddr, 1)
+                            if (bits.firstOrNull() == true) 1 else 0
+                        }
+                        VendorTable.WORD -> {
+                            activeWrite.writeSingleRegister(pduAddr, newValue)
+                            val regs = activeRead.readRegisters(cfg.mapping.wordReadFunction, pduAddr, 1)
+                            regs.first()
+                        }
+                    }
+                }
+                val matched = (readBack == newValue)
+                val result = WriteResult(
+                    definition = definition,
+                    requestedValue = newValue,
+                    readBackValue = readBack,
+                    success = matched,
+                    error = if (matched) null else "Read-back mismatch: wrote $newValue, read back $readBack",
+                    timestampMillis = clock(),
+                )
+                _configSnapshot.update { state ->
+                    val updatedReadings = state.readings.map { r ->
+                        if (r.definition.key == definition.key) r.copy(raw = readBack) else r
+                    }
+                    state.copy(
+                        writingKey = null,
+                        readings = updatedReadings,
+                        lastWrite = result,
+                        timestampMillis = clock(),
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _configSnapshot.update {
+                    it.copy(
+                        writingKey = null,
+                        lastWrite = WriteResult(
+                            definition = definition,
+                            requestedValue = newValue,
+                            readBackValue = null,
+                            success = false,
+                            error = e.message ?: e::class.java.simpleName,
+                            timestampMillis = clock(),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    /** Executes a single read-only Modbus request (FC01-FC04) directly against the active link. */
     fun runReadProbe(function: ReadFunction, pduAddress: Int, quantity: Int) {
-        val activeClient = client
-        if (activeClient == null) {
+        val activeRead = readClient
+        if (activeRead == null) {
             _probeResult.value = ProbeResult(
                 function, pduAddress, quantity, values = null,
                 error = "Connect to a gateway (or simulation) before running a probe.",
@@ -254,9 +391,9 @@ class ControllerSession(
             try {
                 val values = ioMutex.withLock {
                     if (function.isBitAccess) {
-                        activeClient.readBits(function, pduAddress, quantity).map { if (it) 1 else 0 }
+                        activeRead.readBits(function, pduAddress, quantity).map { if (it) 1 else 0 }
                     } else {
-                        activeClient.readRegisters(function, pduAddress, quantity).toList()
+                        activeRead.readRegisters(function, pduAddress, quantity).toList()
                     }
                 }
                 _probeResult.value = ProbeResult(function, pduAddress, quantity, values, null, clock())
@@ -272,12 +409,18 @@ class ControllerSession(
     }
 
     private suspend fun ensureConnected(config: GatewayConfig, target: String, isSim: Boolean) {
-        if (transport?.isOpen == true && client != null) return
+        if (transport?.isOpen == true && readClient != null && writeClient != null) return
         _connectionState.value = ConnectionState.Connecting(target, isSim)
         val t = transportFactory(config) { _simulationScenario.value }
         t.open()
         transport = t
-        client = ModbusReadClient(
+        readClient = ModbusReadClient(
+            transport = t,
+            unitId = config.unitId,
+            clock = clock,
+            onTransaction = ::appendTransaction,
+        )
+        writeClient = ModbusWriteClient(
             transport = t,
             unitId = config.unitId,
             clock = clock,
@@ -294,7 +437,8 @@ class ControllerSession(
     private fun closeTransport() {
         runCatching { transport?.close() }
         transport = null
-        client = null
+        readClient = null
+        writeClient = null
     }
 
     companion object {

@@ -31,7 +31,7 @@ object PersianLabels {
     }
 
     fun modelNote(model: ControllerModel): String = when (model) {
-        ControllerModel.BPC02 -> "نقشه رجیستر تاییدشده روی سخت‌افزار واقعی (9600 8N1، توابع FC01 و FC03، آفست 0)."
+        ControllerModel.BPC02 -> "نقشه رجیستر تاییدشده روی سخت‌افزار واقعی (9600 8N1، توابع FC01/FC03/FC05/FC06، آفست 0)."
         ControllerModel.BPC04 -> "در دست توسعه — نیازمند نقشه رجیستر رسمی و تست سخت‌افزاری BPC04."
     }
 
@@ -186,12 +186,38 @@ object PersianLabels {
         }
     }
 
+    fun enumOptionLabel(def: RegisterDefinition, raw: Int): String = when {
+        def.key.startsWith("mfi_") && def.key.endsWith("_type") -> when (raw) {
+            0 -> "غیرفعال (Disable)"
+            1 -> "پرشر سوئیچ (PS)"
+            2 -> "حداکثر فشار (MP)"
+            3 -> "توقف اضطراری (EMG)"
+            4 -> "کنترل فاز خارجی (CP)"
+            5 -> "فلوتر خارجی (FL)"
+            else -> "مقدار نامشخص ($raw)"
+        }
+        def.key.startsWith("mfo_") && def.key.endsWith("_type") -> when (raw) {
+            0 -> "غیرفعال (Disable)"
+            1 -> "شیر برقی اتو سرویس (E Valve)"
+            2 -> "فن تابلو (Fan)"
+            3 -> "آلارم خطا (Alarm)"
+            4 -> "کنتاکتور درایو پمپ ۳ (DC3)"
+            5 -> "کنتاکتور مستقیم پمپ ۳ (MC3)"
+            else -> "مقدار نامشخص ($raw)"
+        }
+        def.enumLabels == mapOf(0 to "Disabled", 1 to "Enabled") -> if (raw == 1) "فعال" else "غیرفعال"
+        def.enumLabels == mapOf(0 to "NO", 1 to "NC") -> if (raw == 1) "بسته (NC)" else "باز (NO)"
+        else -> def.enumLabels[raw]?.let { "$it ($raw)" } ?: raw.toString()
+    }
+
     fun formatRegisterValue(def: RegisterDefinition, raw: Int): String = when {
         def.enumLabels == mapOf(0 to "OFF", 1 to "ON") -> if (raw == 1) "روشن (ON)" else "خاموش (OFF)"
         def.enumLabels == mapOf(0 to "Normal", 1 to "Failed") -> if (raw == 1) "خطا (Failed)" else "عادی (Normal)"
         def.enumLabels == mapOf(0 to "Not connected", 1 to "Connected") -> if (raw == 1) "متصل" else "قطع"
         def.enumLabels == mapOf(0 to "Disabled", 1 to "Enabled") -> if (raw == 1) "فعال" else "غیرفعال"
         def.enumLabels == mapOf(0 to "NO", 1 to "NC") -> if (raw == 1) "بسته (NC)" else "باز (NO)"
+        def.key.startsWith("mfi_") && def.key.endsWith("_type") -> enumOptionLabel(def, raw)
+        def.key.startsWith("mfo_") && def.key.endsWith("_type") -> enumOptionLabel(def, raw)
         def.unit == "bar" && def.scale != null -> "%.2f بار".format(raw * def.scale)
         def.unit == "Hz" && def.scale != null -> {
             val dec = if (def.scale >= 0.1) 1 else 2

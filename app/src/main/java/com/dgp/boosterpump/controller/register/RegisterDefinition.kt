@@ -1,10 +1,10 @@
 package com.dgp.boosterpump.controller.register
 
 /**
- * Vendor table in which a value is documented. The BPC02 manual publishes a "Bit Address"
- * table and a "Word Address" table, but does NOT state which Modbus table (coils vs discrete
- * inputs, holding vs input registers) backs each. The actual read function is chosen in
- * [com.dgp.boosterpump.gateway.ProtocolMapping] and must be confirmed on hardware.
+ * Vendor table in which a value is documented.
+ * Hardware tests on DGP BPC02 confirmed:
+ *  - BIT table = Coils (FC01 read, FC05 write)
+ *  - WORD table = Holding Registers (FC03 read, FC06 write)
  */
 enum class VendorTable(val label: String) {
     BIT("Bit Address table"),
@@ -27,22 +27,25 @@ enum class RawType(val label: String) {
 
 /** Evidence level of a register definition. */
 enum class Verification(val label: String, val description: String) {
-    /** Address, description and unit are printed in the BPC-02 manual. Modbus function code is not. */
-    DOCUMENTED("Documented", "Printed in the BPC-02 manual; Modbus table/function not yet confirmed on hardware."),
+    /** Address, description and unit are printed in the BPC-02 manual. */
+    DOCUMENTED("Documented", "Printed in the BPC-02 manual; awaiting full hardware confirmation."),
 
-    /** Printed in the manual but with an ambiguity (unclear scale, glyph, or table). */
-    AMBIGUOUS("Ambiguous", "Printed in the BPC-02 manual with an unresolved ambiguity; treat value with caution."),
+    /** Printed in the manual with an ambiguity (e.g. Drive Frequency 0-1600 without unit/scale). */
+    AMBIGUOUS("Ambiguous", "Printed in the BPC-02 manual with an unresolved ambiguity; displayed raw."),
 
-    /** Confirmed against a real controller (raw value matched the controller LCD). */
+    /** Confirmed against a real BPC02 controller. */
     HARDWARE_VERIFIED("Hardware verified", "Confirmed against a real BPC02 controller."),
 }
 
-/** Access policy enforced by the application (not by the controller). */
+/** Access policy enforced by the application. */
 enum class AccessPolicy {
-    /** Read by the app. */
+    /** Read-only (live telemetry or protected parameters such as Slave ID 4195 / Control Status 4173). */
     READ,
 
-    /** Documented control item. Writes are LOCKED until verified and approved; the app never reads or writes it. */
+    /** Hardware-verified writable via FC05 (Bit) or FC06 (Word), subject to explicit confirmation & range check. */
+    READ_WRITE_VERIFIED,
+
+    /** Manual-control item whose write behavior was rejected/unverified on hardware; strictly locked. */
     CONTROL_LOCKED,
 }
 
@@ -58,13 +61,8 @@ enum class RegisterGroup(val label: String) {
 }
 
 /**
- * One documented data point. This is the single place where addresses, units and scale
- * factors live; no other code should contain BPC register addresses.
- *
- * @property documentedAddress the address exactly as printed in the vendor table.
- * @property scale multiply the raw value by this to obtain [unit]; null when undocumented.
- * @property enumLabels documented meaning of raw values, if any.
- * @property source page/row reference into the BPC-02 manual.
+ * One documented data point. Single source of truth for addresses, units, scale factors,
+ * valid write bounds, access policies, and hardware verification status.
  */
 data class RegisterDefinition(
     val key: String,
@@ -75,12 +73,16 @@ data class RegisterDefinition(
     val group: RegisterGroup,
     val unit: String? = null,
     val scale: Double? = null,
+    val minValue: Int? = null,
+    val maxValue: Int? = null,
     val enumLabels: Map<Int, String> = emptyMap(),
     val access: AccessPolicy = AccessPolicy.READ,
     val verification: Verification = Verification.DOCUMENTED,
     val source: String,
     val notes: String? = null,
 ) {
+    val isWritable: Boolean get() = access == AccessPolicy.READ_WRITE_VERIFIED
+
     /** Formats a raw value for display using only documented scaling. */
     fun format(raw: Int): String = when (rawType) {
         RawType.BIT -> enumLabels[raw] ?: raw.toString()

@@ -402,7 +402,7 @@ private fun EmptyConnectionState(
                 LtrText(conn.target, style = MonoStyle, color = p.cyan)
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "ایجاد نشست مدباس فقط‌خواندنی با کنترلر DGP BPC02",
+                    "ایجاد نشست مدباس ایمن با کنترلر DGP BPC02 (خواندن زنده + تنظیمات تاییدشده)",
                     style = MaterialTheme.typography.bodySmall,
                     color = p.textSecondary,
                     textAlign = TextAlign.Center,

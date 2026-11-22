@@ -320,7 +320,7 @@ fun ConnectionHeaderStrip(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
                                 Icon(Icons.Outlined.Lock, contentDescription = null, tint = p.warning, modifier = Modifier.size(12.dp))
-                                Text("فقط خواندن", style = MaterialTheme.typography.labelSmall, color = p.textSecondary)
+                                Text("حالت دستی قفل", style = MaterialTheme.typography.labelSmall, color = p.textSecondary)
                             }
                         }
                     }

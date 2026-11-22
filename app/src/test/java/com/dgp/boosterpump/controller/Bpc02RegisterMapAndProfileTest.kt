@@ -63,6 +63,32 @@ class Bpc02RegisterMapAndProfileTest {
     }
 
     @Test
+    fun configurationWritePoliciesProtectControlStatusAndSlaveId() {
+        val expectedWritable = setOf(
+            4096, 4097, 4098, 4099, 4100, 4101,
+            4106, 4107, 4108, 4109, 4110,
+            4175, 4177, 4178, 4179,
+            4180, 4181, 4182, 4183, 4184, 4185, 4186,
+        )
+        val actualWritable = Bpc02RegisterMap.all
+            .filter { it.access == AccessPolicy.READ_WRITE_VERIFIED }
+            .map { it.documentedAddress }
+            .toSet()
+        assertEquals(expectedWritable, actualWritable)
+
+        // All writable entries must declare explicit min/max bounds
+        Bpc02RegisterMap.all.filter { it.isWritable }.forEach { def ->
+            assertTrue("${def.key} must have minValue <= maxValue", def.minValue != null && def.maxValue != null && def.minValue!! <= def.maxValue!!)
+        }
+
+        // Control Status (4173) and ModBus Address (4195) stay read-only in app
+        assertEquals(AccessPolicy.READ, Bpc02RegisterMap.byKey("control_status").access)
+        assertFalse(Bpc02RegisterMap.byKey("control_status").isWritable)
+        assertEquals(AccessPolicy.READ, Bpc02RegisterMap.byKey("modbus_address").access)
+        assertFalse(Bpc02RegisterMap.byKey("modbus_address").isWritable)
+    }
+
+    @Test
     fun decodeAppliesDocumentedScalesAndFlagsUndocumentedErrorBits() {
         val raw = RawReadings(
             bits = mapOf(

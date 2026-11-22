@@ -94,6 +94,13 @@ class MonitoringViewModel(
 
     fun readHardwareConfiguration() = session.readHardwareConfiguration()
 
+    fun writeHardwareParameter(
+        definition: com.dgp.boosterpump.controller.register.RegisterDefinition,
+        newValue: Int,
+    ) = session.writeHardwareParameter(definition, newValue)
+
+    fun clearLastWriteNotice() = session.clearLastWriteNotice()
+
     fun runReadProbe(function: ReadFunction, pduAddress: Int, quantity: Int) =
         session.runReadProbe(function, pduAddress, quantity)
 

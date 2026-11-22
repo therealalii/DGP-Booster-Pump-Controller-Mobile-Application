@@ -1,10 +1,11 @@
 package com.dgp.boosterpump.modbus
 
-/** One request/response exchange, kept for the diagnostics screen and hardware test records. */
+/** One request/response exchange (read or verified write), kept for the diagnostics terminal log. */
 data class TransactionRecord(
     val timestampMillis: Long,
     val unitId: Int,
-    val function: ReadFunction,
+    val functionCode: Int,
+    val isWrite: Boolean,
     val pduAddress: Int,
     val quantity: Int,
     val requestHex: String,
@@ -14,10 +15,8 @@ data class TransactionRecord(
 )
 
 /**
- * Read-only Modbus client. Exposes FC01-FC04 only; there is no write method by design.
- *
- * @param onTransaction invoked after every exchange (success or failure) with the raw PDUs,
- * so field engineers can record exact requests/responses during hardware verification.
+ * Read-only Modbus client (FC01-FC04). Kept strictly separate from [ModbusWriteClient] so
+ * polling and diagnostic reads can never construct a write frame.
  */
 class ModbusReadClient(
     private val transport: ModbusTransport,
@@ -48,17 +47,17 @@ class ModbusReadClient(
         try {
             response = transport.transact(unitId, request)
             ModbusPdu.checkForException(function, response)
-            onTransaction(record(start, function, address, quantity, request, response, null))
+            onTransaction(record(start, function.code, address, quantity, request, response, null))
             return response
         } catch (e: ModbusException) {
-            onTransaction(record(start, function, address, quantity, request, response, e.message))
+            onTransaction(record(start, function.code, address, quantity, request, response, e.message))
             throw e
         }
     }
 
     private fun record(
         start: Long,
-        function: ReadFunction,
+        fc: Int,
         address: Int,
         quantity: Int,
         request: ByteArray,
@@ -67,7 +66,8 @@ class ModbusReadClient(
     ) = TransactionRecord(
         timestampMillis = start,
         unitId = unitId,
-        function = function,
+        functionCode = fc,
+        isWrite = false,
         pduAddress = address,
         quantity = quantity,
         requestHex = request.toHex(),

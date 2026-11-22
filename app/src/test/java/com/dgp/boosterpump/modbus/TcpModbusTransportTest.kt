@@ -139,6 +139,101 @@ class TcpModbusTransportTest {
         }
     }
 
+    @Test
+    fun modbusTcpMbapWritesSingleCoilAndRegisterAndLogsWriteTransactions() = runBlocking {
+        val server = ServerSocket(0, 1, InetAddress.getLoopbackAddress())
+        val worker = thread {
+            server.accept().use { s ->
+                val inp = s.getInputStream()
+                val out = s.getOutputStream()
+
+                // Echo two write requests verbatim (FC05 then FC06)
+                repeat(2) {
+                    val hdr = readN(inp, 7)
+                    val len = ((hdr[4].toInt() and 0xFF) shl 8) or (hdr[5].toInt() and 0xFF)
+                    val pdu = readN(inp, len - 1)
+                    out.write(mbap(hdr[0], hdr[1], hdr[6], pdu))
+                    out.flush()
+                }
+            }
+        }
+
+        val transport = TcpModbusTransport(
+            host = "127.0.0.1",
+            port = server.localPort,
+            framing = Framing.MODBUS_TCP,
+            connectTimeoutMs = 1500,
+            responseTimeoutMs = 1500,
+        )
+        val logged = mutableListOf<TransactionRecord>()
+        try {
+            transport.open()
+            val writeClient = ModbusWriteClient(transport, unitId = 1, onTransaction = { logged += it })
+            writeClient.writeSingleCoil(address = 4101, value = false)
+            writeClient.writeSingleRegister(address = 4175, value = 41)
+
+            assertEquals(2, logged.size)
+            assertEquals(0x05, logged[0].functionCode)
+            assertTrue(logged[0].isWrite)
+            assertEquals(null, logged[0].error)
+            assertEquals(0x06, logged[1].functionCode)
+            assertTrue(logged[1].isWrite)
+            assertEquals(null, logged[1].error)
+        } finally {
+            transport.close()
+            server.close()
+            worker.join(2000)
+        }
+    }
+
+    @Test
+    fun rtuOverTcpWriteSingleRegisterHandles8ByteEchoAndCrc() = runBlocking {
+        val server = ServerSocket(0, 1, InetAddress.getLoopbackAddress())
+        val worker = thread {
+            server.accept().use { s ->
+                val inp = s.getInputStream()
+                val out = s.getOutputStream()
+                // Request 1: 8-byte FC06 -> echo exact 8 bytes back
+                val req1 = readN(inp, 8)
+                assertTrue(Crc16.isValid(req1))
+                out.write(req1)
+                out.flush()
+
+                // Request 2: 8-byte FC05 -> reply with 5-byte Modbus exception 0x85 0x02
+                val req2 = readN(inp, 8)
+                assertTrue(Crc16.isValid(req2))
+                out.write(Crc16.append(byteArrayOf(req2[0], 0x85.toByte(), 0x02)))
+                out.flush()
+            }
+        }
+
+        val transport = TcpModbusTransport(
+            host = "127.0.0.1",
+            port = server.localPort,
+            framing = Framing.RTU_OVER_TCP,
+            connectTimeoutMs = 1500,
+            responseTimeoutMs = 1500,
+        )
+        try {
+            transport.open()
+            val writeClient = ModbusWriteClient(transport, unitId = 1)
+            writeClient.writeSingleRegister(address = 4175, value = 41)
+
+            try {
+                writeClient.writeSingleCoil(address = 56, value = true)
+                fail("Expected ExceptionResponse")
+            } catch (e: ModbusException.ExceptionResponse) {
+                assertEquals(0x05, e.functionCode)
+                assertEquals(0x02, e.exceptionCode)
+                assertTrue("Socket should stay open after Modbus exception", transport.isOpen)
+            }
+        } finally {
+            transport.close()
+            server.close()
+            worker.join(2000)
+        }
+    }
+
     private fun mbap(tidHi: Byte, tidLo: Byte, unit: Byte, pdu: ByteArray): ByteArray {
         val len = pdu.size + 1
         return byteArrayOf(tidHi, tidLo, 0, 0, (len ushr 8).toByte(), len.toByte(), unit) + pdu
