@@ -11,10 +11,13 @@ import com.dgp.boosterpump.modbus.TransactionRecord
 import com.dgp.boosterpump.session.ConfigSnapshotState
 import com.dgp.boosterpump.session.ConnectionState
 import com.dgp.boosterpump.session.ControllerSession
+import com.dgp.boosterpump.session.PressureSample
 import com.dgp.boosterpump.session.ProbeResult
 import com.dgp.boosterpump.simulation.SimulationScenario
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -24,6 +27,7 @@ data class MonitoringUiState(
     val activeConfig: GatewayConfig? = null,
     val connectionState: ConnectionState = ConnectionState.Disconnected,
     val snapshot: ControllerSnapshot? = null,
+    val pressureHistory: List<PressureSample> = emptyList(),
     val simulationScenario: SimulationScenario = SimulationScenario.NORMAL_DUTY,
     val transactions: List<TransactionRecord> = emptyList(),
     val configSnapshot: ConfigSnapshotState = ConfigSnapshotState(),
@@ -34,6 +38,14 @@ class MonitoringViewModel(
     private val configRepository: GatewayConfigRepository,
     private val session: ControllerSession,
 ) : ViewModel() {
+
+    /** Industrial control-room dark theme is enabled by default; users can toggle daylight mode. */
+    private val _darkTheme = MutableStateFlow(true)
+    val darkTheme: StateFlow<Boolean> = _darkTheme.asStateFlow()
+
+    fun toggleDarkTheme() {
+        _darkTheme.value = !_darkTheme.value
+    }
 
     private val coreFlow = combine(
         configRepository.config,
@@ -53,11 +65,13 @@ class MonitoringViewModel(
 
     val uiState: StateFlow<MonitoringUiState> = combine(
         coreFlow,
+        session.pressureHistory,
         session.transactions,
         session.configSnapshot,
         session.probeResult,
-    ) { core, tx, cfgSnap, probe ->
+    ) { core, history, tx, cfgSnap, probe ->
         core.copy(
+            pressureHistory = history,
             transactions = tx,
             configSnapshot = cfgSnap,
             probeResult = probe,

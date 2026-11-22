@@ -48,6 +48,7 @@ class ControllerSessionTest {
             assertTrue(snap1.pressureBar!! in 3.5..5.0)
             assertTrue(snap1.alarms.isEmpty())
             assertTrue(session.transactions.value.isNotEmpty())
+            assertTrue("Pressure history must record live samples", session.pressureHistory.value.isNotEmpty())
 
             // Switch to floater alarm scenario and confirm alarm appears on next poll
             session.setSimulationScenario(SimulationScenario.FLOATER_LOW_ALARM)

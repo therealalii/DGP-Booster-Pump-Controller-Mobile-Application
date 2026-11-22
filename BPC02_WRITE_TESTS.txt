@@ -1,0 +1,240 @@
+BPC02 — MODBUS WRITE FUNCTION VERIFICATION CHECKLIST
+====================================================
+(ISOLATED BENCH TEST ONLY — DO NOT RUN ON A LIVE PUMP INSTALLATION)
+
+CONNECTION SETTINGS (ALREADY VERIFIED)
+--------------------------------------
+Connection: Serial COM4 (RS485) — later repeat over Samin ES 487 Modbus TCP
+Protocol:   Modbus RTU
+Serial:     9600 baud, 8 data bits, No parity, 1 stop bit (9600 8N1)
+Slave ID:   1
+Addressing: Zero-based decimal PDU address (offset = 0)
+
+CRITICAL SAFETY RULES BEFORE STARTING
+-------------------------------------
+1. ISOLATED BENCH ONLY: Disconnect ALL pump motor power / contactors /
+   inverter run outputs so no physical motor or valve can energize.
+2. RECORD ORIGINAL VALUES FIRST: Always read back before writing, and
+   immediately restore every changed register to its original value.
+3. WATCH FOR THE BPC02 4-BYTE REJECTION QUIRK:
+   Previously, unsupported functions (FC02, FC04) returned a 4-byte frame
+   with valid CRC (e.g. 01 02 81 E1, 01 04 01 E3). If a write function
+   returns a 4-byte frame (01 05 XX XX, 01 06 XX XX, 01 0F XX XX, or
+   01 10 XX XX), that function code is NOT supported by BPC02 firmware.
+4. DO NOT WRITE TO ADDRESS 4195 (Modbus Slave ID) during these tests, or
+   you will lose communication at Slave ID 1.
+5. DO NOT WRITE TO READ-ONLY STATUS REGISTERS (Coils 0–33, Words 0–45, 80).
+
+
+====================================================
+SUMMARY OF ALL DOCUMENTED WRITABLE BPC02 REGISTERS
+====================================================
+
+A. Manual Mode & Live Output Control (BPC-02.pdf pp. 26–28)
+   - Word 99      : Multi Function Register (1234 = Enter Manual, 0 = Auto)
+   - Coils 50–59  : Output 0–9 Manual (0 = OFF, 1 = ON)
+   - Words 50–51  : Analog Output 0–1 Manual (0–500, unit 0.1 Hz -> 0.0–50.0 Hz)
+
+B. Hardware Configuration Coils (BPC-02.pdf pp. 26–27) — DANGEROUS ON LIVE SITE
+   - Coils 4096–4101 : Pump 1–6 Activation (0 = Disable, 1 = Enable)
+   - Coil  4106      : Control Phase Activation (0 = Disable, 1 = Enable)
+   - Coil  4107      : OFF Changing Activation (0 = Disable, 1 = Enable)
+   - Coil  4108      : Time Changing Activation (0 = Disable, 1 = Enable)
+   - Coil  4109      : Reserve Automatic Activation (0 = Disable, 1 = Enable)
+   - Coil  4110      : Reserve Automatic Type (0 = NO, 1 = NC)
+
+C. Hardware Configuration Holding Registers (BPC-02.pdf p. 28) — DANGEROUS ON LIVE SITE
+   - Word 4173       : Control Status (0–1)
+   - Word 4175       : Sleep Gap (1–100, unit 0.01 Bar)
+   - Word 4177       : Auto Service Off Time (1–9999, Hour)
+   - Word 4178       : Auto Service On Time (1–999, 0.1 Sec)  [PDF typo: 417B]
+   - Word 4179       : Auto Service Interval (1–99, Min)
+   - Words 4180–4183 : MFI1–4 Type (0:Disable, 1:PS, 2:MP, 3:EMG, 4:CP, 5:FL) [PDF: 41B0]
+   - Words 4184–4186 : MFO1–3 Type (0:Disable, 1:E Valve, 2:Fan, 3:Alarm, 4:DC3, 5:MC3)
+   - Word 4195       : ModBus Address (Slave ID — DO NOT CHANGE during bench test)
+
+CANDIDATE MODBUS WRITE FUNCTION CODES TO IDENTIFY
+-------------------------------------------------
+- Coils (Bit table):
+    FC05 (0x05) = Write Single Coil (ON = 0xFF00, OFF = 0x0000)
+    FC15 (0x0F) = Write Multiple Coils
+- Holding Registers (Word table):
+    FC06 (0x06) = Write Single Register
+    FC16 (0x10) = Write Multiple Registers
+
+
+====================================================
+PART 1 — MANUAL MODE CONTROL (TESTS W01–W04)
+====================================================
+
+TEST W01 — ENTER & EXIT MANUAL MODE (ADDRESS 99)
+------------------------------------------------
+Goal: Confirm whether Address 99 uses FC06, FC16, or both, and confirm
+      whether Address 4173 (Control Status) reflects Manual vs Auto mode.
+
+Step W01-1 (Baseline read):
+  Read FC03 Addr 99 Qty 1   -> TX: 01 03 00 63 00 01 74 14  (expected 0)
+  Read FC03 Addr 4173 Qty 1 -> TX: 01 03 10 4D 00 01 10 DD  (expected 0)
+  Rx (99):
+  Rx (4173):
+
+Step W01-2 (Enter Manual Mode via FC06: write 1234 = 0x04D2 to Addr 99):
+  Function: 06 — Write Single Register
+  Address:  99 (decimal)
+  Value:    1234
+  Exact TX: 01 06 00 63 04 D2 FB 49
+  Expected standard reply: echo of request (01 06 00 63 04 D2 FB 49)
+  Rx:
+  Did controller LCD switch to Manual Mode? (Yes/No):
+  Read back FC03 Addr 99 Qty 1   -> Rx:
+  Read back FC03 Addr 4173 Qty 1 -> Rx:  (Did 4173 change from 0 to 1?)
+
+Step W01-3 (ONLY if FC06 failed — try FC16 / 0x10):
+  Function: 16 (0x10) — Write Multiple Registers
+  Address:  99, Quantity: 1, Value: 1234
+  Exact TX: 01 10 00 63 00 01 02 04 D2 2D 5E
+  Rx:
+  Did controller LCD switch to Manual Mode? (Yes/No):
+
+Step W01-4 (IMMEDIATELY test Exit Manual Mode: write 0 to Addr 99):
+  Via FC06 -> Exact TX: 01 06 00 63 00 00 79 D4
+  (or FC16 -> Exact TX: 01 10 00 63 00 01 02 00 00 AF C3)
+  Rx:
+  Did controller LCD return to Automatic Mode? (Yes/No):
+  Read back FC03 Addr 99 Qty 1   -> Rx:
+  Read back FC03 Addr 4173 Qty 1 -> Rx:
+
+
+TEST W02 — MANUAL ANALOG SPEED OUTPUTS (WORDS 50 & 51)
+------------------------------------------------------
+Precondition: Enter Manual Mode first (W01-2). NO drive/motor connected!
+Goal: Confirm FC06/FC16 on Word 50 & Word 51 AND observe if Word 10
+      (Drive Frequency) changes so we also learn Word 10's exact scale!
+
+Step W02-1 (Write 50 = 5.0 Hz to Word 50 via FC06):
+  Function: 06 — Write Single Register, Addr 50, Value 50 (0x0032)
+  Exact TX: 01 06 00 32 00 32 A9 D0
+  (If FC06 rejected, try FC16: 01 10 00 32 00 01 02 00 32 23 97)
+  Rx:
+  Read back FC03 Addr 50 Qty 2 -> Rx:
+  Read back FC03 Addr 10 Qty 1 (Drive Freq) -> Rx:
+  LCD drive speed displayed:
+
+Step W02-2 (Restore Word 50 = 0):
+  Exact TX (FC06): 01 06 00 32 00 00 28 05
+  Rx:
+
+Step W02-3 (Write 50 = 5.0 Hz to Word 51 via FC06, then restore 0):
+  Write 50  -> Exact TX: 01 06 00 33 00 32 F8 10   Rx:
+  Read back FC03 Addr 50 Qty 2 -> Rx:
+  Restore 0 -> Exact TX: 01 06 00 33 00 00 79 C5   Rx:
+
+
+TEST W03 — MANUAL DIGITAL OUTPUT COIL 50 (OUTPUT 0 MANUAL)
+----------------------------------------------------------
+Precondition: Controller is in Manual Mode (99 = 1234). NO loads connected!
+Goal: Confirm whether Coils 50–59 accept FC05, FC15, or both, and confirm
+      Output 0 relay / Coil 0 status follows Coil 50.
+
+Step W03-1 (Turn ON Coil 50 via FC05):
+  Function: 05 — Write Single Coil, Addr 50, Value ON (0xFF00)
+  Exact TX: 01 05 00 32 FF 00 2D F5
+  Expected standard reply: echo (01 05 00 32 FF 00 2D F5)
+  Rx:
+  Did physical Relay / LED Output 0 turn ON? (Yes/No):
+  Read back FC01 Addr 50 Qty 10 -> Rx:
+  Read back FC01 Addr 0 Qty 10  -> Rx: (Did Bit 0 Output 0 Status turn 1?)
+
+Step W03-2 (Turn OFF Coil 50 via FC05):
+  Function: 05 — Write Single Coil, Addr 50, Value OFF (0x0000)
+  Exact TX: 01 05 00 32 00 00 6C 05
+  Rx:
+  Did Relay / LED Output 0 turn OFF? (Yes/No):
+
+Step W03-3 (ONLY if FC05 failed — try FC15 / 0x0F):
+  ON  -> Exact TX: 01 0F 00 32 00 01 01 01 D6 93   Rx:
+  OFF -> Exact TX: 01 0F 00 32 00 01 01 00 17 53   Rx:
+
+Step W03-4 (EXIT MANUAL MODE immediately!):
+  Write 0 to Addr 99 -> Exact TX: 01 06 00 63 00 00 79 D4
+  Rx:
+  Confirm controller is back in Automatic Mode.
+
+
+TEST W04 — SAFETY INTERLOCK CHECK (MANUAL WRITE IN AUTOMATIC MODE)
+------------------------------------------------------------------
+Precondition: Controller is in AUTOMATIC Mode (Addr 99 = 0).
+Goal: Know whether BPC02 blocks manual output writes when NOT in manual mode.
+
+  Send FC06 Addr 50 = 50 -> Exact TX: 01 06 00 32 00 32 A9 D0
+  Rx:
+  Read back FC03 Addr 50 Qty 1 -> Rx: (Did it stay 0 or change to 50?)
+  If it changed to 50, immediately restore 0: 01 06 00 32 00 00 28 05
+
+
+====================================================
+PART 2 — HARDWARE CONFIGURATION WRITES (TESTS W05–W07)
+====================================================
+IMPORTANT: Read original value first and restore it immediately after!
+
+TEST W05 — HARDWARE WORD WRITE: SLEEP GAP (WORD 4175)
+-----------------------------------------------------
+Previous captured value: 40 (0.40 bar).
+
+Step W05-1 (Write 41 = 0.41 bar via FC06):
+  Exact TX: 01 06 10 4F 00 29 7D 03
+  Rx:
+  Read back FC03 Addr 4175 Qty 1 -> Rx:
+  Check controller LCD menu (does Sleep Gap show 0.41 bar?):
+
+Step W05-2 (Restore original value 40 = 0.40 bar):
+  Exact TX: 01 06 10 4F 00 28 BC C3
+  Rx:
+  Read back FC03 Addr 4175 Qty 1 -> Rx: (Confirm restored to 40)
+
+
+TEST W06 — HARDWARE COIL WRITE: PUMP 6 ACTIVATION (COIL 4101)
+-------------------------------------------------------------
+Previous captured value: 1 (Enabled).
+
+Step W06-1 (Disable Pump 6 via FC05):
+  Exact TX: 01 05 10 05 00 00 D9 0B
+  Rx:
+  Read back FC01 Addr 4096 Qty 6 -> Rx: (Confirm bit 5 / 4101 became 0)
+  Check controller LCD Pump Service menu:
+
+Step W06-2 (Restore Pump 6 = Enabled):
+  Exact TX: 01 05 10 05 FF 00 98 FB
+  Rx:
+  Read back FC01 Addr 4096 Qty 6 -> Rx: (Confirm restored to 0xFF / bit 5 = 1)
+
+
+TEST W07 — AUTO SERVICE WRITE & FC16 MULTI-WRITE CHECK (4177–4179)
+------------------------------------------------------------------
+Previous captured values: 4177 = 159 h, 4178 = 33 (3.3 s), 4179 = 11 min.
+
+Step W07-1 (Write 4179 = 12 min via FC06, verify, then restore 11 min):
+  Write 12   -> Exact TX: 01 06 10 53 00 0C 7D 1E   Rx:
+  Read back FC03 4177 Qty 3 -> Rx:
+  Restore 11 -> Exact TX: 01 06 10 53 00 0B 3C DC   Rx:
+
+Step W07-2 (Safe FC16 check — writes the EXACT SAME values 159, 33, 11):
+  Function: 16 (0x10), Addr 4177, Qty 3, Values [159, 33, 11]
+  Exact TX: 01 10 10 51 00 03 06 00 9F 00 21 00 0B 65 15
+  Rx:
+  (Determines whether BPC02 supports FC16 multi-register writes safely.)
+
+
+====================================================
+PART 3 — FINAL SIGN-OFF CHECKLIST FOR WRITE SUPPORT
+====================================================
+[ ] W01: FC06 / FC16 confirmed for Address 99 (Enter 1234 & Exit 0).
+[ ] W01: Behavior of Address 4173 (Control Status) during Manual Mode recorded.
+[ ] W02: FC06 / FC16 confirmed for Analog Manual Outputs 50–51 (+ Word 10 check).
+[ ] W03: FC05 / FC15 confirmed for Manual Digital Output Coils 50–59.
+[ ] W04: Automatic-mode interlock behavior documented.
+[ ] W05: Hardware Word write verified (4175) and restored to 40.
+[ ] W06: Hardware Coil write verified (4101) and restored to 1.
+[ ] W07: Auto Service write & FC16 support verified and restored.
+[ ] Controller returned to Automatic Mode (Addr 99 = 0) with all originals restored.
+[ ] Raw Tx/Rx logs saved and shared before enabling live writes in the Android app.

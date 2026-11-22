@@ -6,12 +6,23 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Memory
+import androidx.compose.material.icons.outlined.Router
+import androidx.compose.material.icons.outlined.Save
+import androidx.compose.material.icons.outlined.SettingsEthernet
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -26,9 +37,12 @@ import com.dgp.boosterpump.gateway.DataSourceMode
 import com.dgp.boosterpump.gateway.ProtocolMapping
 import com.dgp.boosterpump.modbus.Framing
 import com.dgp.boosterpump.modbus.ReadFunction
+import com.dgp.boosterpump.ui.PersianLabels
 import com.dgp.boosterpump.ui.components.BadgeTone
 import com.dgp.boosterpump.ui.components.NoticeBox
-import com.dgp.boosterpump.ui.components.SectionCard
+import com.dgp.boosterpump.ui.components.ScadaPanel
+import com.dgp.boosterpump.ui.components.StatusBadge
+import com.dgp.boosterpump.ui.theme.LocalScadaPalette
 import com.dgp.boosterpump.viewmodel.GatewayFormState
 import com.dgp.boosterpump.viewmodel.GatewaySettingsViewModel
 
@@ -39,67 +53,73 @@ fun GatewaySettingsScreen(
     viewModel: GatewaySettingsViewModel,
     onSavedAndConnected: () -> Unit,
 ) {
+    val p = LocalScadaPalette.current
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            SectionCard(
-                title = "Data Source & Controller Model",
-                subtitle = "Simulation mode exercises the full Modbus decoder without physical hardware",
+            ScadaPanel(
+                title = "منبع داده و مدل کنترلر",
+                subtitle = "انتخاب بین اتصال واقعی به مبدل سمین ES 487 یا شبیه‌سازی کامل بدون سخت‌افزار",
+                icon = Icons.Outlined.Memory,
+                accentColor = p.cyan,
             ) {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     DataSourceMode.entries.forEach { mode ->
                         FilterChip(
                             selected = form.mode == mode,
                             onClick = { viewModel.updateMode(mode) },
-                            label = { Text(mode.label) },
+                            label = { Text(PersianLabels.modeLabel(mode)) },
                         )
                     }
                 }
                 if (form.mode == DataSourceMode.SIMULATION) {
                     NoticeBox(
-                        text = "Simulation mode generates synthetic BPC02 readings in memory. A persistent banner is always shown so simulated data is never mistaken for a real controller.",
+                        text = "در حالت شبیه‌سازی، داده‌های BPC02 درون حافظه تولید شده و از کل لایه رمزگشایی مدباس عبور می‌کنند. نوار هشدار نارنجی همواره بالای صفحه نمایش داده می‌شود تا داده‌های شبیه‌سازی با دستگاه واقعی اشتباه نشوند.",
                         tone = BadgeTone.WARNING,
                     )
                 }
 
-                Text("Controller model", style = MaterialTheme.typography.labelMedium)
+                Text("مدل کنترلر بوستر پمپ", style = MaterialTheme.typography.labelMedium, color = p.textSecondary)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ControllerModel.entries.forEach { model ->
                         FilterChip(
                             selected = form.controllerModel == model,
                             onClick = { viewModel.updateModel(model) },
                             enabled = model.isSupported,
-                            label = {
-                                Text(if (model.isSupported) model.label else "${model.label} (planned)")
-                            },
+                            label = { Text(PersianLabels.modelLabel(model)) },
                         )
                     }
                 }
                 Text(
-                    form.controllerModel.note,
+                    PersianLabels.modelNote(form.controllerModel),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = p.textSecondary,
                 )
             }
         }
 
         if (form.mode == DataSourceMode.LIVE) {
             item {
-                SectionCard(
-                    title = "Samin ES 487 Gateway Connection",
-                    subtitle = "RS485-to-Ethernet Modbus TCP/IP converter (5–48 VDC, Web UI, Server/Client, DHCP/Static)",
+                ScadaPanel(
+                    title = "تنظیمات مبدل مدباس سمین ES 487",
+                    subtitle = "مبدل صنعتی RS485 به Modbus TCP/IP (تغذیه ۵ تا ۴۸ ولت DC، تنظیمات تحت وب)",
+                    icon = Icons.Outlined.Router,
+                    accentColor = p.cyan,
                 ) {
                     OutlinedTextField(
                         value = form.host,
                         onValueChange = viewModel::updateHost,
-                        label = { Text("Gateway IP address or hostname") },
-                        placeholder = { Text("e.g. 192.168.1.50 (use ES 487 IP Finder)") },
+                        label = { Text("آدرس IP یا نام میزبان مبدل ES 487") },
+                        placeholder = { Text("مثلاً 192.168.1.50 (از نرم‌افزار IP Finder سمین)") },
                         singleLine = true,
                         isError = ConfigValidation.Field.HOST in form.errors,
-                        supportingText = form.errors[ConfigValidation.Field.HOST]?.let { err -> { Text(err) } },
+                        supportingText = form.errors[ConfigValidation.Field.HOST]?.let { err ->
+                            { Text(PersianLabels.validationError(ConfigValidation.Field.HOST, err)) }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                     )
 
@@ -107,9 +127,13 @@ fun GatewaySettingsScreen(
                         OutlinedTextField(
                             value = form.portText,
                             onValueChange = viewModel::updatePort,
-                            label = { Text("TCP Port") },
+                            label = { Text("پورت TCP") },
                             supportingText = {
-                                Text(form.errors[ConfigValidation.Field.PORT] ?: "Confirm in ES 487 Web UI (often 502)")
+                                Text(
+                                    form.errors[ConfigValidation.Field.PORT]?.let {
+                                        PersianLabels.validationError(ConfigValidation.Field.PORT, it)
+                                    } ?: "پورت وب مبدل (معمولاً 502)",
+                                )
                             },
                             singleLine = true,
                             isError = ConfigValidation.Field.PORT in form.errors,
@@ -119,9 +143,13 @@ fun GatewaySettingsScreen(
                         OutlinedTextField(
                             value = form.unitIdText,
                             onValueChange = viewModel::updateUnitId,
-                            label = { Text("Unit / Slave ID") },
+                            label = { Text("شناسه Slave / Unit ID") },
                             supportingText = {
-                                Text(form.errors[ConfigValidation.Field.UNIT_ID] ?: "BPC02 Network menu (verified: 1)")
+                                Text(
+                                    form.errors[ConfigValidation.Field.UNIT_ID]?.let {
+                                        PersianLabels.validationError(ConfigValidation.Field.UNIT_ID, it)
+                                    } ?: "منوی Network (تاییدشده: 1)",
+                                )
                             },
                             singleLine = true,
                             isError = ConfigValidation.Field.UNIT_ID in form.errors,
@@ -130,69 +158,71 @@ fun GatewaySettingsScreen(
                         )
                     }
 
-                    Text("TCP Framing (match ES 487 working mode)", style = MaterialTheme.typography.labelMedium)
+                    Text("حالت فریم‌بندی شبکه (مطابق تنظیمات وب مبدل ES 487)", style = MaterialTheme.typography.labelMedium, color = p.textSecondary)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Framing.entries.forEach { framing ->
                             FilterChip(
                                 selected = form.framing == framing,
                                 onClick = { viewModel.updateFraming(framing) },
-                                label = { Text(framing.label) },
+                                label = { Text(PersianLabels.framingLabel(framing)) },
                             )
                         }
                     }
                     Text(
-                        form.framing.description,
+                        PersianLabels.framingDescription(form.framing),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = p.textSecondary,
                     )
 
                     NoticeBox(
-                        text = "Configure the Samin ES 487 via its web browser interface: Mode = TCP Server (Modbus TCP ↔ Modbus RTU), RS485 serial port = 9600 baud, 8 data bits, No parity, 1 stop bit (9600 8N1) to match the DGP BPC02.",
-                        tone = BadgeTone.NEUTRAL,
+                        text = "در صفحه تنظیمات وب مبدل سمین ES 487 مطمئن شوید: حالت کاری = TCP Server (تبدیل Modbus TCP به Modbus RTU) و پورت RS485 روی نرخ ۹۶۰۰ بیت‌برثانیه، ۸ بیت داده، بدون Parity و ۱ بیت Stop (9600 8N1) تنظیم شده باشد.",
+                        tone = BadgeTone.INFO,
                     )
                 }
             }
         }
 
         item {
-            SectionCard(
-                title = "Modbus Table Mapping (Hardware-Verified on BPC02)",
-                subtitle = "BPC02 hardware tests confirmed FC01 (Bits), FC03 (Words), and zero-based offset 0",
+            ScadaPanel(
+                title = "پروفایل پروتکل مدباس BPC02",
+                subtitle = "توابع تاییدشده روی کنترلر واقعی — قابل تغییر برای عیب‌یابی",
+                icon = Icons.Outlined.SettingsEthernet,
+                accentColor = p.ok,
+                trailing = { StatusBadge("تایید سخت‌افزاری", BadgeTone.OK) },
             ) {
                 NoticeBox(
-                    text = "Hardware verified on BPC02: Bit addresses require FC01 (Read Coils) and Word addresses require FC03 (Read Holding Registers) with Offset 0. " +
-                        "FC02 and FC04 are rejected by BPC02 firmware with non-standard 4-byte frames (01 02 81 E1 / 01 04 01 E3) — keep FC01 + FC03 + Offset 0 selected for BPC02.",
+                    text = "در تست سخت‌افزاری BPC02 تایید شد که جدول Bit فقط با FC01 و جدول Word فقط با FC03 و آفست 0 کار می‌کند. توابع FC02 و FC04 توسط کنترلر رد می‌شوند — برای BPC02 مقادیر پیش‌فرض (FC01 + FC03 + آفست 0) را حفظ کنید.",
                     tone = BadgeTone.OK,
                 )
 
-                Text("Bit Address table (0–33)", style = MaterialTheme.typography.labelMedium)
+                Text("تابع خواندن جدول Bit (آدرس‌های ۰–۳۳)", style = MaterialTheme.typography.labelMedium, color = p.textSecondary)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(ReadFunction.READ_COILS, ReadFunction.READ_DISCRETE_INPUTS).forEach { fn ->
                         FilterChip(
                             selected = form.bitReadFunction == fn,
                             onClick = { viewModel.updateBitFunction(fn) },
-                            label = { Text(fn.label) },
+                            label = { Text(PersianLabels.readFunctionShort(fn)) },
                         )
                     }
                 }
 
-                Text("Word Address table (0–80)", style = MaterialTheme.typography.labelMedium)
+                Text("تابع خواندن جدول Word (آدرس‌های ۰–۸۰)", style = MaterialTheme.typography.labelMedium, color = p.textSecondary)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(ReadFunction.READ_HOLDING_REGISTERS, ReadFunction.READ_INPUT_REGISTERS).forEach { fn ->
                         FilterChip(
                             selected = form.wordReadFunction == fn,
                             onClick = { viewModel.updateWordFunction(fn) },
-                            label = { Text(fn.label) },
+                            label = { Text(PersianLabels.readFunctionShort(fn)) },
                         )
                     }
                 }
 
-                Text("PDU Address Offset", style = MaterialTheme.typography.labelMedium)
+                Text("آفست آدرس PDU", style = MaterialTheme.typography.labelMedium, color = p.textSecondary)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ProtocolMapping.ALLOWED_OFFSETS.forEach { offset ->
                         val label = when (offset) {
-                            0 -> "0 (printed = PDU)"
-                            -1 -> "-1 (1-based → 0-based)"
+                            0 -> "0 (تاییدشده)"
+                            -1 -> "-1 (مبنای ۱ به ۰)"
                             else -> "+1"
                         }
                         FilterChip(
@@ -206,18 +236,22 @@ fun GatewaySettingsScreen(
         }
 
         item {
-            SectionCard(
-                title = "Polling & Timeouts",
-                subtitle = "Keep poll interval ≥ 1000 ms to avoid saturating the 9600 bps RS485 bus",
+            ScadaPanel(
+                title = "زمان‌بندی نمونه‌برداری و Timeout",
+                subtitle = "برای جلوگیری از اشباع باس RS485 در نرخ ۹۶۰۰، بازه نمونه‌برداری ≥ ۱۰۰۰ میلی‌ثانیه توصیه می‌شود",
+                icon = Icons.Outlined.Timer,
+                accentColor = p.cyan,
             ) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(
                         value = form.pollIntervalText,
                         onValueChange = viewModel::updatePollInterval,
-                        label = { Text("Poll interval (ms)") },
+                        label = { Text("بازه خوانش (ms)") },
                         singleLine = true,
                         isError = ConfigValidation.Field.POLL_INTERVAL in form.errors,
-                        supportingText = form.errors[ConfigValidation.Field.POLL_INTERVAL]?.let { e -> { Text(e) } },
+                        supportingText = form.errors[ConfigValidation.Field.POLL_INTERVAL]?.let { e ->
+                            { Text(PersianLabels.validationError(ConfigValidation.Field.POLL_INTERVAL, e)) }
+                        },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(1f),
                     )
@@ -225,10 +259,12 @@ fun GatewaySettingsScreen(
                         OutlinedTextField(
                             value = form.responseTimeoutText,
                             onValueChange = viewModel::updateResponseTimeout,
-                            label = { Text("Response timeout (ms)") },
+                            label = { Text("مهلت پاسخ (ms)") },
                             singleLine = true,
                             isError = ConfigValidation.Field.RESPONSE_TIMEOUT in form.errors,
-                            supportingText = form.errors[ConfigValidation.Field.RESPONSE_TIMEOUT]?.let { e -> { Text(e) } },
+                            supportingText = form.errors[ConfigValidation.Field.RESPONSE_TIMEOUT]?.let { e ->
+                                { Text(PersianLabels.validationError(ConfigValidation.Field.RESPONSE_TIMEOUT, e)) }
+                            },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.weight(1f),
                         )
@@ -238,10 +274,12 @@ fun GatewaySettingsScreen(
                     OutlinedTextField(
                         value = form.connectTimeoutText,
                         onValueChange = viewModel::updateConnectTimeout,
-                        label = { Text("TCP connect timeout (ms)") },
+                        label = { Text("مهلت اتصال سوکت TCP (میلی‌ثانیه)") },
                         singleLine = true,
                         isError = ConfigValidation.Field.CONNECT_TIMEOUT in form.errors,
-                        supportingText = form.errors[ConfigValidation.Field.CONNECT_TIMEOUT]?.let { e -> { Text(e) } },
+                        supportingText = form.errors[ConfigValidation.Field.CONNECT_TIMEOUT]?.let { e ->
+                            { Text(PersianLabels.validationError(ConfigValidation.Field.CONNECT_TIMEOUT, e)) }
+                        },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -252,7 +290,8 @@ fun GatewaySettingsScreen(
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 form.statusMessage?.let { msg ->
-                    NoticeBox(text = msg, tone = BadgeTone.OK)
+                    val faMsg = if (msg.contains("Connecting")) "تنظیمات ذخیره شد — در حال اتصال…" else "تنظیمات با موفقیت ذخیره شد."
+                    NoticeBox(text = faMsg, tone = BadgeTone.OK)
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -260,15 +299,19 @@ fun GatewaySettingsScreen(
                 ) {
                     Button(
                         onClick = { viewModel.save(andConnect = true, onConnected = onSavedAndConnected) },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1.2f),
                     ) {
-                        Text("Save & Connect")
+                        Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("ذخیره و اتصال")
                     }
                     OutlinedButton(
                         onClick = { viewModel.save(andConnect = false) },
-                        modifier = Modifier.weight(0.7f),
+                        modifier = Modifier.weight(0.8f),
                     ) {
-                        Text("Save Only")
+                        Icon(Icons.Outlined.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text("فقط ذخیره")
                     }
                 }
             }

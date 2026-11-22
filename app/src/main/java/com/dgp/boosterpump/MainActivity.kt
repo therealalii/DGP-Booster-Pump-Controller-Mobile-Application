@@ -5,6 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dgp.boosterpump.ui.DgpApp
 import com.dgp.boosterpump.ui.theme.DgpTheme
 import com.dgp.boosterpump.viewmodel.GatewaySettingsViewModel
@@ -26,10 +28,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            DgpTheme {
+            val darkTheme by monitoringViewModel.darkTheme.collectAsStateWithLifecycle()
+            DgpTheme(darkTheme = darkTheme) {
                 DgpApp(
                     monitoringViewModel = monitoringViewModel,
                     settingsViewModel = settingsViewModel,
+                    darkTheme = darkTheme,
+                    onToggleTheme = monitoringViewModel::toggleDarkTheme,
                 )
             }
         }

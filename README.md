@@ -97,6 +97,7 @@ The debug APK is generated at `app/build/outputs/apk/debug/app-debug.apk`.
 ## 5. Repository Documentation
 
 - [`BPC02_REGISTER_MAP.pdf`](BPC02_REGISTER_MAP.pdf) & [`BPC02_REGISTER_MAP.md`](BPC02_REGISTER_MAP.md) — Complete hardware-verified BPC02 Modbus register map & Samin ES 487 setup
+- [`BPC02_WRITE_TESTS.txt`](BPC02_WRITE_TESTS.txt) — Isolated bench-only Modbus write verification test plan (`FC05`/`FC06`/`FC15`/`FC16`) required before unlocking live control commands
 - [`BPC02_TEST_RESULTS.md`](BPC02_TEST_RESULTS.md), `REMAINING 01 ... .txt`, `REMAINING 03 ... .txt` — Raw Modbus RTU hardware test logs on COM4
 - `BPC-02.pdf` — DGP BPC-02 User Manual (primary controller reference)
 - `DGP_BPC02_Modbus_Research_Findings.txt` — Initial Modbus protocol audit

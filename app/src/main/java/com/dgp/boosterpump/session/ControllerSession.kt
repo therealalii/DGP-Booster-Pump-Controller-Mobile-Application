@@ -68,6 +68,9 @@ data class ConfigSnapshotState(
     val timestampMillis: Long? = null,
 )
 
+/** One timestamped pressure reading kept in memory for the live trend chart. */
+data class PressureSample(val timestampMillis: Long, val pressureBar: Double)
+
 /**
  * Coordinates the Modbus transport, read-only polling loop, transaction log, on-demand
  * configuration read, and manual read-only register probe.
@@ -85,6 +88,9 @@ class ControllerSession(
 
     private val _snapshot = MutableStateFlow<ControllerSnapshot?>(null)
     val snapshot: StateFlow<ControllerSnapshot?> = _snapshot.asStateFlow()
+
+    private val _pressureHistory = MutableStateFlow<List<PressureSample>>(emptyList())
+    val pressureHistory: StateFlow<List<PressureSample>> = _pressureHistory.asStateFlow()
 
     private val _activeConfig = MutableStateFlow<GatewayConfig?>(null)
     val activeConfig: StateFlow<GatewayConfig?> = _activeConfig.asStateFlow()
@@ -129,6 +135,7 @@ class ControllerSession(
         disconnect()
         _activeConfig.value = config
         _snapshot.value = null
+        _pressureHistory.value = emptyList()
         _configSnapshot.value = ConfigSnapshotState()
         _probeResult.value = null
 
@@ -149,6 +156,11 @@ class ControllerSession(
                     val snap = profile.decode(raw, config.mode, now)
                     pollCount++
                     _snapshot.value = snap
+                    snap.pressureBar?.let { bar ->
+                        _pressureHistory.update { prev ->
+                            (prev + PressureSample(now, bar)).takeLast(MAX_HISTORY_POINTS)
+                        }
+                    }
 
                     val partial = raw.blockErrors.takeIf { it.isNotEmpty() }?.let { errs ->
                         "${errs.size} of ${profile.pollBlocks.size} read block(s) rejected: ${errs.first().message}"
@@ -287,6 +299,7 @@ class ControllerSession(
 
     companion object {
         const val MAX_LOG_ENTRIES = 120
+        const val MAX_HISTORY_POINTS = 40
 
         fun describeTarget(config: GatewayConfig): String = when (config.mode) {
             DataSourceMode.SIMULATION -> "Simulated ${config.controllerModel.label}"

@@ -1,25 +1,33 @@
 package com.dgp.boosterpump.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.BugReport
+import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Dashboard
-import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.SettingsEthernet
-import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -30,20 +38,21 @@ import com.dgp.boosterpump.gateway.DataSourceMode
 import com.dgp.boosterpump.session.ConnectionState
 import com.dgp.boosterpump.ui.components.ConnectionHeaderStrip
 import com.dgp.boosterpump.ui.components.SimulationBanner
-import com.dgp.boosterpump.ui.screens.ControllerDetailsScreen
+import com.dgp.boosterpump.ui.screens.ControlAndConfigScreen
 import com.dgp.boosterpump.ui.screens.DashboardScreen
 import com.dgp.boosterpump.ui.screens.DiagnosticsScreen
 import com.dgp.boosterpump.ui.screens.GatewaySettingsScreen
 import com.dgp.boosterpump.ui.screens.PumpsAndIoScreen
+import com.dgp.boosterpump.ui.theme.LocalScadaPalette
 import com.dgp.boosterpump.viewmodel.GatewaySettingsViewModel
 import com.dgp.boosterpump.viewmodel.MonitoringViewModel
 
 private enum class Destination(val route: String, val label: String, val icon: ImageVector) {
-    DASHBOARD("dashboard", "Dashboard", Icons.Outlined.Dashboard),
-    PUMPS("pumps", "Pumps & I/O", Icons.Outlined.Tune),
-    DETAILS("details", "Details", Icons.Outlined.Info),
-    DIAGNOSTICS("diagnostics", "Diag", Icons.Outlined.BugReport),
-    GATEWAY("gateway", "Gateway", Icons.Outlined.SettingsEthernet),
+    DASHBOARD("dashboard", "مانیتورینگ", Icons.Outlined.Dashboard),
+    PUMPS("pumps", "پمپ و I/O", Icons.Outlined.WaterDrop),
+    CONTROL("control", "کنترل", Icons.Outlined.AdminPanelSettings),
+    DIAGNOSTICS("diagnostics", "عیب‌یابی", Icons.Outlined.BugReport),
+    GATEWAY("gateway", "مبدل", Icons.Outlined.SettingsEthernet),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -51,7 +60,10 @@ private enum class Destination(val route: String, val label: String, val icon: I
 fun DgpApp(
     monitoringViewModel: MonitoringViewModel,
     settingsViewModel: GatewaySettingsViewModel,
+    darkTheme: Boolean,
+    onToggleTheme: () -> Unit,
 ) {
+    val p = LocalScadaPalette.current
     val navController = rememberNavController()
     val uiState by monitoringViewModel.uiState.collectAsStateWithLifecycle()
     val formState by settingsViewModel.form.collectAsStateWithLifecycle()
@@ -74,10 +86,38 @@ fun DgpApp(
     }
 
     Scaffold(
+        containerColor = p.canvas,
         topBar = {
             Column {
                 TopAppBar(
-                    title = { Text("DGP Booster Pump Monitor") },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = p.panel,
+                        titleContentColor = p.textPrimary,
+                        actionIconContentColor = p.cyan,
+                    ),
+                    title = {
+                        Column {
+                            Text(
+                                "کنترلر بوستر پمپ DGP",
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                "BPC02  •  مبدل سمین ES 487",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = p.cyan,
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = onToggleTheme) {
+                            Icon(
+                                imageVector = if (darkTheme) Icons.Outlined.LightMode else Icons.Outlined.DarkMode,
+                                contentDescription = if (darkTheme) "تم روشن" else "تم تیره صنعتی",
+                            )
+                        }
+                    },
                 )
                 if (showSimBanner) {
                     SimulationBanner(
@@ -93,13 +133,23 @@ fun DgpApp(
             }
         },
         bottomBar = {
-            NavigationBar {
+            NavigationBar(
+                containerColor = p.panel,
+                contentColor = p.textPrimary,
+            ) {
                 Destination.entries.forEach { dest ->
                     NavigationBarItem(
                         selected = currentRoute == dest.route,
                         onClick = { navigateTo(dest) },
                         icon = { Icon(dest.icon, contentDescription = dest.label) },
-                        label = { Text(dest.label, maxLines = 1) },
+                        label = { Text(dest.label, style = MaterialTheme.typography.labelSmall, maxLines = 1) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = p.cyan,
+                            selectedTextColor = p.cyan,
+                            indicatorColor = p.cyanSoft,
+                            unselectedIconColor = p.textSecondary,
+                            unselectedTextColor = p.textSecondary,
+                        ),
                     )
                 }
             }
@@ -110,6 +160,7 @@ fun DgpApp(
             startDestination = Destination.DASHBOARD.route,
             modifier = Modifier
                 .fillMaxSize()
+                .background(p.canvas)
                 .padding(innerPadding),
         ) {
             composable(Destination.DASHBOARD.route) {
@@ -123,8 +174,8 @@ fun DgpApp(
             composable(Destination.PUMPS.route) {
                 PumpsAndIoScreen(uiState = uiState)
             }
-            composable(Destination.DETAILS.route) {
-                ControllerDetailsScreen(
+            composable(Destination.CONTROL.route) {
+                ControlAndConfigScreen(
                     uiState = uiState,
                     onReadHardwareConfig = monitoringViewModel::readHardwareConfiguration,
                 )

@@ -2,7 +2,7 @@ package com.dgp.boosterpump.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,25 +10,29 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,18 +40,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.dgp.boosterpump.session.ConnectionState
 import com.dgp.boosterpump.simulation.SimulationScenario
-import com.dgp.boosterpump.ui.theme.IndustrialColors
+import com.dgp.boosterpump.ui.PersianLabels
+import com.dgp.boosterpump.ui.theme.LocalScadaPalette
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-enum class BadgeTone { OK, FAULT, WARNING, NEUTRAL }
+enum class BadgeTone { OK, FAULT, WARNING, NEUTRAL, INFO }
 
 @Composable
 fun StatusBadge(
@@ -55,21 +65,18 @@ fun StatusBadge(
     tone: BadgeTone,
     modifier: Modifier = Modifier,
 ) {
-    val dark = isSystemInDarkTheme()
+    val p = LocalScadaPalette.current
     val (fg, bg) = when (tone) {
-        BadgeTone.OK -> if (dark) IndustrialColors.OkDark to IndustrialColors.OkContainerDark
-        else IndustrialColors.OkLight to IndustrialColors.OkContainerLight
-        BadgeTone.FAULT -> if (dark) IndustrialColors.FaultDark to IndustrialColors.FaultContainerDark
-        else IndustrialColors.FaultLight to IndustrialColors.FaultContainerLight
-        BadgeTone.WARNING -> if (dark) IndustrialColors.WarningDark to IndustrialColors.WarningContainerDark
-        else IndustrialColors.WarningLight to IndustrialColors.WarningContainerLight
-        BadgeTone.NEUTRAL -> if (dark) IndustrialColors.StandbyDark to IndustrialColors.StandbyContainerDark
-        else IndustrialColors.StandbyLight to IndustrialColors.StandbyContainerLight
+        BadgeTone.OK -> p.ok to p.okBg
+        BadgeTone.FAULT -> p.fault to p.faultBg
+        BadgeTone.WARNING -> p.warning to p.warningBg
+        BadgeTone.INFO -> p.cyan to p.cyanSoft
+        BadgeTone.NEUTRAL -> p.standby to p.standbyBg
     }
     Surface(
-        modifier = modifier,
+        modifier = modifier.border(1.dp, fg.copy(alpha = 0.28f), RoundedCornerShape(8.dp)),
         color = bg,
-        shape = RoundedCornerShape(6.dp),
+        shape = RoundedCornerShape(8.dp),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -93,69 +100,112 @@ fun StatusBadge(
     }
 }
 
+/**
+ * Primary SCADA panel container with an industrial accent stripe, optional header icon,
+ * steel border, and structured header/body hierarchy.
+ */
 @Composable
-fun SectionCard(
+fun ScadaPanel(
     title: String,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
+    icon: ImageVector? = null,
+    accentColor: Color? = null,
     trailing: (@Composable () -> Unit)? = null,
     borderColor: Color? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val p = LocalScadaPalette.current
+    val accent = accentColor ?: p.cyan
     Card(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, borderColor ?: MaterialTheme.colorScheme.outlineVariant),
-        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = p.panel),
+        border = BorderStroke(1.dp, borderColor ?: p.panelBorder),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (p.isDark) 0.dp else 2.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Subtle top SCADA accent line
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(2.5.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(accent.copy(alpha = 0.85f), accent.copy(alpha = 0.15f), Color.Transparent),
+                        ),
+                    ),
+            )
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(title, style = MaterialTheme.typography.titleMedium)
-                    if (subtitle != null) {
-                        Text(
-                            subtitle,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        if (icon != null) {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(accent.copy(alpha = 0.14f))
+                                    .border(1.dp, accent.copy(alpha = 0.30f), RoundedCornerShape(10.dp)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(title, style = MaterialTheme.typography.titleMedium, color = p.textPrimary)
+                            if (subtitle != null) {
+                                Text(
+                                    subtitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = p.textSecondary,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                    if (trailing != null) {
+                        Spacer(Modifier.width(8.dp))
+                        trailing()
                     }
                 }
-                if (trailing != null) {
-                    Spacer(Modifier.width(8.dp))
-                    trailing()
-                }
+                content()
             }
-            content()
         }
     }
 }
 
 /**
- * Unmistakable top banner shown whenever simulation data is active.
- * Simulation data must never be mistaken for live controller readings.
+ * Unmistakable top warning banner shown whenever Simulation mode is active so simulated
+ * data can never be confused with live controller readings.
  */
 @Composable
 fun SimulationBanner(
     scenario: SimulationScenario,
     onScenarioSelected: (SimulationScenario) -> Unit,
 ) {
+    val p = LocalScadaPalette.current
     var expanded by remember { mutableStateOf(false) }
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = IndustrialColors.SimulationBannerBg,
-        contentColor = IndustrialColors.SimulationBannerFg,
+        color = p.simBannerBg,
+        contentColor = p.simBannerFg,
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+                .padding(horizontal = 12.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
@@ -167,32 +217,44 @@ fun SimulationBanner(
                 Icon(Icons.Outlined.Science, contentDescription = null, modifier = Modifier.size(18.dp))
                 Column {
                     Text(
-                        "SIMULATION MODE — NOT LIVE HARDWARE",
+                        "حالت شبیه‌سازی — داده واقعی نیست",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        scenario.label,
+                        PersianLabels.scenarioLabel(scenario),
                         style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
             Box {
-                TextButton(onClick = { expanded = true }) {
-                    Text(
-                        "Scenario",
-                        color = IndustrialColors.SimulationBannerFg,
-                        fontWeight = FontWeight.Bold,
-                    )
+                Surface(
+                    onClick = { expanded = true },
+                    color = p.simBannerFg.copy(alpha = 0.14f),
+                    shape = RoundedCornerShape(8.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text("سناریو", style = MaterialTheme.typography.labelMedium, color = p.simBannerFg)
+                        Icon(Icons.Outlined.ArrowDropDown, contentDescription = null, modifier = Modifier.size(16.dp))
+                    }
                 }
                 DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     SimulationScenario.entries.forEach { item ->
                         DropdownMenuItem(
                             text = {
                                 Column {
-                                    Text(item.label, fontWeight = if (item == scenario) FontWeight.Bold else FontWeight.Normal)
                                     Text(
-                                        item.description,
+                                        PersianLabels.scenarioLabel(item),
+                                        fontWeight = if (item == scenario) FontWeight.Bold else FontWeight.Normal,
+                                    )
+                                    Text(
+                                        PersianLabels.scenarioDescription(item),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -210,79 +272,102 @@ fun SimulationBanner(
     }
 }
 
-/** Compact strip showing live link status and read-only safety lock. */
+/** Compact live connection & safety lock telemetry strip beneath the top app bar. */
 @Composable
 fun ConnectionHeaderStrip(
     state: ConnectionState,
     onConnectClick: () -> Unit,
     onDisconnectClick: () -> Unit,
 ) {
+    val p = LocalScadaPalette.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+        color = p.panel,
+        tonalElevation = 1.dp,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    val (label, tone) = when (state) {
-                        ConnectionState.Disconnected -> "Disconnected" to BadgeTone.NEUTRAL
-                        is ConnectionState.Connecting -> "Connecting…" to BadgeTone.WARNING
-                        is ConnectionState.Connected -> {
-                            val t = if (state.partialError != null) BadgeTone.WARNING else BadgeTone.OK
-                            val l = if (state.isSimulated) "Simulated" else "Connected"
-                            l to t
-                        }
-                        is ConnectionState.Error -> "Comm error" to BadgeTone.FAULT
-                    }
-                    StatusBadge(label, tone)
-                    Surface(
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        shape = RoundedCornerShape(6.dp),
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        val (label, tone) = when (state) {
+                            ConnectionState.Disconnected -> "قطع ارتباط" to BadgeTone.NEUTRAL
+                            is ConnectionState.Connecting -> "در حال اتصال…" to BadgeTone.WARNING
+                            is ConnectionState.Connected -> {
+                                val t = if (state.partialError != null) BadgeTone.WARNING else BadgeTone.OK
+                                val l = if (state.isSimulated) "متصل (شبیه‌سازی)" else "متصل (آنلاین)"
+                                l to t
+                            }
+                            is ConnectionState.Error -> "خطای ارتباط" to BadgeTone.FAULT
+                        }
+                        StatusBadge(label, tone)
+                        Surface(
+                            color = p.panelElevated,
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, p.panelBorder),
                         ) {
-                            Icon(Icons.Outlined.Lock, contentDescription = null, modifier = Modifier.size(12.dp))
-                            Text("READ-ONLY", style = MaterialTheme.typography.labelSmall)
+                            Row(
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Icon(Icons.Outlined.Lock, contentDescription = null, tint = p.warning, modifier = Modifier.size(12.dp))
+                                Text("فقط خواندن", style = MaterialTheme.typography.labelSmall, color = p.textSecondary)
+                            }
                         }
                     }
-                }
-                val detail = when (state) {
-                    ConnectionState.Disconnected -> "Not polling"
-                    is ConnectionState.Connecting -> state.target
-                    is ConnectionState.Connected -> {
-                        val time = state.lastPollMillis?.let(::formatTime) ?: "—"
-                        "${state.target} • Last read $time"
+                    val detail = when (state) {
+                        ConnectionState.Disconnected -> "نمونه‌برداری متوقف است"
+                        is ConnectionState.Connecting -> state.target
+                        is ConnectionState.Connected -> {
+                            val time = state.lastPollMillis?.let(::formatTime) ?: "—"
+                            "آخرین خوانش: $time  •  شمارش: ${state.pollCount}"
+                        }
+                        is ConnectionState.Error -> {
+                            val retry = state.retryInSeconds?.let { " — تلاش مجدد تا $it ثانیه" }.orEmpty()
+                            "خطا در ارتباط$retry"
+                        }
                     }
-                    is ConnectionState.Error -> {
-                        val retry = state.retryInSeconds?.let { " (retry in ${it}s)" }.orEmpty()
-                        "${state.target}$retry"
-                    }
+                    Text(
+                        text = detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = p.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
-                Text(
-                    text = detail,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (state is ConnectionState.Disconnected) {
+                    FilledTonalButton(
+                        onClick = onConnectClick,
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = p.cyanSoft,
+                            contentColor = p.cyan,
+                        ),
+                    ) { Text("اتصال") }
+                } else {
+                    FilledTonalButton(
+                        onClick = onDisconnectClick,
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = p.faultBg,
+                            contentColor = p.fault,
+                        ),
+                    ) { Text("قطع") }
+                }
             }
-            if (state is ConnectionState.Disconnected) {
-                TextButton(onClick = onConnectClick) { Text("Connect") }
-            } else {
-                TextButton(onClick = onDisconnectClick) { Text("Disconnect") }
-            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(p.panelBorder),
+            )
         }
     }
 }
@@ -293,20 +378,20 @@ fun NoticeBox(
     tone: BadgeTone,
     modifier: Modifier = Modifier,
 ) {
-    val dark = isSystemInDarkTheme()
+    val p = LocalScadaPalette.current
     val (fg, bg) = when (tone) {
-        BadgeTone.FAULT -> if (dark) IndustrialColors.FaultDark to IndustrialColors.FaultContainerDark
-        else IndustrialColors.FaultLight to IndustrialColors.FaultContainerLight
-        BadgeTone.WARNING -> if (dark) IndustrialColors.WarningDark to IndustrialColors.WarningContainerDark
-        else IndustrialColors.WarningLight to IndustrialColors.WarningContainerLight
-        BadgeTone.OK -> if (dark) IndustrialColors.OkDark to IndustrialColors.OkContainerDark
-        else IndustrialColors.OkLight to IndustrialColors.OkContainerLight
-        BadgeTone.NEUTRAL -> MaterialTheme.colorScheme.onSurfaceVariant to MaterialTheme.colorScheme.surfaceVariant
+        BadgeTone.FAULT -> p.fault to p.faultBg
+        BadgeTone.WARNING -> p.warning to p.warningBg
+        BadgeTone.OK -> p.ok to p.okBg
+        BadgeTone.INFO -> p.cyan to p.cyanSoft
+        BadgeTone.NEUTRAL -> p.textSecondary to p.panelElevated
     }
     Surface(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .border(1.dp, fg.copy(alpha = 0.28f), RoundedCornerShape(10.dp)),
         color = bg,
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(10.dp),
     ) {
         Row(
             modifier = Modifier.padding(10.dp),
@@ -316,6 +401,19 @@ fun NoticeBox(
             Icon(Icons.Outlined.WarningAmber, contentDescription = null, tint = fg, modifier = Modifier.size(18.dp))
             Text(text, style = MaterialTheme.typography.bodySmall, color = fg)
         }
+    }
+}
+
+/** Forces Left-to-Right rendering for technical strings (hex frames, IPs, equations). */
+@Composable
+fun LtrText(
+    text: String,
+    style: TextStyle = MaterialTheme.typography.bodySmall,
+    color: Color = LocalScadaPalette.current.textPrimary,
+    modifier: Modifier = Modifier,
+) {
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Text(text = text, style = style, color = color, modifier = modifier)
     }
 }
 
