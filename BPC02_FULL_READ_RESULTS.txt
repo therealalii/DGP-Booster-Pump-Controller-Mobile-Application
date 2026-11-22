@@ -1,0 +1,116 @@
+﻿================================================================
+  DGP BPC02 - COMPLETE READ-ONLY VERIFICATION REPORT
+  Date: 2026-11-22 16:47:31
+  Link: Serial RTU (COM4, 9600 8N1, Slave ID 1)
+  Policy: STRICTLY READ-ONLY (FC01 & FC03 only, zero writes)
+================================================================
+Opened COM4 successfully.
+
+[1. LIVE STATUS COILS (FC01 Addr 0, Qty 34)]
+  TX (16:47:31.162): 01 01 00 00 00 22 BC 13
+  RX (16:47:31.372): 01 01 05 3F 00 F8 01 00 05 36  -->  OK (10 bytes, CRC OK)
+  Outputs 0..9   : 1 1 1 1 1 1 0 0 0 0
+  DR (10)        : 0
+  PR1..PR4 (11-14): 0 0 0 0
+  MFI1..4 (15-18): 0 0 0 0
+  Pump 1..6 RUN  : 1 1 1 1 1 1
+  Drive Fail (25): 0
+  Pump 1..6 FAIL : 0 0 0 0 0 0
+  Floater L / H  : L=0  H=0
+
+[2. MANUAL OUTPUT COILS (FC01 Addr 50, Qty 10)]
+  TX (16:47:31.607): 01 01 00 32 00 0A 1D C2
+  RX (16:47:31.794): 01 01 02 00 00 B9 FC  -->  OK (7 bytes, CRC OK)
+  Manual Out 0..9: 0 0 0 0 0 0 0 0 0 0
+
+[3. DISPLAYED LCD PAGE (FC03 Addr 0, Qty 1)]
+  TX (16:47:31.997): 01 03 00 00 00 01 84 0A
+  RX (16:47:32.184): 01 03 02 00 00 B8 44  -->  OK (7 bytes, CRC OK)
+  Displayed Page Number (Word 0) = 0
+
+[4. MEASUREMENTS (FC03 Addr 2, Qty 9 -> Words 2..10)]
+  TX (16:47:32.388): 01 03 00 02 00 09 24 0C
+  RX (16:47:32.591): 01 03 12 00 00 00 00 00 00 00 00 00 00 00 00 00 00 15 22 03 E8 56 3A  -->  OK (23 bytes, CRC OK)
+  Word 2  System Pressure = 0 -> 0 bar
+  Word 3..5 Phase-Neutral = Vrn=0 V, Vsn=0 V, Vtn=0 V
+  Word 6..8 Phase-Phase   = Vrs=0 V, Vst=0 V, Vtr=0 V
+  Word 9  Mains Frequency = 5410 -> 54.1 Hz
+  Word 10 Drive Frequency = 1000 (0x03E8 raw, range 0-1600)
+
+[5A. PUMP 1-4 WORK TIMES - SAMPLE 1 (FC03 Addr 34, Qty 12)]
+  TX (16:47:32.799): 01 03 00 22 00 0C E5 C5
+  RX (16:47:33.017): 01 03 18 00 28 00 2C 00 02 00 39 00 2A 00 02 00 35 00 29 00 02 00 3B 00 28 00 02 B6 CC  -->  OK (29 bytes, CRC OK)
+  Pump 1: 2 h 44 m 40 s
+  Pump 2: 2 h 42 m 57 s
+  Pump 3: 2 h 41 m 53 s
+  Pump 4: 2 h 40 m 59 s
+
+[6. MANUAL ANALOG OUTPUTS (FC03 Addr 50, Qty 2)]
+  TX (16:47:33.249): 01 03 00 32 00 02 65 C4
+  RX (16:47:33.443): 01 03 04 00 00 00 00 FA 33  -->  OK (9 bytes, CRC OK)
+  Word 50 Analog Out 0 = 0 (0 Hz)
+  Word 51 Analog Out 1 = 0 (0 Hz)
+
+[7. SYSTEM ERROR BITFIELD (FC03 Addr 80, Qty 1)]
+  TX (16:47:33.643): 01 03 00 50 00 01 84 1B
+  RX (16:47:33.830): 01 03 02 00 00 B8 44  -->  OK (7 bytes, CRC OK)
+  Word 80 = 0 (0x0000 | bin 0000000000000000)
+  Active Errors  : NONE (all clear)
+
+[8. MULTI FUNCTION REGISTER (FC03 Addr 99, Qty 1)]
+  TX (16:47:34.033): 01 03 00 63 00 01 74 14
+  RX (16:47:34.217): 01 03 02 00 00 B8 44  -->  OK (7 bytes, CRC OK)
+  Word 99 = 0
+
+[9A. PUMP 1-6 ACTIVATION COILS (FC01 Addr 4096, Qty 6)]
+  TX (16:47:34.432): 01 01 10 00 00 06 B8 C8
+  RX (16:47:34.619): 01 01 01 FF 11 C8  -->  OK (6 bytes, CRC OK)
+  Pump 1..6 Enable: 1 1 1 1 1 1
+
+[9B. HARDWARE CONFIG COILS (FC01 Addr 4106, Qty 5)]
+  TX (16:47:34.830): 01 01 10 0A 00 05 D8 CB
+  RX (16:47:35.003): 01 01 01 D0 50 14  -->  OK (6 bytes, CRC OK)
+  4106 Control Phase Activation : 0
+  4107 OFF Changing Activation  : 0
+  4108 Time Changing Activation : 0
+  4109 Reserve Auto Activation  : 0
+  4110 Reserve Auto Type (0=NO,1=NC): 1
+
+[10A. CONTROL STATUS (FC03 Addr 4173, Qty 1)]
+  TX (16:47:35.216): 01 03 10 4D 00 01 10 DD
+  RX (16:47:35.387): 01 03 02 00 00 B8 44  -->  OK (7 bytes, CRC OK)
+  4173 Control Status = 0
+
+[10B. SLEEP GAP (FC03 Addr 4175, Qty 1)]
+  TX (16:47:35.590): 01 03 10 4F 00 01 B1 1D
+  RX (16:47:35.758): 01 03 02 00 28 B8 5A  -->  OK (7 bytes, CRC OK)
+  4175 Sleep Gap      = 40 (0.4 bar)
+
+[10C. AUTO SERVICE + MFI/MFO TYPES (FC03 Addr 4177, Qty 10 -> 4177..4186)]
+  TX (16:47:35.961): 01 03 10 51 00 0A 90 DC
+  RX (16:47:36.184): 01 03 14 00 9F 00 21 00 0B 00 00 00 00 00 00 00 00 00 00 00 00 00 00 1A 32  -->  OK (25 bytes, CRC OK)
+  4177 Auto Service Off Time = 159 h
+  4178 Auto Service On Time  = 33 (3.3 s)
+  4179 Auto Service Interval = 11 min
+  4180 MFI1 Type             = 0 (Disable)
+  4181 MFI2 Type             = 0 (Disable)
+  4182 MFI3 Type             = 0 (Disable)
+  4183 MFI4 Type             = 0 (Disable)
+  4184 MFO1 Type             = 0 (Disable)
+  4185 MFO2 Type             = 0 (Disable)
+  4186 MFO3 Type             = 0 (Disable)
+
+[10D. MODBUS SLAVE ADDRESS (FC03 Addr 4195, Qty 1)]
+  TX (16:47:36.384): 01 03 10 63 00 01 70 D4
+  RX (16:47:36.568): 01 03 02 00 01 79 84  -->  OK (7 bytes, CRC OK)
+  4195 ModBus Address = 1
+
+[5B. PUMP 1-4 WORK TIMES - SAMPLE 2 (live tick check)]
+  TX (16:47:38.285): 01 03 00 22 00 0C E5 C5
+  RX (16:47:38.461): 01 03 18 00 2D 00 2C 00 02 00 02 00 2B 00 02 00 3A 00 29 00 02 00 04 00 29 00 02 9E 4F  -->  OK (29 bytes, CRC OK)
+  Pump 1: 2 h 44 m 45 s
+  Pump 2: 2 h 43 m 02 s
+  Pump 3: 2 h 41 m 58 s
+  Pump 4: 2 h 41 m 04 s
+
+FULL READ-ONLY AUDIT COMPLETE.
