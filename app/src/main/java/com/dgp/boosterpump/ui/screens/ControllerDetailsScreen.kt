@@ -56,8 +56,8 @@ fun ControllerDetailsScreen(
                 subtitle = "Hardware architecture and verified serial parameters",
             ) {
                 InfoRow("Controller model", active.controllerModel.label)
-                InfoRow("Controller serial (documented)", "Modbus RTU over RS485, 9600 8N1")
-                InfoRow("Target gateway", "ENTES ETMO-10 (Ethernet ↔ RS485)")
+                InfoRow("Controller serial (verified)", "Modbus RTU over RS485, 9600 8N1")
+                InfoRow("Target gateway", "Samin ES 487 (RS485 ↔ Modbus TCP/IP, 5–48 VDC)")
                 InfoRow("TCP framing", active.framing.label)
                 InfoRow("Bit read function", active.mapping.bitReadFunction.label)
                 InfoRow("Word read function", active.mapping.wordReadFunction.label)
@@ -69,7 +69,7 @@ fun ControllerDetailsScreen(
         item {
             SectionCard(
                 title = "Hardware Configuration Registers (On-Demand, Read-Only)",
-                subtitle = "Addresses 4096–4110 and 4173–4195. Never polled automatically; never written.",
+                subtitle = "Addresses 4096–4110 (FC01) and 4173–4195 (FC03). Never polled automatically; never written.",
                 trailing = {
                     Button(
                         onClick = onReadHardwareConfig,
@@ -86,7 +86,7 @@ fun ControllerDetailsScreen(
             ) {
                 NoticeBox(
                     text = "Manual warning: addresses from row 25 onward are hardware settings; incorrect writes can damage the booster pump. " +
-                        "Addresses 4178 ('417B') and 4180 ('41B0') have print/OCR ambiguities in the manual and are marked Ambiguous.",
+                        "PDF print typos '417B' and '41B0' were hardware-verified as decimal 4178 and 4180.",
                     tone = BadgeTone.WARNING,
                 )
                 if (cfgSnap.timestampMillis != null) {

@@ -185,8 +185,9 @@ class ControllerSession(
     }
 
     /**
-     * Reads the documented hardware configuration addresses once (read-only).
-     * These are not polled automatically because their Modbus table assignment is unverified.
+     * Reads the documented hardware configuration addresses once (read-only) using the
+     * hardware-verified contiguous block reads (4096..4101, 4106..4110 via FC01;
+     * 4173, 4175, 4177..4186, 4195 via FC03).
      */
     fun readHardwareConfiguration() {
         val cfg = _activeConfig.value ?: return
@@ -197,7 +198,7 @@ class ControllerSession(
             _configSnapshot.update { it.copy(loading = true, errors = emptyList()) }
             try {
                 val reader = ControllerReader(activeClient, cfg.mapping)
-                val raw = ioMutex.withLock { reader.readEach(profile.configuration) }
+                val raw = ioMutex.withLock { reader.readBlocks(profile.configurationBlocks) }
                 val readings = profile.configuration.map { def ->
                     val value = when (def.table) {
                         com.dgp.boosterpump.controller.register.VendorTable.BIT ->

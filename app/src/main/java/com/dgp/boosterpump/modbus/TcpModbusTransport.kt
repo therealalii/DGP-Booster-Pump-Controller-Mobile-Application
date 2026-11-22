@@ -12,7 +12,7 @@ import java.net.Socket
 import java.net.SocketTimeoutException
 
 /**
- * TCP transport to an Ethernet/RS485 gateway (e.g. ENTES ETMO-10).
+ * TCP transport to an Ethernet/RS485 gateway (e.g. Samin ES 487 RS485-to-Ethernet Modbus TCP converter).
  *
  * Supports both Modbus TCP (MBAP header) and RTU-over-TCP framing. Requests are strictly
  * serialised: RS485 is half-duplex and the gateway forwards one request at a time.

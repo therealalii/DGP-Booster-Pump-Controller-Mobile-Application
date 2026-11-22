@@ -34,6 +34,7 @@ interface ControllerProfile {
     val polled: List<RegisterDefinition>
     val pollBlocks: List<ReadBlock>
     val configuration: List<RegisterDefinition>
+    val configurationBlocks: List<ReadBlock>
     val manualControl: List<RegisterDefinition>
     fun decode(readings: RawReadings, source: DataSourceMode, timestampMillis: Long): ControllerSnapshot
 }
@@ -55,6 +56,7 @@ object Bpc02Profile : ControllerProfile {
     override val polled = map.polled
     override val pollBlocks = map.pollBlocks
     override val configuration = map.configuration
+    override val configurationBlocks = map.configurationBlocks
     override val manualControl = map.manualControl
 
     override fun decode(readings: RawReadings, source: DataSourceMode, timestampMillis: Long): ControllerSnapshot {

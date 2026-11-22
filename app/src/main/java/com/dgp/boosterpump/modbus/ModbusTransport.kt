@@ -28,10 +28,10 @@ interface ModbusTransport : Closeable {
 enum class Framing(val label: String, val description: String) {
     MODBUS_TCP(
         "Modbus TCP (MBAP)",
-        "Gateway converts Modbus TCP to Modbus RTU (ENTES ETMO 'MODBUS' working mode).",
+        "Gateway converts Modbus TCP/IP to Modbus RTU (Samin ES 487 Modbus TCP Server mode).",
     ),
     RTU_OVER_TCP(
         "RTU over TCP",
-        "Raw RTU frames with CRC are tunnelled through TCP (ENTES ETMO 'Transparent' working mode).",
+        "Raw RTU frames with CRC are tunnelled through TCP (transparent serial-over-TCP mode).",
     ),
 }

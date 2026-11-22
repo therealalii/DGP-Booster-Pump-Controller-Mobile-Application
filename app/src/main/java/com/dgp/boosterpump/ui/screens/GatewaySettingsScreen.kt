@@ -89,14 +89,14 @@ fun GatewaySettingsScreen(
         if (form.mode == DataSourceMode.LIVE) {
             item {
                 SectionCard(
-                    title = "ENTES ETMO-10 Gateway Connection",
-                    subtitle = "No network addresses are hard-coded; enter values from your gateway configuration",
+                    title = "Samin ES 487 Gateway Connection",
+                    subtitle = "RS485-to-Ethernet Modbus TCP/IP converter (5–48 VDC, Web UI, Server/Client, DHCP/Static)",
                 ) {
                     OutlinedTextField(
                         value = form.host,
                         onValueChange = viewModel::updateHost,
                         label = { Text("Gateway IP address or hostname") },
-                        placeholder = { Text("e.g. 192.168.1.50") },
+                        placeholder = { Text("e.g. 192.168.1.50 (use ES 487 IP Finder)") },
                         singleLine = true,
                         isError = ConfigValidation.Field.HOST in form.errors,
                         supportingText = form.errors[ConfigValidation.Field.HOST]?.let { err -> { Text(err) } },
@@ -109,7 +109,7 @@ fun GatewaySettingsScreen(
                             onValueChange = viewModel::updatePort,
                             label = { Text("TCP Port") },
                             supportingText = {
-                                Text(form.errors[ConfigValidation.Field.PORT] ?: "Confirm on ETMO-10 (often 502)")
+                                Text(form.errors[ConfigValidation.Field.PORT] ?: "Confirm in ES 487 Web UI (often 502)")
                             },
                             singleLine = true,
                             isError = ConfigValidation.Field.PORT in form.errors,
@@ -121,7 +121,7 @@ fun GatewaySettingsScreen(
                             onValueChange = viewModel::updateUnitId,
                             label = { Text("Unit / Slave ID") },
                             supportingText = {
-                                Text(form.errors[ConfigValidation.Field.UNIT_ID] ?: "BPC02 Network menu (1–247)")
+                                Text(form.errors[ConfigValidation.Field.UNIT_ID] ?: "BPC02 Network menu (verified: 1)")
                             },
                             singleLine = true,
                             isError = ConfigValidation.Field.UNIT_ID in form.errors,
@@ -130,7 +130,7 @@ fun GatewaySettingsScreen(
                         )
                     }
 
-                    Text("TCP Framing (match gateway working mode)", style = MaterialTheme.typography.labelMedium)
+                    Text("TCP Framing (match ES 487 working mode)", style = MaterialTheme.typography.labelMedium)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Framing.entries.forEach { framing ->
                             FilterChip(
@@ -147,7 +147,7 @@ fun GatewaySettingsScreen(
                     )
 
                     NoticeBox(
-                        text = "Verify on the ENTES ETMO-10 web interface that its RS485 serial port is set to 9600 baud, 8 data bits, No parity, 1 stop bit (9600 8N1) to match the DGP BPC02.",
+                        text = "Configure the Samin ES 487 via its web browser interface: Mode = TCP Server (Modbus TCP ↔ Modbus RTU), RS485 serial port = 9600 baud, 8 data bits, No parity, 1 stop bit (9600 8N1) to match the DGP BPC02.",
                         tone = BadgeTone.NEUTRAL,
                     )
                 }
@@ -156,12 +156,13 @@ fun GatewaySettingsScreen(
 
         item {
             SectionCard(
-                title = "Modbus Table Mapping (Unverified by Manual)",
-                subtitle = "BPC-02 manual does not specify Modbus function codes or addressing base",
+                title = "Modbus Table Mapping (Hardware-Verified on BPC02)",
+                subtitle = "BPC02 hardware tests confirmed FC01 (Bits), FC03 (Words), and zero-based offset 0",
             ) {
                 NoticeBox(
-                    text = "If reads return Exception 01 (Illegal Function) or 02 (Illegal Data Address), switch FC01↔FC02, FC03↔FC04, or test the PDU offset against the controller LCD using Diagnostics.",
-                    tone = BadgeTone.WARNING,
+                    text = "Hardware verified on BPC02: Bit addresses require FC01 (Read Coils) and Word addresses require FC03 (Read Holding Registers) with Offset 0. " +
+                        "FC02 and FC04 are rejected by BPC02 firmware with non-standard 4-byte frames (01 02 81 E1 / 01 04 01 E3) — keep FC01 + FC03 + Offset 0 selected for BPC02.",
+                    tone = BadgeTone.OK,
                 )
 
                 Text("Bit Address table (0–33)", style = MaterialTheme.typography.labelMedium)

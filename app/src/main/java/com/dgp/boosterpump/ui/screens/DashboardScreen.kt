@@ -160,7 +160,7 @@ private fun EmptyConnectionState(
                 val targetDesc = when (uiState.savedConfig.mode) {
                     DataSourceMode.SIMULATION -> "Configured for Simulation mode (no hardware required)."
                     DataSourceMode.LIVE -> if (uiState.savedConfig.host.isBlank()) {
-                        "Live mode selected — enter the ENTES ETMO-10 gateway IP address in Gateway Settings."
+                        "Live mode selected — enter the Samin ES 487 gateway IP address in Gateway Settings."
                     } else {
                         "Target: ${uiState.savedConfig.host}:${uiState.savedConfig.port} (Unit ID ${uiState.savedConfig.unitId})."
                     }

@@ -2,20 +2,23 @@ package com.dgp.boosterpump.controller.register
 
 /**
  * DGP BPC02 register map, transcribed from the BPC-02 User Manual (pages 25-28,
- * "ModBus Address" section: Protocol ModBus-RTU, 9600 8-N-1).
+ * "ModBus Address" section: Protocol ModBus-RTU, 9600 8-N-1) and verified on a physical
+ * DGP BPC02 controller (COM4, 9600 8N1, Slave ID 1, read-only tests).
  *
- * Every entry records the manual page and row number. Nothing here is invented:
- *  - Units/scales are only set where the manual prints them.
- *  - Drive frequency (Word 10) has a printed range 0-1600 but no unit/scale -> scale = null.
- *  - The Modbus function code for each table is NOT documented and is configurable.
- *  - Addresses are the printed values; any PDU offset is applied by the protocol mapping.
+ * Hardware verification summary (see BPC02_REGISTER_MAP.md & BPC02_TEST_RESULTS.md):
+ *  - Bit Address table is served by FC01 (Read Coils) ONLY; FC02 is rejected by firmware.
+ *  - Word Address table is served by FC03 (Read Holding Registers) ONLY; FC04 is rejected.
+ *  - Zero-based PDU addressing (offset = 0) is confirmed across all bit and word groups.
+ *  - Manual print typos "417B" and "41B0" on p.28 are confirmed as decimal 4178 and 4180.
+ *  - Drive frequency (Word 10) returned 1000 (0x03E8); range is 0-1600 without a printed
+ *    unit/scale, so it remains AMBIGUOUS (scale = null) until compared against the LCD.
  */
 object Bpc02RegisterMap {
 
-    private const val SRC_BIT = "BPC-02 manual p.25-26, Bit Address table"
-    private const val SRC_WORD = "BPC-02 manual p.27, Word Address table"
-    private const val SRC_CFG_BIT = "BPC-02 manual p.26-27, Bit Address table (hardware settings)"
-    private const val SRC_CFG_WORD = "BPC-02 manual p.28 (hardware settings)"
+    private const val SRC_BIT = "BPC-02 manual p.25-26, Bit Address table (FC01 verified)"
+    private const val SRC_WORD = "BPC-02 manual p.27, Word Address table (FC03 verified)"
+    private const val SRC_CFG_BIT = "BPC-02 manual p.26-27, Bit Address table (hardware settings, FC01 verified)"
+    private const val SRC_CFG_WORD = "BPC-02 manual p.28 (hardware settings, FC03 verified)"
     private const val SRC_MANUAL = "BPC-02 manual p.28, manual-mode note"
 
     private val ON_OFF = mapOf(0 to "OFF", 1 to "ON")
@@ -60,7 +63,7 @@ object Bpc02RegisterMap {
     fun runHoursKey(n: Int) = "pump_${n}_run_hour"
     const val SYSTEM_ERROR = "system_error"
 
-    // ------------------------------------------------------------------ polled bit table
+    // ------------------------------------------------------------------ polled bit table (FC01, 0..33)
 
     private val bitStatus: List<RegisterDefinition> = buildList {
         for (i in 0 until OUTPUT_COUNT) {
@@ -69,7 +72,7 @@ object Bpc02RegisterMap {
         add(
             bit(
                 DR_STATUS, "DR status", 10, RegisterGroup.DIGITAL_IO, ON_OFF, row = 11,
-                notes = "Printed as 'DR Status'. The physical signal is not described in the Modbus table.",
+                notes = "Printed as 'DR Status'. Verified readable via FC01.",
             ),
         )
         for (n in 1..PR_INPUT_COUNT) {
@@ -84,7 +87,7 @@ object Bpc02RegisterMap {
             add(
                 bit(
                     mfiKey(n), "MFI$n input status", 14 + n, RegisterGroup.DIGITAL_IO, ON_OFF, row = 15 + n,
-                    notes = "Multi-function input; its role is configured on the controller (MFI$n Type).",
+                    notes = "Multi-function input; its role is configured on the controller (MFI$n Type at 4180+).",
                 ),
             )
         }
@@ -99,7 +102,7 @@ object Bpc02RegisterMap {
         add(bit(FLOATER_HIGH, "Floater H level", 33, RegisterGroup.DIGITAL_IO, CONNECTED, row = 34))
     }
 
-    // ------------------------------------------------------------------ polled word table
+    // ------------------------------------------------------------------ polled word table (FC03)
 
     private val wordStatus: List<RegisterDefinition> = buildList {
         add(word(DISPLAYED_PAGE, "Displayed page number", 0, RegisterGroup.DISPLAY, row = 1))
@@ -115,7 +118,7 @@ object Bpc02RegisterMap {
             word(
                 DRIVE_FREQUENCY, "Drive frequency", 10, RegisterGroup.MEASUREMENT, row = 10,
                 verification = Verification.AMBIGUOUS,
-                notes = "Manual prints range 0-1600 without unit or scale. Shown as raw value until confirmed.",
+                notes = "Manual prints range 0-1600 without unit or scale (hardware test read 1000). Shown as raw value until confirmed.",
             ),
         )
         for (n in 1..RUN_TIME_PUMP_COUNT) {
@@ -133,8 +136,9 @@ object Bpc02RegisterMap {
                 documentedAddress = 80,
                 rawType = RawType.BITFIELD16,
                 group = RegisterGroup.ALARM,
+                verification = Verification.HARDWARE_VERIFIED,
                 source = "$SRC_WORD, row 25",
-                notes = "Bits 3-10 documented. Bit numbering assumed LSB = bit 0 (unverified).",
+                notes = "Verified via FC03 (0x0000 when healthy). Bits 3-10 documented.",
             ),
         )
     }
@@ -144,8 +148,6 @@ object Bpc02RegisterMap {
     private val MFI_TYPES = mapOf(0 to "Disable", 1 to "PS", 2 to "MP", 3 to "EMG", 4 to "CP", 5 to "FL")
     private val MFO_TYPES = mapOf(0 to "Disable", 1 to "E Valve", 2 to "Fan", 3 to "Alarm", 4 to "DC3", 5 to "MC3")
     private const val CFG_WARNING = "Hardware setting. Manual warns that wrong changes can damage the booster hardware. Read-only in this app."
-    private const val CFG_TABLE_NOTE = "Listed after the Word table on p.28 but numbered as a continuation of the Bit table; " +
-        "the values imply 16-bit words. Table assignment unverified."
 
     /** Hardware configuration entries. Read only on explicit user request, never polled, never written. */
     val configuration: List<RegisterDefinition> = buildList {
@@ -158,22 +160,20 @@ object Bpc02RegisterMap {
         add(cfgBit("reserve_auto_activation", "Reserve automatic activation", 4109, ENABLE, row = 54))
         add(cfgBit("reserve_auto_type", "Reserve automatic type", 4110, mapOf(0 to "NO", 1 to "NC"), row = 55))
 
-        add(cfgWord("control_status", "Control status", 4173, row = 56, rangeNote = "Documented range 0-1."))
-        add(cfgWord("sleep_gap", "Sleep gap", 4175, row = 57, unit = "bar", scale = 0.01, rangeNote = "Documented range 1-100."))
-        add(cfgWord("auto_service_off_time", "Auto service off time", 4177, row = 58, unit = "h", scale = 1.0, rangeNote = "Documented range 1-9999."))
+        add(cfgWord("control_status", "Control status", 4173, row = 56, rangeNote = "Documented range 0-1 (hardware read 0)."))
+        add(cfgWord("sleep_gap", "Sleep gap", 4175, row = 57, unit = "bar", scale = 0.01, rangeNote = "Documented range 1-100 (hardware read 40 = 0.40 bar)."))
+        add(cfgWord("auto_service_off_time", "Auto service off time", 4177, row = 58, unit = "h", scale = 1.0, rangeNote = "Documented range 1-9999 (hardware read 159 h)."))
         add(
             cfgWord(
                 "auto_service_on_time", "Auto service on time", 4178, row = 59, unit = "s", scale = 0.1,
-                rangeNote = "Documented range 1-999. Address printed as '417B'; read as 4178 (sequence 4177/4179).",
-                verification = Verification.AMBIGUOUS,
+                rangeNote = "Documented range 1-999. Printed as '417B' in PDF; confirmed as decimal 4178 via FC03 block read (33 = 3.3 s).",
             ),
         )
-        add(cfgWord("auto_service_interval", "Auto service interval", 4179, row = 60, unit = "min", scale = 1.0, rangeNote = "Documented range 1-99."))
+        add(cfgWord("auto_service_interval", "Auto service interval", 4179, row = 60, unit = "min", scale = 1.0, rangeNote = "Documented range 1-99 (hardware read 11 min)."))
         add(
             cfgEnum(
                 "mfi_1_type", "MFI1 type", 4180, MFI_TYPES, row = 61,
-                extra = "Address printed as '41B0'; read as 4180 (sequence 4179/4181).",
-                verification = Verification.AMBIGUOUS,
+                extra = "Printed as '41B0' in PDF; confirmed as decimal 4180 via FC03 block read.",
             ),
         )
         add(cfgEnum("mfi_2_type", "MFI2 type", 4181, MFI_TYPES, row = 62))
@@ -182,14 +182,14 @@ object Bpc02RegisterMap {
         add(cfgEnum("mfo_1_type", "MFO1 type", 4184, MFO_TYPES, row = 65))
         add(cfgEnum("mfo_2_type", "MFO2 type", 4185, MFO_TYPES, row = 66))
         add(cfgEnum("mfo_3_type", "MFO3 type", 4186, MFO_TYPES, row = 67))
-        add(cfgWord("modbus_address", "Modbus address", 4195, row = 68, rangeNote = "Value column shows 1."))
+        add(cfgWord("modbus_address", "Modbus address", 4195, row = 68, rangeNote = "Confirmed Slave ID = 1 via FC03."))
     }
 
     // ------------------------------------------------------------------ manual control (LOCKED)
 
     /**
      * Control items described in the manual. They are listed so the UI can explain what is
-     * locked and why; the application never reads or writes these addresses.
+     * locked and why; the application never writes these addresses.
      */
     val manualControl: List<RegisterDefinition> = buildList {
         add(
@@ -201,10 +201,10 @@ object Bpc02RegisterMap {
                 rawType = RawType.UINT16,
                 group = RegisterGroup.MANUAL_CONTROL,
                 access = AccessPolicy.CONTROL_LOCKED,
-                verification = Verification.AMBIGUOUS,
+                verification = Verification.DOCUMENTED,
                 source = SRC_MANUAL,
                 notes = "Manual: write 1234 to enter manual mode, 0 to return to automatic. " +
-                    "Not listed in the Word table; Modbus table and write function code unconfirmed.",
+                    "Confirmed readable via FC03 (returns 0 in Auto); write function code unconfirmed and LOCKED.",
             ),
         )
         for (i in 0 until OUTPUT_COUNT) {
@@ -219,7 +219,7 @@ object Bpc02RegisterMap {
                     enumLabels = ON_OFF,
                     access = AccessPolicy.CONTROL_LOCKED,
                     source = "$SRC_BIT, row ${35 + i}",
-                    notes = "Switches a physical controller output in manual mode. Write function code unconfirmed.",
+                    notes = "Readable via FC01 (all 0 in Auto). Switches a physical controller output in manual mode; write function code unconfirmed and LOCKED.",
                 ),
             )
         }
@@ -236,7 +236,7 @@ object Bpc02RegisterMap {
                     scale = 0.1,
                     access = AccessPolicy.CONTROL_LOCKED,
                     source = "$SRC_WORD, row ${23 + i}",
-                    notes = "Documented range 0-500 (0.1 Hz). Sets drive speed in manual mode. Write function code unconfirmed.",
+                    notes = "Readable via FC03 (0 in Auto). Documented range 0-500 (0.1 Hz); write function code unconfirmed and LOCKED.",
                 ),
             )
         }
@@ -259,6 +259,12 @@ object Bpc02RegisterMap {
      * controller is never asked for an undocumented address (Word 1, 11-33, 46-79 are gaps).
      */
     val pollBlocks: List<ReadBlock> = buildBlocks(polled)
+
+    /**
+     * Read blocks covering [configuration] (4096..4101, 4106..4110 via FC01; 4173, 4175,
+     * 4177..4186, 4195 via FC03). All contiguous ranges were verified on BPC02 hardware.
+     */
+    val configurationBlocks: List<ReadBlock> = buildBlocks(configuration)
 
     /** Groups definitions of one table into contiguous runs of documented addresses. */
     fun buildBlocks(definitions: List<RegisterDefinition>): List<ReadBlock> =
@@ -291,6 +297,7 @@ object Bpc02RegisterMap {
     ) = RegisterDefinition(
         key = key, label = label, table = VendorTable.BIT, documentedAddress = address,
         rawType = RawType.BIT, group = group, enumLabels = labels,
+        verification = Verification.HARDWARE_VERIFIED,
         source = "$SRC_BIT, row $row", notes = notes,
     )
 
@@ -302,7 +309,7 @@ object Bpc02RegisterMap {
         unit: String? = null,
         scale: Double? = null,
         row: Int,
-        verification: Verification = Verification.DOCUMENTED,
+        verification: Verification = Verification.HARDWARE_VERIFIED,
         notes: String? = null,
     ) = RegisterDefinition(
         key = key, label = label, table = VendorTable.WORD, documentedAddress = address,
@@ -314,6 +321,7 @@ object Bpc02RegisterMap {
         RegisterDefinition(
             key = key, label = label, table = VendorTable.BIT, documentedAddress = address,
             rawType = RawType.BIT, group = RegisterGroup.CONFIGURATION, enumLabels = labels,
+            verification = Verification.HARDWARE_VERIFIED,
             source = "$SRC_CFG_BIT, row $row", notes = CFG_WARNING,
         )
 
@@ -325,12 +333,12 @@ object Bpc02RegisterMap {
         unit: String? = null,
         scale: Double? = null,
         rangeNote: String,
-        verification: Verification = Verification.AMBIGUOUS,
+        verification: Verification = Verification.HARDWARE_VERIFIED,
     ) = RegisterDefinition(
         key = key, label = label, table = VendorTable.WORD, documentedAddress = address,
         rawType = RawType.UINT16, group = RegisterGroup.CONFIGURATION, unit = unit, scale = scale,
         verification = verification, source = "$SRC_CFG_WORD, row $row",
-        notes = "$rangeNote $CFG_TABLE_NOTE $CFG_WARNING",
+        notes = "$rangeNote $CFG_WARNING",
     )
 
     private fun cfgEnum(
@@ -340,11 +348,11 @@ object Bpc02RegisterMap {
         labels: Map<Int, String>,
         row: Int,
         extra: String = "",
-        verification: Verification = Verification.AMBIGUOUS,
+        verification: Verification = Verification.HARDWARE_VERIFIED,
     ) = RegisterDefinition(
         key = key, label = label, table = VendorTable.WORD, documentedAddress = address,
         rawType = RawType.ENUM16, group = RegisterGroup.CONFIGURATION, enumLabels = labels,
         verification = verification, source = "$SRC_CFG_WORD, row $row",
-        notes = listOf(extra, CFG_TABLE_NOTE, CFG_WARNING).filter { it.isNotBlank() }.joinToString(" "),
+        notes = listOf(extra, CFG_WARNING).filter { it.isNotBlank() }.joinToString(" "),
     )
 }

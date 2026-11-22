@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Required for local LAN TCP socket communication with the ENTES ETMO-10 gateway. -->
+    <!-- Required for local LAN TCP socket communication with the Samin ES 487 (RS485-to-Ethernet Modbus TCP) gateway. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 

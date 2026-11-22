@@ -48,6 +48,21 @@ class Bpc02RegisterMapAndProfileTest {
     }
 
     @Test
+    fun configurationBlocksUseVerifiedContiguousRangesIncluding4178And4180() {
+        val expected = listOf(
+            ReadBlock(VendorTable.BIT, 4096, 6), // 4096..4101
+            ReadBlock(VendorTable.BIT, 4106, 5), // 4106..4110
+            ReadBlock(VendorTable.WORD, 4173, 1),
+            ReadBlock(VendorTable.WORD, 4175, 1),
+            ReadBlock(VendorTable.WORD, 4177, 10), // 4177..4186 (4178 & 4180 confirmed contiguous)
+            ReadBlock(VendorTable.WORD, 4195, 1),
+        )
+        assertEquals(expected, Bpc02RegisterMap.configurationBlocks)
+        assertEquals(Verification.HARDWARE_VERIFIED, Bpc02RegisterMap.byKey("auto_service_on_time").verification)
+        assertEquals(Verification.HARDWARE_VERIFIED, Bpc02RegisterMap.byKey("mfi_1_type").verification)
+    }
+
+    @Test
     fun decodeAppliesDocumentedScalesAndFlagsUndocumentedErrorBits() {
         val raw = RawReadings(
             bits = mapOf(
