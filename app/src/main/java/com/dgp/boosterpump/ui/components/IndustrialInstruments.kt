@@ -82,6 +82,20 @@ fun PressureArcGauge(
         else -> palette.cyan
     }
 
+    val gaugePulse = rememberInfiniteTransition(label = "gauge_pulse")
+    val tipGlowPulse by gaugePulse.animateFloat(
+        initialValue = 7.5f,
+        targetValue = 12.5f,
+        animationSpec = infiniteRepeatable(tween(1150, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "tip_glow_pulse",
+    )
+    val haloAlpha by gaugePulse.animateFloat(
+        initialValue = 0.16f,
+        targetValue = 0.34f,
+        animationSpec = infiniteRepeatable(tween(1150, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "halo_alpha",
+    )
+
     Box(
         modifier = modifier.size(188.dp),
         contentAlignment = Alignment.Center,
@@ -98,8 +112,8 @@ fun PressureArcGauge(
 
             // Outer subtle bezel ring
             drawCircle(
-                color = palette.panelBorder.copy(alpha = 0.55f),
-                radius = radius + strokePx * 0.85f,
+                color = palette.gold.copy(alpha = 0.30f),
+                radius = radius + strokePx * 0.88f,
                 center = center,
                 style = Stroke(width = 1.2.dp.toPx()),
             )
@@ -113,9 +127,10 @@ fun PressureArcGauge(
                 val rOuter = radius + strokePx * 0.65f
                 val rInner = radius + strokePx * (if (isMajor) 0.15f else 0.38f)
                 val tickColor = when {
-                    i >= 16 -> palette.fault.copy(alpha = 0.7f)
-                    i >= 13 -> palette.warning.copy(alpha = 0.7f)
-                    else -> palette.textSecondary.copy(alpha = if (isMajor) 0.65f else 0.35f)
+                    i >= 16 -> palette.fault.copy(alpha = 0.78f)
+                    i >= 13 -> palette.warning.copy(alpha = 0.78f)
+                    isMajor -> palette.gold.copy(alpha = 0.65f)
+                    else -> palette.textSecondary.copy(alpha = 0.35f)
                 }
                 drawLine(
                     color = tickColor,
@@ -143,17 +158,17 @@ fun PressureArcGauge(
                 style = Stroke(width = strokePx, cap = StrokeCap.Round),
             )
 
-            // Active sweep + soft glow halo
+            // Active sweep + breathing glow halo
             if (pressureBar != null && animatedFraction > 0.002f) {
                 val sweep = totalSweep * animatedFraction
                 drawArc(
-                    color = activeColor.copy(alpha = 0.22f),
+                    color = activeColor.copy(alpha = haloAlpha),
                     startAngle = startAngle,
                     sweepAngle = sweep,
                     useCenter = false,
                     topLeft = topLeft,
                     size = arcSize,
-                    style = Stroke(width = strokePx + 8.dp.toPx(), cap = StrokeCap.Round),
+                    style = Stroke(width = strokePx + 9.dp.toPx(), cap = StrokeCap.Round),
                 )
                 drawArc(
                     brush = Brush.sweepGradient(
@@ -171,14 +186,14 @@ fun PressureArcGauge(
                     style = Stroke(width = strokePx, cap = StrokeCap.Round),
                 )
 
-                // Glowing tip indicator dot
+                // Breathing luminous tip indicator dot
                 val tipRad = (startAngle + sweep) * PI / 180.0
                 val tipOffset = Offset(
                     center.x + (radius * cos(tipRad)).toFloat(),
                     center.y + (radius * sin(tipRad)).toFloat(),
                 )
-                drawCircle(color = activeColor.copy(alpha = 0.35f), radius = 9.dp.toPx(), center = tipOffset)
-                drawCircle(color = Color.White, radius = 4.dp.toPx(), center = tipOffset)
+                drawCircle(color = activeColor.copy(alpha = 0.38f), radius = tipGlowPulse.dp.toPx(), center = tipOffset)
+                drawCircle(color = Color.White, radius = 4.2.dp.toPx(), center = tipOffset)
             }
         }
 
@@ -496,6 +511,12 @@ fun AnimatedImpellerIcon(
         animationSpec = infiniteRepeatable(tween(1100, easing = LinearEasing)),
         label = "impeller_rot",
     )
+    val glowPulse by infinite.animateFloat(
+        initialValue = 0.14f,
+        targetValue = 0.36f,
+        animationSpec = infiniteRepeatable(tween(950, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "impeller_glow",
+    )
 
     val ringColor = when {
         failed == true -> palette.fault
@@ -513,9 +534,23 @@ fun AnimatedImpellerIcon(
         val c = Offset(this.size.width / 2f, this.size.height / 2f)
         val r = this.size.minDimension / 2f
 
+        // Animated breathing aura when running or faulted
+        if (running == true || failed == true) {
+            drawCircle(
+                brush = Brush.radialGradient(
+                    0f to ringColor.copy(alpha = glowPulse),
+                    1f to Color.Transparent,
+                    center = c,
+                    radius = r * 1.12f,
+                ),
+                radius = r * 1.12f,
+                center = c,
+            )
+        }
+
         // Outer pump housing
         drawCircle(
-            color = ringColor.copy(alpha = if (running == true || failed == true) 0.16f else 0.10f),
+            color = ringColor.copy(alpha = if (running == true || failed == true) 0.18f else 0.10f),
             radius = r,
             center = c,
         )
@@ -660,3 +695,265 @@ fun PlcLedBead(
             .border(1.dp, color.copy(alpha = if (active == true) 0.9f else 0.4f), CircleShape),
     )
 }
+
+/**
+ * Animated SCADA hydraulic P&ID flow visualizer:
+ *   Storage Tank  ──(suction pipe)──▶  Booster Turbine Core  ──(discharge collector)──▶  Building Supply
+ * Flow particles speed up dynamically with [runningPumpCount], turn crimson during alarms/low water,
+ * and idle smoothly when all pumps are stopped.
+ */
+@Composable
+fun BoosterHydraulicFlowDiagram(
+    pressureBar: Double?,
+    runningPumpCount: Int,
+    floaterLow: Boolean?,
+    hasFault: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val palette = LocalScadaPalette.current
+    val isFlowing = runningPumpCount > 0 && floaterLow != false && !hasFault
+    val cycleDuration = when {
+        runningPumpCount >= 3 -> 950
+        runningPumpCount == 2 -> 1350
+        runningPumpCount == 1 -> 1850
+        else -> 3200
+    }
+
+    val infinite = rememberInfiniteTransition(label = "hydraulic_flow")
+    val flowPhase by infinite.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(cycleDuration, easing = LinearEasing)),
+        label = "flow_phase",
+    )
+    val turbineAngle by infinite.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(cycleDuration, easing = LinearEasing)),
+        label = "turbine_angle",
+    )
+    val pulse by infinite.animateFloat(
+        initialValue = 0.5f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(tween(1100, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "station_pulse",
+    )
+
+    val streamColor = when {
+        hasFault || floaterLow == false -> palette.fault
+        isFlowing -> palette.cyan
+        else -> palette.standby
+    }
+    val hubColor = when {
+        hasFault -> palette.fault
+        isFlowing -> palette.ok
+        else -> palette.gold
+    }
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(92.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(palette.terminalBg)
+                .border(1.dp, streamColor.copy(alpha = if (isFlowing || hasFault) 0.45f else 0.25f), RoundedCornerShape(12.dp)),
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val w = size.width
+                val h = size.height
+                val midY = h * 0.52f
+
+                // Left Tank Box
+                val tankW = 42.dp.toPx()
+                val tankH = 52.dp.toPx()
+                val tankLeft = 14.dp.toPx()
+                val tankTop = midY - tankH / 2f
+                drawRoundRect(
+                    color = palette.panelElevated,
+                    topLeft = Offset(tankLeft, tankTop),
+                    size = Size(tankW, tankH),
+                    cornerRadius = CornerRadius(8.dp.toPx()),
+                )
+                val fillRatio = if (floaterLow == false) 0.16f else 0.72f
+                val waterH = tankH * fillRatio
+                drawRoundRect(
+                    brush = Brush.verticalGradient(
+                        listOf(streamColor.copy(alpha = 0.75f), streamColor.copy(alpha = 0.25f)),
+                        startY = tankTop + tankH - waterH,
+                        endY = tankTop + tankH,
+                    ),
+                    topLeft = Offset(tankLeft + 2.dp.toPx(), tankTop + tankH - waterH),
+                    size = Size(tankW - 4.dp.toPx(), waterH - 2.dp.toPx()),
+                    cornerRadius = CornerRadius(6.dp.toPx()),
+                )
+                drawRoundRect(
+                    color = palette.panelBorder,
+                    topLeft = Offset(tankLeft, tankTop),
+                    size = Size(tankW, tankH),
+                    cornerRadius = CornerRadius(8.dp.toPx()),
+                    style = Stroke(width = 1.5.dp.toPx()),
+                )
+
+                // Center Booster Hub & Right Discharge Collector Manifold
+                val hubCenter = Offset(w * 0.50f, midY)
+                val hubR = 23.dp.toPx()
+                val outLeft = w - 58.dp.toPx()
+                val outW = 44.dp.toPx()
+                val outH = 44.dp.toPx()
+                val outTop = midY - outH / 2f
+
+                // Suction Pipe (Tank -> Hub) & Discharge Pipe (Hub -> Collector)
+                val pipeStart1 = tankLeft + tankW
+                val pipeEnd1 = hubCenter.x - hubR
+                val pipeStart2 = hubCenter.x + hubR
+                val pipeEnd2 = outLeft
+                val pipeThick = 10.dp.toPx()
+
+                fun drawPipe(x1: Float, x2: Float) {
+                    if (x2 <= x1) return
+                    drawLine(
+                        color = palette.panelElevated,
+                        start = Offset(x1, midY),
+                        end = Offset(x2, midY),
+                        strokeWidth = pipeThick,
+                        cap = StrokeCap.Butt,
+                    )
+                    drawLine(
+                        color = palette.panelBorder,
+                        start = Offset(x1, midY - pipeThick / 2f),
+                        end = Offset(x2, midY - pipeThick / 2f),
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                    drawLine(
+                        color = palette.panelBorder,
+                        start = Offset(x1, midY + pipeThick / 2f),
+                        end = Offset(x2, midY + pipeThick / 2f),
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                    if (isFlowing) {
+                        // Flowing glowing water/pressure energy slugs
+                        val count = 4
+                        val span = x2 - x1
+                        for (i in 0 until count) {
+                            val t = (flowPhase + i.toFloat() / count) % 1f
+                            val px = x1 + span * t
+                            val segLen = 14.dp.toPx()
+                            val fade = sin(t * PI).toFloat().coerceIn(0f, 1f)
+                            drawLine(
+                                brush = Brush.horizontalGradient(
+                                    listOf(Color.Transparent, streamColor.copy(alpha = 0.95f * fade), Color.White.copy(alpha = 0.85f * fade)),
+                                    startX = px - segLen,
+                                    endX = px + 4f,
+                                ),
+                                start = Offset((px - segLen).coerceAtLeast(x1), midY),
+                                end = Offset(px.coerceAtMost(x2), midY),
+                                strokeWidth = 4.2.dp.toPx(),
+                                cap = StrokeCap.Round,
+                            )
+                        }
+                    }
+                }
+                drawPipe(pipeStart1, pipeEnd1)
+                drawPipe(pipeStart2, pipeEnd2)
+
+                // Booster Turbine Hub with radial glow + spinning blades
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        0f to hubColor.copy(alpha = 0.34f * pulse),
+                        1f to Color.Transparent,
+                        center = hubCenter,
+                        radius = hubR * 1.45f,
+                    ),
+                    radius = hubR * 1.45f,
+                    center = hubCenter,
+                )
+                drawCircle(color = palette.panel, radius = hubR, center = hubCenter)
+                drawCircle(
+                    color = hubColor,
+                    radius = hubR,
+                    center = hubCenter,
+                    style = Stroke(width = 2.2.dp.toPx()),
+                )
+                val rot = if (isFlowing) turbineAngle else 0f
+                rotate(degrees = rot, pivot = hubCenter) {
+                    for (i in 0 until 4) {
+                        rotate(degrees = i * 90f, pivot = hubCenter) {
+                            val blade = Path().apply {
+                                moveTo(hubCenter.x, hubCenter.y)
+                                quadraticTo(
+                                    hubCenter.x + hubR * 0.45f,
+                                    hubCenter.y - hubR * 0.22f,
+                                    hubCenter.x + hubR * 0.65f,
+                                    hubCenter.y - hubR * 0.52f,
+                                )
+                            }
+                            drawPath(
+                                path = blade,
+                                color = if (isFlowing) palette.cyan else hubColor.copy(alpha = 0.7f),
+                                style = Stroke(width = 2.3.dp.toPx(), cap = StrokeCap.Round),
+                            )
+                        }
+                    }
+                }
+                drawCircle(color = palette.gold, radius = 4.dp.toPx(), center = hubCenter)
+
+                // Right Discharge Collector Pressure Vessel
+                drawRoundRect(
+                    color = palette.panelElevated,
+                    topLeft = Offset(outLeft, outTop),
+                    size = Size(outW, outH),
+                    cornerRadius = CornerRadius(10.dp.toPx()),
+                )
+                drawRoundRect(
+                    color = if (isFlowing) palette.gold.copy(alpha = 0.75f * pulse) else palette.panelBorder,
+                    topLeft = Offset(outLeft, outTop),
+                    size = Size(outW, outH),
+                    cornerRadius = CornerRadius(10.dp.toPx()),
+                    style = Stroke(width = 1.6.dp.toPx()),
+                )
+                // Mini pressure fill bar inside collector vessel
+                val pRatio = ((pressureBar ?: 0.0) / 10.0).toFloat().coerceIn(0f, 1f)
+                val barH = (outH - 12.dp.toPx()) * pRatio
+                if (barH > 1f) {
+                    drawRoundRect(
+                        brush = Brush.verticalGradient(listOf(palette.gold, palette.cyan)),
+                        topLeft = Offset(outLeft + outW / 2f - 6.dp.toPx(), outTop + outH - 6.dp.toPx() - barH),
+                        size = Size(12.dp.toPx(), barH),
+                        cornerRadius = CornerRadius(4.dp.toPx()),
+                    )
+                }
+            }
+        }
+
+        // Clean telemetry caption strip beneath schematic
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("مخزن ورودی", style = MaterialTheme.typography.labelSmall, color = palette.textSecondary)
+            val stateText = when {
+                hasFault -> "توقف حفاظتی (آلارم فعال)"
+                floaterLow == false -> "قطع جریان (کمبود آب)"
+                isFlowing -> "پمپاژ فعال ($runningPumpCount پمپ در مدار)"
+                else -> "حالت آماده‌باش (Standby)"
+            }
+            Text(
+                text = stateText,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = streamColor,
+            )
+            LtrText(
+                text = pressureBar?.let { "%.2f bar".format(it) } ?: "— bar",
+                style = MonoStyle.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
+                color = palette.gold,
+            )
+        }
+    }
+}
+

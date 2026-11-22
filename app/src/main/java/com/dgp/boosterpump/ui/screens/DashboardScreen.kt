@@ -1,5 +1,12 @@
 package com.dgp.boosterpump.ui.screens
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -21,7 +28,7 @@ import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Cable
 import androidx.compose.material.icons.outlined.CheckCircleOutline
 import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.Memory
+import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.SettingsEthernet
 import androidx.compose.material.icons.outlined.Speed
@@ -33,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,6 +56,7 @@ import com.dgp.boosterpump.session.ConnectionState
 import com.dgp.boosterpump.ui.PersianLabels
 import com.dgp.boosterpump.ui.components.AnimatedImpellerIcon
 import com.dgp.boosterpump.ui.components.BadgeTone
+import com.dgp.boosterpump.ui.components.BoosterHydraulicFlowDiagram
 import com.dgp.boosterpump.ui.components.LtrText
 import com.dgp.boosterpump.ui.components.NoticeBox
 import com.dgp.boosterpump.ui.components.PressureArcGauge
@@ -101,6 +110,22 @@ fun DashboardScreen(
         }
 
         item { HeroTelemetryPanel(snapshot) }
+        item {
+            val p = LocalScadaPalette.current
+            ScadaPanel(
+                title = "شماتیک زنده جریان هیدرولیک بوستر",
+                subtitle = "انیمیشن لحظه‌ای مکش، پمپاژ و فشار کلکتور متناسب با تعداد پمپ‌های فعال",
+                icon = Icons.Outlined.Hub,
+                accentColor = if (snapshot.alarms.isNotEmpty()) p.fault else p.gold,
+            ) {
+                BoosterHydraulicFlowDiagram(
+                    pressureBar = snapshot.pressureBar,
+                    runningPumpCount = snapshot.runningPumpCount,
+                    floaterLow = snapshot.floaterLowConnected,
+                    hasFault = snapshot.alarms.isNotEmpty(),
+                )
+            }
+        }
         item { AlarmsPanel(snapshot) }
         item {
             ScadaPanel(
@@ -217,7 +242,7 @@ private fun AlarmsPanel(snapshot: ControllerSnapshot) {
         borderColor = if (hasAlarms) p.fault.copy(alpha = 0.65f) else null,
         trailing = {
             if (hasAlarms) {
-                StatusBadge("${alarms.size} خطای فعال", BadgeTone.FAULT)
+                StatusBadge("${alarms.size} خطای فعال", BadgeTone.FAULT, pulsing = true)
             } else {
                 StatusBadge("بدون خطا", BadgeTone.OK)
             }
@@ -315,7 +340,7 @@ private fun PumpHmiTile(pump: PumpState, modifier: Modifier = Modifier) {
                 pump.running == false -> "توقف" to BadgeTone.NEUTRAL
                 else -> "نامشخص" to BadgeTone.NEUTRAL
             }
-            StatusBadge(label, tone)
+            StatusBadge(label, tone, pulsing = pump.failed == true)
             LtrText(
                 text = when {
                     pump.runTime != null -> PersianLabels.formatRunTimeCompact(pump.runTime)
@@ -357,6 +382,38 @@ private fun EmptyConnectionState(
 ) {
     val p = LocalScadaPalette.current
     val conn = uiState.connectionState
+    val infinite = rememberInfiniteTransition(label = "empty_crest")
+    val outerOrbit by infinite.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(14_000, easing = LinearEasing)),
+        label = "empty_outer",
+    )
+    val innerOrbit by infinite.animateFloat(
+        initialValue = 360f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(tween(if (conn is ConnectionState.Connecting) 2_200 else 6_500, easing = LinearEasing)),
+        label = "empty_inner",
+    )
+    val sonarPhase by infinite.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(2_200, easing = FastOutSlowInEasing)),
+        label = "empty_sonar",
+    )
+    val breath by infinite.animateFloat(
+        initialValue = 0.65f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1_800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "empty_breath",
+    )
+    val shimmer by infinite.animateFloat(
+        initialValue = -0.4f,
+        targetValue = 1.5f,
+        animationSpec = infiniteRepeatable(tween(3_000, easing = FastOutSlowInEasing)),
+        label = "empty_shimmer",
+    )
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -364,32 +421,40 @@ private fun EmptyConnectionState(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(
-            modifier = Modifier
-                .size(84.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(p.cyanSoft)
-                .border(1.5.dp, p.cyan.copy(alpha = 0.45f), RoundedCornerShape(24.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            when (conn) {
-                is ConnectionState.Connecting -> CircularProgressIndicator(
-                    modifier = Modifier.size(38.dp),
-                    color = p.cyan,
-                    strokeWidth = 3.dp,
-                )
-                is ConnectionState.Error -> Icon(
+        when (conn) {
+            is ConnectionState.Error -> Box(
+                modifier = Modifier
+                    .size(92.dp)
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(p.faultBg)
+                    .border(1.5.dp, p.fault.copy(alpha = 0.65f), RoundedCornerShape(26.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
                     Icons.Outlined.ErrorOutline,
                     contentDescription = null,
                     tint = p.fault,
-                    modifier = Modifier.size(42.dp),
+                    modifier = Modifier.size(46.dp),
                 )
-                else -> Icon(
-                    Icons.Outlined.Memory,
-                    contentDescription = null,
-                    tint = p.cyan,
-                    modifier = Modifier.size(42.dp),
+            }
+            else -> Box(contentAlignment = Alignment.Center) {
+                DgpAnimatedCrest(
+                    size = 186.dp,
+                    logoSize = 136.dp,
+                    outerAngle = outerOrbit,
+                    innerAngle = innerOrbit,
+                    sonarPhase = sonarPhase,
+                    breathGlow = breath,
+                    shimmerSweep = shimmer,
+                    showSonar = conn is ConnectionState.Connecting,
                 )
+                if (conn is ConnectionState.Connecting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(152.dp),
+                        color = p.cyan.copy(alpha = 0.65f),
+                        strokeWidth = 2.dp,
+                    )
+                }
             }
         }
 

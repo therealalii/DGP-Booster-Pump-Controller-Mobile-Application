@@ -1,5 +1,12 @@
 package com.dgp.boosterpump.ui.components
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -40,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -64,6 +72,7 @@ fun StatusBadge(
     text: String,
     tone: BadgeTone,
     modifier: Modifier = Modifier,
+    pulsing: Boolean = false,
 ) {
     val p = LocalScadaPalette.current
     val (fg, bg) = when (tone) {
@@ -83,12 +92,16 @@ fun StatusBadge(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(7.dp)
-                    .clip(CircleShape)
-                    .background(fg),
-            )
+            if (pulsing) {
+                LivePulseDot(color = fg)
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(fg),
+                )
+            }
             Text(
                 text = text,
                 style = MaterialTheme.typography.labelMedium,
@@ -100,9 +113,38 @@ fun StatusBadge(
     }
 }
 
+/** Live expanding sonar radar dot used for active telemetry links and alarms. */
+@Composable
+fun LivePulseDot(
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    val infinite = rememberInfiniteTransition(label = "sonar_dot")
+    val phase by infinite.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1350, easing = FastOutSlowInEasing)),
+        label = "sonar_dot_phase",
+    )
+    Canvas(modifier = modifier.size(12.dp)) {
+        val c = Offset(size.width / 2f, size.height / 2f)
+        val maxR = size.minDimension / 2f
+        drawCircle(
+            color = color.copy(alpha = (1f - phase) * 0.65f),
+            radius = maxR * (0.45f + phase * 0.55f),
+            center = c,
+        )
+        drawCircle(
+            color = color,
+            radius = maxR * 0.52f,
+            center = c,
+        )
+    }
+}
+
 /**
- * Primary SCADA panel container with an industrial accent stripe, optional header icon,
- * steel border, and structured header/body hierarchy.
+ * Primary SCADA panel container with an animated metallic light-sweep top accent stripe,
+ * optional header icon, steel border, and structured header/body hierarchy.
  */
 @Composable
 fun ScadaPanel(
@@ -117,6 +159,14 @@ fun ScadaPanel(
 ) {
     val p = LocalScadaPalette.current
     val accent = accentColor ?: p.cyan
+    val shimmer = rememberInfiniteTransition(label = "panel_shimmer")
+    val sweep by shimmer.animateFloat(
+        initialValue = -0.3f,
+        targetValue = 1.3f,
+        animationSpec = infiniteRepeatable(tween(4200, easing = LinearEasing)),
+        label = "panel_sweep",
+    )
+
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = p.panel),
@@ -125,17 +175,26 @@ fun ScadaPanel(
         elevation = CardDefaults.cardElevation(defaultElevation = if (p.isDark) 0.dp else 2.dp),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            // Subtle top SCADA accent line
-            Box(
+            // Animated SCADA top accent stripe with traveling luminous highlight
+            Canvas(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(2.5.dp)
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(accent.copy(alpha = 0.85f), accent.copy(alpha = 0.15f), Color.Transparent),
-                        ),
+                    .height(2.6.dp),
+            ) {
+                drawRect(
+                    brush = Brush.horizontalGradient(
+                        listOf(accent.copy(alpha = 0.72f), accent.copy(alpha = 0.16f), Color.Transparent),
                     ),
-            )
+                )
+                val cx = size.width * sweep
+                drawRect(
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(Color.Transparent, accent.copy(alpha = 0.95f), Color.White.copy(alpha = 0.75f), Color.Transparent),
+                        startX = cx - 75.dp.toPx(),
+                        endX = cx + 75.dp.toPx(),
+                    ),
+                )
+            }
             Column(
                 modifier = Modifier.padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -308,7 +367,11 @@ fun ConnectionHeaderStrip(
                             }
                             is ConnectionState.Error -> "خطای ارتباط" to BadgeTone.FAULT
                         }
-                        StatusBadge(label, tone)
+                        StatusBadge(
+                            text = label,
+                            tone = tone,
+                            pulsing = state is ConnectionState.Connected || state is ConnectionState.Connecting,
+                        )
                         Surface(
                             color = p.panelElevated,
                             shape = RoundedCornerShape(8.dp),

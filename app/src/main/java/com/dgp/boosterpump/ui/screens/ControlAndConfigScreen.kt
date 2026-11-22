@@ -98,6 +98,7 @@ private sealed interface PendingEdit {
 @Composable
 fun ControlAndConfigScreen(
     uiState: MonitoringUiState,
+    canWriteConfig: Boolean,
     onReadHardwareConfig: () -> Unit,
     onWriteParameter: (RegisterDefinition, Int) -> Unit,
     onDismissWriteNotice: () -> Unit,
@@ -106,6 +107,7 @@ fun ControlAndConfigScreen(
     val cfgSnap = uiState.configSnapshot
     val isConnected = uiState.connectionState is ConnectionState.Connected
     val isWriting = cfgSnap.writingKey != null
+    val canEditNow = canWriteConfig && isConnected && !isWriting
 
     var pendingEdit by remember { mutableStateOf<PendingEdit?>(null) }
 
@@ -150,10 +152,18 @@ fun ControlAndConfigScreen(
         // 1. Verified Hardware Configuration Read & Edit Panel
         item {
             ScadaPanel(
-                title = "تنظیمات سخت‌افزار کنترلر (FC05 / FC06 تاییدشده)",
-                subtitle = "خواندن درخواستی و ویرایش ایمن ۲۲ پارامتر سخت‌افزاری با تایید دومرحله‌ای و بازخوانی فوری",
+                title = if (canWriteConfig) {
+                    "تنظیمات سخت‌افزار کنترلر (FC05 / FC06 تاییدشده)"
+                } else {
+                    "تنظیمات سخت‌افزار کنترلر (مشاهده فقط‌خواندنی)"
+                },
+                subtitle = if (canWriteConfig) {
+                    "خواندن درخواستی و ویرایش ایمن ۲۲ پارامتر سخت‌افزاری با تایید دومرحله‌ای و بازخوانی فوری"
+                } else {
+                    "سطح دسترسی فعلی فقط مجاز به خواندن تنظیمات است — ویرایش مخصوص مدیر سیستم و نصاب است"
+                },
                 icon = Icons.Outlined.Tune,
-                accentColor = p.cyan,
+                accentColor = if (canWriteConfig) p.cyan else p.gold,
                 trailing = {
                     Button(
                         onClick = onReadHardwareConfig,
@@ -171,11 +181,18 @@ fun ControlAndConfigScreen(
                     }
                 },
             ) {
-                NoticeBox(
-                    text = "توابع نوشتن تکی FC05 (کویل) و FC06 (ورد) روی کنترلر BPC02 تست و تایید شده‌اند. " +
-                        "هر تغییر پس از تایید شما ارسال شده و بلافاصله برای اطمینان از ذخیره شدن در کنترلر مجدداً خوانده می‌شود.",
-                    tone = BadgeTone.INFO,
-                )
+                if (!canWriteConfig) {
+                    NoticeBox(
+                        text = "حساب کاربری فعلی دارای دسترسی فقط‌خواندنی است. برای ویرایش پارامترهای سخت‌افزاری (FC05 / FC06) با حساب «مدیر سیستم» یا «نصاب» وارد شوید.",
+                        tone = BadgeTone.WARNING,
+                    )
+                } else {
+                    NoticeBox(
+                        text = "توابع نوشتن تکی FC05 (کویل) و FC06 (ورد) روی کنترلر BPC02 تست و تایید شده‌اند. " +
+                            "هر تغییر پس از تایید شما ارسال شده و بلافاصله برای اطمینان از ذخیره شدن در کنترلر مجدداً خوانده می‌شود.",
+                        tone = BadgeTone.INFO,
+                    )
+                }
 
                 cfgSnap.lastWrite?.let { result ->
                     WriteResultBanner(result = result, onDismiss = onDismissWriteNotice)
@@ -198,9 +215,9 @@ fun ControlAndConfigScreen(
                 if (cfgSnap.readings.isEmpty()) {
                     Text(
                         if (isConnected) {
-                            "برای دریافت و ویرایش فعال‌سازی پمپ‌ها، Sleep Gap، اتو سرویس و تنظیمات MFI/MFO دکمه «خواندن تنظیمات» را بزنید."
+                            "برای دریافت و بررسی فعال‌سازی پمپ‌ها، Sleep Gap، اتو سرویس و تنظیمات MFI/MFO دکمه «خواندن تنظیمات» را بزنید."
                         } else {
-                            "ابتدا به کنترلر (مبدل سمین ES 487) یا حالت شبیه‌سازی متصل شوید تا امکان خواندن و ویرایش تنظیمات فعال شود."
+                            "ابتدا به کنترلر (مبدل سمین ES 487) یا حالت شبیه‌سازی متصل شوید تا امکان خواندن تنظیمات فعال شود."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = p.textSecondary,
@@ -232,7 +249,7 @@ fun ControlAndConfigScreen(
                                 if (idx > 0) HorizontalDivider(color = p.panelBorder)
                                 CoilSwitchRow(
                                     reading = reading,
-                                    enabled = isConnected && !isWriting,
+                                    enabled = canEditNow,
                                     isWritingThis = cfgSnap.writingKey == reading.definition.key,
                                     onRequestToggle = { target ->
                                         pendingEdit = PendingEdit.CoilConfirm(reading.definition, reading.raw, target)
@@ -261,7 +278,7 @@ fun ControlAndConfigScreen(
                                 if (reading.definition.documentedAddress == 4110) {
                                     ReserveTypeRow(
                                         reading = reading,
-                                        enabled = isConnected && !isWriting,
+                                        enabled = canEditNow,
                                         isWritingThis = cfgSnap.writingKey == reading.definition.key,
                                         onSelectType = { target ->
                                             pendingEdit = PendingEdit.CoilConfirm(reading.definition, reading.raw, target)
@@ -270,7 +287,7 @@ fun ControlAndConfigScreen(
                                 } else {
                                     CoilSwitchRow(
                                         reading = reading,
-                                        enabled = isConnected && !isWriting,
+                                        enabled = canEditNow,
                                         isWritingThis = cfgSnap.writingKey == reading.definition.key,
                                         onRequestToggle = { target ->
                                             pendingEdit = PendingEdit.CoilConfirm(reading.definition, reading.raw, target)
@@ -300,7 +317,7 @@ fun ControlAndConfigScreen(
                                 WordActionRow(
                                     reading = reading,
                                     actionLabel = "ویرایش",
-                                    enabled = isConnected && !isWriting,
+                                    enabled = canEditNow,
                                     isWritingThis = cfgSnap.writingKey == reading.definition.key,
                                     onClickEdit = {
                                         pendingEdit = PendingEdit.WordNumberEdit(reading.definition, reading.raw)
@@ -329,7 +346,7 @@ fun ControlAndConfigScreen(
                                 WordActionRow(
                                     reading = reading,
                                     actionLabel = "انتخاب",
-                                    enabled = isConnected && !isWriting,
+                                    enabled = canEditNow,
                                     isWritingThis = cfgSnap.writingKey == reading.definition.key,
                                     onClickEdit = {
                                         pendingEdit = PendingEdit.WordEnumEdit(reading.definition, reading.raw)

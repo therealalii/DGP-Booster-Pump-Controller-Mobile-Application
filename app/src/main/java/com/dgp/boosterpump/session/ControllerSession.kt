@@ -177,12 +177,12 @@ class ControllerSession(
                     val now = clock()
                     val snap = profile.decode(raw, config.mode, now)
                     pollCount++
-                    _snapshot.value = snap
                     snap.pressureBar?.let { bar ->
                         _pressureHistory.update { prev ->
                             (prev + PressureSample(now, bar)).takeLast(MAX_HISTORY_POINTS)
                         }
                     }
+                    _snapshot.value = snap
 
                     val partial = raw.blockErrors.takeIf { it.isNotEmpty() }?.let { errs ->
                         "${errs.size} of ${profile.pollBlocks.size} read block(s) rejected: ${errs.first().message}"

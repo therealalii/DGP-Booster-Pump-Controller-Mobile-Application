@@ -3,6 +3,7 @@ package com.dgp.boosterpump.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.dgp.boosterpump.auth.AppUser
 import com.dgp.boosterpump.controller.ControllerSnapshot
 import com.dgp.boosterpump.gateway.GatewayConfig
 import com.dgp.boosterpump.gateway.GatewayConfigRepository
@@ -39,12 +40,33 @@ class MonitoringViewModel(
     private val session: ControllerSession,
 ) : ViewModel() {
 
-    /** Industrial control-room dark theme is enabled by default; users can toggle daylight mode. */
+    /** Industrial control-room obsidian dark theme is enabled by default; users can toggle daylight mode. */
     private val _darkTheme = MutableStateFlow(true)
     val darkTheme: StateFlow<Boolean> = _darkTheme.asStateFlow()
 
+    /** Plays the animated DGP splash sequence once per cold launch (survives configuration changes). */
+    private val _splashCompleted = MutableStateFlow(false)
+    val splashCompleted: StateFlow<Boolean> = _splashCompleted.asStateFlow()
+
+    /** Currently signed-in operator/installer/admin user; null shows the dark DGP LoginScreen. */
+    private val _currentUser = MutableStateFlow<AppUser?>(null)
+    val currentUser: StateFlow<AppUser?> = _currentUser.asStateFlow()
+
     fun toggleDarkTheme() {
         _darkTheme.value = !_darkTheme.value
+    }
+
+    fun markSplashCompleted() {
+        _splashCompleted.value = true
+    }
+
+    fun login(user: AppUser) {
+        _currentUser.value = user
+    }
+
+    fun logout() {
+        session.disconnect()
+        _currentUser.value = null
     }
 
     private val coreFlow = combine(

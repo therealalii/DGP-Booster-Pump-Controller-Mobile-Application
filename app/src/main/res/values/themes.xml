@@ -1,5 +1,5 @@
 <resources>
     <style name="Theme.DgpBoosterPump" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">#090E1A</item>
+        <item name="android:windowBackground">#03050A</item>
     </style>
 </resources>

@@ -193,9 +193,9 @@ private fun PumpDetailCardRow(pump: PumpState, prFeedback: Boolean?) {
                 false -> "توقف" to BadgeTone.NEUTRAL
                 null -> "نامشخص" to BadgeTone.NEUTRAL
             }
-            StatusBadge(runLabel, runTone)
+            StatusBadge(runLabel, runTone, pulsing = pump.running == true)
             if (pump.failed == true) {
-                StatusBadge("خطای پمپ", BadgeTone.FAULT)
+                StatusBadge("خطای پمپ", BadgeTone.FAULT, pulsing = true)
             }
         }
     }

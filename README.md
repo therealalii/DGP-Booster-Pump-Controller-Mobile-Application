@@ -4,7 +4,8 @@ Industrial Persian (`fa` + RTL) Android SCADA/HMI application (Kotlin, Jetpack C
 
 - **Target controller:** DGP **BPC02** — 100% hardware-verified on COM4 (`9600 8N1`, Slave ID `1`; see [`BPC02_FULL_READ_RESULTS.txt`](BPC02_FULL_READ_RESULTS.txt), [`BPC02_WRITE_TEST_RESULTS.txt`](BPC02_WRITE_TEST_RESULTS.txt), [`BPC02_REGISTER_MAP.pdf`](BPC02_REGISTER_MAP.pdf), and [`BPC02_REGISTER_MAP.md`](BPC02_REGISTER_MAP.md))
 - **Future target:** DGP **BPC04** (architecture ready via `ControllerProfile`; disabled until the BPC04 register map is verified)
-- **Language & UI:** Full **Persian (RTL)** industrial SCADA control-room dark UI + 1-tap daylight toggle, bundled **Vazirmatn** typography, custom Jetpack Compose Canvas instruments (240° radial pressure gauge, animated cutaway water tank, 40-sample live pressure trend chart, spinning pump impellers, 3-phase voltage analyzer, PLC LED beads)
+- **Language & UI:** Full **Persian (RTL)** obsidian-black & royal-gold industrial SCADA HMI + 1-tap daylight toggle, bundled **Vazirmatn** typography, animated dark DGP boot splash & login screen, and live custom Compose Canvas instruments (animated hydraulic flow P&ID diagram, 240° breathing pressure arc gauge, cutaway water tank, 40-sample pressure trend chart, spinning pump impellers, 3-phase voltage analyzer, live sonar status indicators)
+- **Role-Based Offline Login:** Hardcoded accounts for **Admin (`admin`)**, **Installer / نصاب (`nasab`, `installer`)**, **Service Technician (`service`)**, **Operator (`operator`)**, and **Guest Demo (`guest`)** — see [`APP_USERS.txt`](APP_USERS.txt) for all usernames, passwords, and permissions
 - **Verified Read + Safe Config Write Posture:**
   - **Reads:** `FC01` (Coils) and `FC03` (Holding Registers) with zero-based PDU addressing (`offset = 0`).
   - **Hardware Configuration Writes:** `FC05` (Single Coil: `4096–4101`, `4106–4110`) and `FC06` (Single Holding Register: `4175`, `4177–4186`) — verified on hardware with 2-step Persian confirmation dialogs, strict range validation, and immediate read-back verification.
@@ -73,6 +74,7 @@ Full tables are published in **[`BPC02_REGISTER_MAP.pdf`](BPC02_REGISTER_MAP.pdf
 
 ```text
 app/src/main/java/com/dgp/boosterpump/
+├── auth/            # Offline role-based authentication (Admin, Installer/نصاب, Service, Operator, Guest)
 ├── modbus/          # ReadFunction (FC01–FC04), WriteFunction (FC05/FC06 only), ModbusPdu,
 │                    # Crc16, ModbusTransport, TcpModbusTransport (MBAP + RTU-over-TCP),
 │                    # ModbusReadClient, ModbusWriteClient
@@ -82,9 +84,9 @@ app/src/main/java/com/dgp/boosterpump/
 ├── simulation/      # SimulatedBpc02Transport (5 live scenarios + persistent FC05/FC06 config state)
 ├── session/         # ControllerSession (polling, reconnect backoff, TX/RX log, verified FC05/FC06
 │                    # writes with immediate read-back, single read probe)
-├── viewmodel/       # MonitoringViewModel, GatewaySettingsViewModel
-└── ui/              # Persian RTL theme (Vazirmatn), PersianLabels, Canvas SCADA instruments,
-                     # 5 screens (Dashboard, Pumps & I/O, Control & Config, Diagnostics, Gateway)
+├── viewmodel/       # MonitoringViewModel (auth + splash + live telemetry), GatewaySettingsViewModel
+└── ui/              # Persian RTL obsidian/gold theme (Vazirmatn), SplashLoadingScreen, LoginScreen,
+                     # Canvas SCADA instruments & hydraulic flow diagram, 5 SCADA screens
 ```
 
 ---
@@ -93,7 +95,7 @@ app/src/main/java/com/dgp/boosterpump/
 
 ### Android Build & Unit Tests
 ```bash
-# Run all unit tests (Modbus codec, FC05/FC06 hardware vectors, TCP/RTU transport, register map, session)
+# Run all unit tests (auth roles, Modbus codec, FC05/FC06 vectors, TCP/RTU transport, register map, session)
 ./gradlew testDebugUnitTest
 
 # Build debug APK
@@ -113,6 +115,7 @@ The debug APK is generated at `app/build/outputs/apk/debug/app-debug.apk`.
 
 ## 5. Repository Documentation
 
+- [`APP_USERS.txt`](APP_USERS.txt) — All built-in usernames, passwords, and role permissions (Admin, Installer / نصاب, Service, Operator, Guest)
 - [`BPC02_REGISTER_MAP.pdf`](BPC02_REGISTER_MAP.pdf) & [`BPC02_REGISTER_MAP.md`](BPC02_REGISTER_MAP.md) — Complete hardware-verified BPC02 Modbus register map & Samin ES 487 setup
 - [`BPC02_FULL_READ_RESULTS.txt`](BPC02_FULL_READ_RESULTS.txt) — Complete 14-block read-only hardware capture on COM4
 - [`BPC02_WRITE_TEST_RESULTS.txt`](BPC02_WRITE_TEST_RESULTS.txt) — Bench write verification capture (`FC05`/`FC06` verified, `FC15`/`FC16` rejected, Manual Mode `0x02`/`0x03`)

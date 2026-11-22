@@ -1,17 +1,37 @@
 package com.dgp.boosterpump.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.SettingsEthernet
+import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material.icons.outlined.WaterDrop
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -20,20 +40,35 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.dgp.boosterpump.R
+import com.dgp.boosterpump.auth.AppUser
 import com.dgp.boosterpump.gateway.DataSourceMode
 import com.dgp.boosterpump.session.ConnectionState
 import com.dgp.boosterpump.ui.components.ConnectionHeaderStrip
@@ -42,10 +77,14 @@ import com.dgp.boosterpump.ui.screens.ControlAndConfigScreen
 import com.dgp.boosterpump.ui.screens.DashboardScreen
 import com.dgp.boosterpump.ui.screens.DiagnosticsScreen
 import com.dgp.boosterpump.ui.screens.GatewaySettingsScreen
+import com.dgp.boosterpump.ui.screens.LoginScreen
 import com.dgp.boosterpump.ui.screens.PumpsAndIoScreen
+import com.dgp.boosterpump.ui.screens.SplashLoadingScreen
 import com.dgp.boosterpump.ui.theme.LocalScadaPalette
 import com.dgp.boosterpump.viewmodel.GatewaySettingsViewModel
 import com.dgp.boosterpump.viewmodel.MonitoringViewModel
+
+private enum class AppStage { SPLASH, LOGIN, MAIN }
 
 private enum class Destination(val route: String, val label: String, val icon: ImageVector) {
     DASHBOARD("dashboard", "مانیتورینگ", Icons.Outlined.Dashboard),
@@ -55,7 +94,6 @@ private enum class Destination(val route: String, val label: String, val icon: I
     GATEWAY("gateway", "مبدل", Icons.Outlined.SettingsEthernet),
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DgpApp(
     monitoringViewModel: MonitoringViewModel,
@@ -63,10 +101,59 @@ fun DgpApp(
     darkTheme: Boolean,
     onToggleTheme: () -> Unit,
 ) {
+    val splashCompleted by monitoringViewModel.splashCompleted.collectAsStateWithLifecycle()
+    val currentUser by monitoringViewModel.currentUser.collectAsStateWithLifecycle()
+
+    val stage = when {
+        !splashCompleted -> AppStage.SPLASH
+        currentUser == null -> AppStage.LOGIN
+        else -> AppStage.MAIN
+    }
+
+    AnimatedContent(
+        targetState = stage,
+        transitionSpec = {
+            (fadeIn(tween(420)) + scaleIn(initialScale = 0.96f, animationSpec = tween(420))) togetherWith
+                fadeOut(tween(300))
+        },
+        label = "app_stage_transition",
+    ) { target ->
+        when (target) {
+            AppStage.SPLASH -> SplashLoadingScreen(
+                onFinished = monitoringViewModel::markSplashCompleted,
+            )
+            AppStage.LOGIN -> LoginScreen(
+                onAuthenticated = monitoringViewModel::login,
+            )
+            AppStage.MAIN -> currentUser?.let { user ->
+                MainScadaShell(
+                    user = user,
+                    monitoringViewModel = monitoringViewModel,
+                    settingsViewModel = settingsViewModel,
+                    darkTheme = darkTheme,
+                    onToggleTheme = onToggleTheme,
+                    onLogout = monitoringViewModel::logout,
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MainScadaShell(
+    user: AppUser,
+    monitoringViewModel: MonitoringViewModel,
+    settingsViewModel: GatewaySettingsViewModel,
+    darkTheme: Boolean,
+    onToggleTheme: () -> Unit,
+    onLogout: () -> Unit,
+) {
     val p = LocalScadaPalette.current
     val navController = rememberNavController()
     val uiState by monitoringViewModel.uiState.collectAsStateWithLifecycle()
     val formState by settingsViewModel.form.collectAsStateWithLifecycle()
+    var showLogoutDialog by remember { mutableStateOf(false) }
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: Destination.DASHBOARD.route
@@ -85,6 +172,47 @@ fun DgpApp(
         }
     }
 
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutDialog = false },
+            icon = { Icon(Icons.Outlined.VerifiedUser, contentDescription = null, tint = p.gold) },
+            title = { Text("خروج از حساب کاربری", style = MaterialTheme.typography.titleMedium) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "کاربر فعال: ${user.displayNameFa} (${user.role.titleFa})",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = p.textPrimary,
+                    )
+                    Text(
+                        user.role.subtitleFa,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = p.textSecondary,
+                    )
+                    Text(
+                        "با خروج از حساب، ارتباط فعال مدباس قطع شده و به صفحه ورود بازمی‌گردید.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = p.warning,
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLogoutDialog = false
+                        onLogout()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = p.fault, contentColor = Color.White),
+                ) {
+                    Text("خروج از سامانه")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutDialog = false }) { Text("انصراف") }
+            },
+        )
+    }
+
     Scaffold(
         containerColor = p.canvas,
         topBar = {
@@ -96,18 +224,59 @@ fun DgpApp(
                         actionIconContentColor = p.cyan,
                     ),
                     title = {
-                        Column {
-                            Text(
-                                "کنترلر بوستر پمپ DGP",
-                                style = MaterialTheme.typography.titleMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                "BPC02  •  مبدل سمین ES 487",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = p.cyan,
-                            )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(9.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF04070D))
+                                    .border(1.dp, p.gold.copy(alpha = 0.65f), CircleShape),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Image(
+                                    painter = painterResource(id = R.drawable.dgp_emblem_dark),
+                                    contentDescription = "DGP",
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.size(28.dp),
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f, fill = false)) {
+                                Text(
+                                    "کنترلر بوستر پمپ DGP",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    Text(
+                                        "BPC02  •  ES 487",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = p.cyan,
+                                    )
+                                    Surface(
+                                        color = p.goldSoft,
+                                        shape = RoundedCornerShape(6.dp),
+                                        border = BorderStroke(0.8.dp, p.gold.copy(alpha = 0.45f)),
+                                    ) {
+                                        Text(
+                                            text = user.role.titleFa,
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontSize = 9.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                            ),
+                                            color = p.gold,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+                                            maxLines = 1,
+                                        )
+                                    }
+                                }
+                            }
                         }
                     },
                     actions = {
@@ -115,6 +284,13 @@ fun DgpApp(
                             Icon(
                                 imageVector = if (darkTheme) Icons.Outlined.LightMode else Icons.Outlined.DarkMode,
                                 contentDescription = if (darkTheme) "تم روشن" else "تم تیره صنعتی",
+                            )
+                        }
+                        IconButton(onClick = { showLogoutDialog = true }) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.Logout,
+                                contentDescription = "خروج از حساب کاربری",
+                                tint = p.gold,
                             )
                         }
                     },
@@ -158,6 +334,8 @@ fun DgpApp(
         NavHost(
             navController = navController,
             startDestination = Destination.DASHBOARD.route,
+            enterTransition = { fadeIn(tween(220)) },
+            exitTransition = { fadeOut(tween(180)) },
             modifier = Modifier
                 .fillMaxSize()
                 .background(p.canvas)
@@ -177,6 +355,7 @@ fun DgpApp(
             composable(Destination.CONTROL.route) {
                 ControlAndConfigScreen(
                     uiState = uiState,
+                    canWriteConfig = user.role.canWriteConfig,
                     onReadHardwareConfig = monitoringViewModel::readHardwareConfiguration,
                     onWriteParameter = monitoringViewModel::writeHardwareParameter,
                     onDismissWriteNotice = monitoringViewModel::clearLastWriteNotice,
@@ -185,6 +364,7 @@ fun DgpApp(
             composable(Destination.DIAGNOSTICS.route) {
                 DiagnosticsScreen(
                     uiState = uiState,
+                    canRunProbe = user.role.canRunDiagnostics,
                     onRunProbe = monitoringViewModel::runReadProbe,
                     onClearLog = monitoringViewModel::clearTransactionLog,
                 )
@@ -193,6 +373,7 @@ fun DgpApp(
                 GatewaySettingsScreen(
                     form = formState,
                     viewModel = settingsViewModel,
+                    canEditGateway = user.role.canEditGateway,
                     onSavedAndConnected = { navigateTo(Destination.DASHBOARD) },
                 )
             }

@@ -51,6 +51,7 @@ import com.dgp.boosterpump.viewmodel.GatewaySettingsViewModel
 fun GatewaySettingsScreen(
     form: GatewayFormState,
     viewModel: GatewaySettingsViewModel,
+    canEditGateway: Boolean,
     onSavedAndConnected: () -> Unit,
 ) {
     val p = LocalScadaPalette.current
@@ -60,6 +61,15 @@ fun GatewaySettingsScreen(
         contentPadding = PaddingValues(14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        if (!canEditGateway) {
+            item {
+                NoticeBox(
+                    text = "مشاهده فقط‌خواندنی: تغییر آدرس IP، پورت و پروتکل مبدل سمین ES 487 مخصوص «مدیر سیستم» و «نصاب» است.",
+                    tone = BadgeTone.WARNING,
+                )
+            }
+        }
+
         item {
             ScadaPanel(
                 title = "منبع داده و مدل کنترلر",
@@ -72,6 +82,7 @@ fun GatewaySettingsScreen(
                         FilterChip(
                             selected = form.mode == mode,
                             onClick = { viewModel.updateMode(mode) },
+                            enabled = canEditGateway,
                             label = { Text(PersianLabels.modeLabel(mode)) },
                         )
                     }
@@ -113,6 +124,7 @@ fun GatewaySettingsScreen(
                     OutlinedTextField(
                         value = form.host,
                         onValueChange = viewModel::updateHost,
+                        readOnly = !canEditGateway,
                         label = { Text("آدرس IP یا نام میزبان مبدل ES 487") },
                         placeholder = { Text("مثلاً 192.168.1.50 (از نرم‌افزار IP Finder سمین)") },
                         singleLine = true,
@@ -127,6 +139,7 @@ fun GatewaySettingsScreen(
                         OutlinedTextField(
                             value = form.portText,
                             onValueChange = viewModel::updatePort,
+                            readOnly = !canEditGateway,
                             label = { Text("پورت TCP") },
                             supportingText = {
                                 Text(
@@ -143,6 +156,7 @@ fun GatewaySettingsScreen(
                         OutlinedTextField(
                             value = form.unitIdText,
                             onValueChange = viewModel::updateUnitId,
+                            readOnly = !canEditGateway,
                             label = { Text("شناسه Slave / Unit ID") },
                             supportingText = {
                                 Text(
@@ -164,6 +178,7 @@ fun GatewaySettingsScreen(
                             FilterChip(
                                 selected = form.framing == framing,
                                 onClick = { viewModel.updateFraming(framing) },
+                                enabled = canEditGateway,
                                 label = { Text(PersianLabels.framingLabel(framing)) },
                             )
                         }
@@ -201,6 +216,7 @@ fun GatewaySettingsScreen(
                         FilterChip(
                             selected = form.bitReadFunction == fn,
                             onClick = { viewModel.updateBitFunction(fn) },
+                            enabled = canEditGateway,
                             label = { Text(PersianLabels.readFunctionShort(fn)) },
                         )
                     }
@@ -212,6 +228,7 @@ fun GatewaySettingsScreen(
                         FilterChip(
                             selected = form.wordReadFunction == fn,
                             onClick = { viewModel.updateWordFunction(fn) },
+                            enabled = canEditGateway,
                             label = { Text(PersianLabels.readFunctionShort(fn)) },
                         )
                     }
@@ -228,6 +245,7 @@ fun GatewaySettingsScreen(
                         FilterChip(
                             selected = form.addressOffset == offset,
                             onClick = { viewModel.updateAddressOffset(offset) },
+                            enabled = canEditGateway,
                             label = { Text(label) },
                         )
                     }
@@ -246,6 +264,7 @@ fun GatewaySettingsScreen(
                     OutlinedTextField(
                         value = form.pollIntervalText,
                         onValueChange = viewModel::updatePollInterval,
+                        readOnly = !canEditGateway,
                         label = { Text("بازه خوانش (ms)") },
                         singleLine = true,
                         isError = ConfigValidation.Field.POLL_INTERVAL in form.errors,
@@ -259,6 +278,7 @@ fun GatewaySettingsScreen(
                         OutlinedTextField(
                             value = form.responseTimeoutText,
                             onValueChange = viewModel::updateResponseTimeout,
+                            readOnly = !canEditGateway,
                             label = { Text("مهلت پاسخ (ms)") },
                             singleLine = true,
                             isError = ConfigValidation.Field.RESPONSE_TIMEOUT in form.errors,
@@ -274,6 +294,7 @@ fun GatewaySettingsScreen(
                     OutlinedTextField(
                         value = form.connectTimeoutText,
                         onValueChange = viewModel::updateConnectTimeout,
+                        readOnly = !canEditGateway,
                         label = { Text("مهلت اتصال سوکت TCP (میلی‌ثانیه)") },
                         singleLine = true,
                         isError = ConfigValidation.Field.CONNECT_TIMEOUT in form.errors,
@@ -299,6 +320,7 @@ fun GatewaySettingsScreen(
                 ) {
                     Button(
                         onClick = { viewModel.save(andConnect = true, onConnected = onSavedAndConnected) },
+                        enabled = canEditGateway,
                         modifier = Modifier.weight(1.2f),
                     ) {
                         Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -307,6 +329,7 @@ fun GatewaySettingsScreen(
                     }
                     OutlinedButton(
                         onClick = { viewModel.save(andConnect = false) },
+                        enabled = canEditGateway,
                         modifier = Modifier.weight(0.8f),
                     ) {
                         Icon(Icons.Outlined.Save, contentDescription = null, modifier = Modifier.size(18.dp))

@@ -81,11 +81,12 @@ private enum class DiagTab(val label: String) {
 @Composable
 fun DiagnosticsScreen(
     uiState: MonitoringUiState,
+    canRunProbe: Boolean,
     onRunProbe: (ReadFunction, Int, Int) -> Unit,
     onClearLog: () -> Unit,
 ) {
     val p = LocalScadaPalette.current
-    var activeTab by remember { mutableStateOf(DiagTab.PROBE) }
+    var activeTab by remember { mutableStateOf(if (canRunProbe) DiagTab.PROBE else DiagTab.MAP) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // Sub-tab selector bar
@@ -111,7 +112,7 @@ fun DiagnosticsScreen(
         }
 
         when (activeTab) {
-            DiagTab.PROBE -> ProbeTabContent(uiState = uiState, onRunProbe = onRunProbe)
+            DiagTab.PROBE -> ProbeTabContent(uiState = uiState, canRunProbe = canRunProbe, onRunProbe = onRunProbe)
             DiagTab.LOG -> TransactionLogTabContent(uiState = uiState, onClearLog = onClearLog)
             DiagTab.MAP -> RegisterMapTabContent(uiState = uiState)
         }
@@ -122,6 +123,7 @@ fun DiagnosticsScreen(
 @Composable
 private fun ProbeTabContent(
     uiState: MonitoringUiState,
+    canRunProbe: Boolean,
     onRunProbe: (ReadFunction, Int, Int) -> Unit,
 ) {
     val p = LocalScadaPalette.current
@@ -211,6 +213,13 @@ private fun ProbeTabContent(
                     Text(inputError!!, style = MaterialTheme.typography.bodySmall, color = p.fault)
                 }
 
+                if (!canRunProbe) {
+                    NoticeBox(
+                        text = "ارسال مستقیم درخواست تست خواندن (Probe) برای سطح دسترسی اپراتور محدود شده است. می‌توانید از تب‌های «لاگ TX/RX» و «نقشه رجیستر» استفاده کنید.",
+                        tone = BadgeTone.WARNING,
+                    )
+                }
+
                 Button(
                     onClick = {
                         val addr = addrText.trim().toIntOrNull()
@@ -226,12 +235,18 @@ private fun ProbeTabContent(
                             }
                         }
                     },
-                    enabled = isConnected,
+                    enabled = isConnected && canRunProbe,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = null, modifier = Modifier.size(17.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text(if (isConnected) "ارسال درخواست خواندن" else "ابتدا به مبدل یا شبیه‌ساز متصل شوید")
+                    Text(
+                        when {
+                            !canRunProbe -> "تست مستقیم مخصوص ادمین، نصاب و سرویس‌کار"
+                            isConnected -> "ارسال درخواست خواندن"
+                            else -> "ابتدا به مبدل یا شبیه‌ساز متصل شوید"
+                        },
+                    )
                 }
 
                 uiState.probeResult?.let { res ->
