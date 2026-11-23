@@ -33,6 +33,8 @@ interface ControllerProfile {
     val model: ControllerModel
     val polled: List<RegisterDefinition>
     val pollBlocks: List<ReadBlock>
+    val fastPollBlocks: List<ReadBlock> get() = pollBlocks
+    val slowPollBlocks: List<ReadBlock> get() = emptyList()
     val configuration: List<RegisterDefinition>
     val configurationBlocks: List<ReadBlock>
     val manualControl: List<RegisterDefinition>
@@ -55,6 +57,8 @@ object Bpc02Profile : ControllerProfile {
     override val model = ControllerModel.BPC02
     override val polled = map.polled
     override val pollBlocks = map.pollBlocks
+    override val fastPollBlocks = map.fastPollBlocks
+    override val slowPollBlocks = map.slowPollBlocks
     override val configuration = map.configuration
     override val configurationBlocks = map.configurationBlocks
     override val manualControl = map.manualControl

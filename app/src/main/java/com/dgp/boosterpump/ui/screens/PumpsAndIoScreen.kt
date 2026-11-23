@@ -82,6 +82,7 @@ fun PumpsAndIoScreen(uiState: MonitoringUiState) {
     }
 
     val activePumps = snapshot.pumps.count { it.running == true }
+    val enabledPumps = snapshot.pumps.count { it.enabled == true }
     val failedPumps = snapshot.pumps.count { it.failed == true }
     val disabledPumps = snapshot.pumps.count { it.enabled == false }
     val activeRelays = snapshot.outputs.count { it == true }
@@ -102,9 +103,9 @@ fun PumpsAndIoScreen(uiState: MonitoringUiState) {
                     .padding(vertical = 12.dp, horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                StationStatCell("پمپ در مدار", "$activePumps / 6", if (activePumps > 0) p.ok else p.textSecondary, Modifier.weight(1f))
+                StationStatCell("در حال کار", "$activePumps / 6", if (activePumps > 0) p.ok else p.textSecondary, Modifier.weight(1f))
                 Box(modifier = Modifier.width(0.8.dp).height(34.dp).background(p.hairline))
-                StationStatCell("رله خروجی فعال", "$activeRelays / 10", p.cyan, Modifier.weight(1f))
+                StationStatCell("فعال (آماده)", "$enabledPumps / 6", p.cyan, Modifier.weight(1f))
                 Box(modifier = Modifier.width(0.8.dp).height(34.dp).background(p.hairline))
                 val healthLabel = when {
                     failedPumps > 0 -> "$failedPumps خطا"
@@ -257,6 +258,7 @@ private fun StationStatCell(label: String, value: String, accent: Color, modifie
 private fun PumpDetailCardRow(pump: PumpState, prFeedback: Boolean?) {
     val p = LocalScadaPalette.current
     val isDisabled = pump.enabled == false
+    val isReady = !isDisabled && pump.failed != true && pump.running == false && pump.enabled == true
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -264,7 +266,13 @@ private fun PumpDetailCardRow(pump: PumpState, prFeedback: Boolean?) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        AnimatedImpellerIcon(running = pump.running, failed = pump.failed, disabled = isDisabled, size = 44.dp)
+        AnimatedImpellerIcon(
+            running = pump.running,
+            failed = pump.failed,
+            disabled = isDisabled,
+            ready = isReady,
+            size = 44.dp,
+        )
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("پمپ ${pump.number}", style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
@@ -295,18 +303,21 @@ private fun PumpDetailCardRow(pump: PumpState, prFeedback: Boolean?) {
                     style = MaterialTheme.typography.labelSmall,
                     color = p.warning,
                 )
+            } else if (isReady) {
+                Text(
+                    "فعال در مدار و آماده فرمان (کویل ${4096 + pump.number} = 1)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = p.cyan,
+                )
             }
         }
         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (isDisabled) {
-                StatusBadge("غیرفعال (S)", BadgeTone.WARNING)
-            } else {
-                val (runLabel, runTone) = when (pump.running) {
-                    true -> "در حال کار" to BadgeTone.OK
-                    false -> "توقف" to BadgeTone.NEUTRAL
-                    null -> "نامشخص" to BadgeTone.NEUTRAL
-                }
-                StatusBadge(runLabel, runTone, pulsing = pump.running == true)
+            when {
+                isDisabled -> StatusBadge("غیرفعال (S)", BadgeTone.WARNING)
+                pump.running == true -> StatusBadge("در حال کار", BadgeTone.OK, pulsing = true)
+                isReady -> StatusBadge("آماده‌به‌کار", BadgeTone.INFO)
+                pump.running == false -> StatusBadge("آماده‌به‌کار", BadgeTone.NEUTRAL)
+                else -> StatusBadge("نامشخص", BadgeTone.NEUTRAL)
             }
             if (pump.failed == true) {
                 StatusBadge("خطای پمپ", BadgeTone.FAULT, pulsing = true)

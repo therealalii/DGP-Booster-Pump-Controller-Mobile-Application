@@ -519,6 +519,7 @@ fun AnimatedImpellerIcon(
     running: Boolean?,
     failed: Boolean?,
     disabled: Boolean = false,
+    ready: Boolean = false,
     size: Dp = 36.dp,
 ) {
     val palette = LocalScadaPalette.current
@@ -540,12 +541,14 @@ fun AnimatedImpellerIcon(
         failed == true -> palette.fault
         disabled -> palette.warning
         running == true -> palette.ok
+        ready -> palette.cyan.copy(alpha = 0.72f)
         else -> palette.panelBorder
     }
     val bladeColor = when {
         failed == true -> palette.fault
         disabled -> palette.warning.copy(alpha = 0.55f)
         running == true -> palette.cyan
+        ready -> palette.cyan.copy(alpha = 0.68f)
         else -> palette.standby
     }
     val rotation = if (running == true && failed != true && !disabled) angle else 0f
@@ -570,7 +573,7 @@ fun AnimatedImpellerIcon(
 
         // Outer pump housing
         drawCircle(
-            color = ringColor.copy(alpha = if (running == true || failed == true || disabled) 0.16f else 0.10f),
+            color = ringColor.copy(alpha = if (running == true || failed == true || disabled || ready) 0.14f else 0.10f),
             radius = r,
             center = c,
         )

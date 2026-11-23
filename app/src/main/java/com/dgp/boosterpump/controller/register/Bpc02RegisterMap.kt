@@ -492,6 +492,23 @@ object Bpc02RegisterMap {
     /** Contiguous live read blocks covering [polled], skipping all undocumented gaps. */
     val pollBlocks: List<ReadBlock> = buildBlocks(polled)
 
+    /** High-priority live blocks read on every poll cycle (5 compact blocks for stable 9600-baud RS485). */
+    val fastPollBlocks: List<ReadBlock> = listOf(
+        ReadBlock(VendorTable.BIT, 0, 34), // Outputs, DR, PR, MFI, Pump 1..6 Run/Fail, Floaters
+        ReadBlock(VendorTable.BIT, 4096, 7), // Drive + Pump 1..6 Activation ('S' state)
+        ReadBlock(VendorTable.WORD, 2, 8), // System Pressure, Voltages, Mains Frequency
+        ReadBlock(VendorTable.WORD, 25, 2), // Drive 1 & Drive 2 Frequency (0.01 Hz)
+        ReadBlock(VendorTable.WORD, 80, 2), // System Error Word 1 & Word 2
+    )
+
+    /** Slower-changing telemetry blocks polled on connect and refreshed periodically to avoid congesting RS485. */
+    val slowPollBlocks: List<ReadBlock> = listOf(
+        ReadBlock(VendorTable.WORD, 0, 1), // Displayed LCD Page
+        ReadBlock(VendorTable.WORD, 34, 12), // Pump 1..4 Work Time
+        ReadBlock(VendorTable.WORD, 4096, 1), // System Pressure Setpoint
+        ReadBlock(VendorTable.WORD, 4173, 1), // Control Status (0=Disable, 1=PID, 2=ON/OFF)
+    )
+
     /** Contiguous on-demand read blocks covering [configuration], skipping all undocumented gaps. */
     val configurationBlocks: List<ReadBlock> = buildBlocks(configuration)
 

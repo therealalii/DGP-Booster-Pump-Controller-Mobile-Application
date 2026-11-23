@@ -41,6 +41,15 @@ class Bpc02RegisterMapAndProfileTest {
             ReadBlock(VendorTable.WORD, 4173, 1), // Control Status (0=Disable, 1=PID, 2=ON/OFF)
         )
         assertEquals(expected, Bpc02RegisterMap.pollBlocks)
+        assertEquals(
+            "Fast + slow poll tiers must partition pollBlocks with zero overlap",
+            Bpc02RegisterMap.pollBlocks.toSet(),
+            (Bpc02RegisterMap.fastPollBlocks + Bpc02RegisterMap.slowPollBlocks).toSet(),
+        )
+        assertEquals(
+            Bpc02RegisterMap.pollBlocks.size,
+            Bpc02RegisterMap.fastPollBlocks.size + Bpc02RegisterMap.slowPollBlocks.size,
+        )
     }
 
     @Test

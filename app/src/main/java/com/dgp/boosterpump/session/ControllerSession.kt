@@ -130,6 +130,8 @@ class ControllerSession(
     private var transport: ModbusTransport? = null
     private var readClient: ModbusReadClient? = null
     private var writeClient: ModbusWriteClient? = null
+    private var cachedSlowBits: Map<Int, Boolean> = emptyMap()
+    private var cachedSlowWords: Map<Int, Int> = emptyMap()
 
     fun setSimulationScenario(scenario: SimulationScenario) {
         _simulationScenario.value = scenario
@@ -161,6 +163,8 @@ class ControllerSession(
         _pressureHistory.value = emptyList()
         _configSnapshot.value = ConfigSnapshotState()
         _probeResult.value = null
+        cachedSlowBits = emptyMap()
+        cachedSlowWords = emptyMap()
 
         val profile = ControllerProfiles.forModel(config.controllerModel)
         val target = describeTarget(config)
@@ -169,20 +173,55 @@ class ControllerSession(
 
         pollJob = scope.launch(ioDispatcher) {
             var pollCount = 0
+            var consecutiveLinkErrors = 0
+
             while (isActive) {
                 try {
+                    val includeSlow = isSim || pollCount == 0 || (pollCount % LIVE_SLOW_POLL_EVERY_N == 0)
+                    val blocksToRead = when {
+                        isSim -> profile.pollBlocks
+                        includeSlow -> profile.fastPollBlocks + profile.slowPollBlocks
+                        else -> profile.fastPollBlocks
+                    }
+
                     // Check/establish transport and read poll blocks atomically under ioMutex so a
                     // concurrent write cannot leave pollJob holding a stale/closed client reference.
-                    val raw = ioMutex.withLock {
-                        ensureConnectedLocked(config, target, isSim)
+                    val readRaw = ioMutex.withLock {
+                        val silentReopen = !isSim && pollCount > 0 && consecutiveLinkErrors == 1
+                        ensureConnectedLocked(config, target, isSim, silent = silentReopen)
                         val activeReaderClient = readClient
                             ?: throw IllegalStateException("Read client not initialized")
                         val reader = ControllerReader(activeReaderClient, config.mapping)
-                        reader.readBlocks(profile.pollBlocks, interBlockDelayMs = interBlockDelay)
+                        reader.readBlocks(blocksToRead, interBlockDelayMs = interBlockDelay)
                     }
+
+                    if (!isSim && includeSlow) {
+                        val slowBitAddrs = profile.slowPollBlocks
+                            .filter { it.table == VendorTable.BIT }
+                            .flatMap { b -> (b.startAddress..b.endAddress) }
+                            .toSet()
+                        val slowWordAddrs = profile.slowPollBlocks
+                            .filter { it.table == VendorTable.WORD }
+                            .flatMap { b -> (b.startAddress..b.endAddress) }
+                            .toSet()
+                        cachedSlowBits = readRaw.bits.filterKeys { it in slowBitAddrs }
+                        cachedSlowWords = readRaw.words.filterKeys { it in slowWordAddrs }
+                    }
+
+                    val mergedRaw = if (!isSim && !includeSlow) {
+                        readRaw.copy(
+                            bits = cachedSlowBits + readRaw.bits,
+                            words = cachedSlowWords + readRaw.words,
+                        )
+                    } else {
+                        readRaw
+                    }
+
                     val now = clock()
-                    val snap = profile.decode(raw, config.mode, now)
+                    val snap = profile.decode(mergedRaw, config.mode, now)
                     pollCount++
+                    consecutiveLinkErrors = 0
+
                     snap.pressureBar?.let { bar ->
                         _pressureHistory.update { prev ->
                             (prev + PressureSample(now, bar)).takeLast(MAX_HISTORY_POINTS)
@@ -190,8 +229,8 @@ class ControllerSession(
                     }
                     _snapshot.value = snap
 
-                    val partial = raw.blockErrors.takeIf { it.isNotEmpty() }?.let { errs ->
-                        "${errs.size} of ${profile.pollBlocks.size} read block(s) rejected: ${errs.first().message}"
+                    val partial = mergedRaw.blockErrors.takeIf { it.isNotEmpty() }?.let { errs ->
+                        "${errs.size} of ${blocksToRead.size} read block(s) rejected: ${errs.first().message}"
                     }
                     _connectionState.value = ConnectionState.Connected(
                         target = target,
@@ -205,6 +244,13 @@ class ControllerSession(
                     throw e
                 } catch (e: Exception) {
                     ioMutex.withLock { closeTransportLocked() }
+                    consecutiveLinkErrors++
+                    // On a live RS485/Ethernet converter (Samin ES 487), a single transient dropped
+                    // frame or socket reset should recover quietly without flashing red for 3 seconds.
+                    if (!isSim && pollCount > 0 && consecutiveLinkErrors == 1) {
+                        delay(LIVE_SILENT_RECOVER_DELAY_MS)
+                        continue
+                    }
                     val msg = e.message ?: e::class.java.simpleName
                     val retrySec = 3
                     for (rem in retrySec downTo 1) {
@@ -389,6 +435,11 @@ class ControllerSession(
                 )
 
                 val effectiveValue = readBack ?: newValue
+                // Patch live snapshot BEFORE publishing writingKey = null so observers always see updated live state.
+                if (matched && !isPulseCommand) {
+                    patchLiveSnapshotAfterWrite(definition, effectiveValue)
+                }
+
                 _configSnapshot.update { state ->
                     val updatedReadings = state.readings.map { r ->
                         if (r.definition.key == definition.key) r.copy(raw = effectiveValue) else r
@@ -399,11 +450,6 @@ class ControllerSession(
                         lastWrite = result,
                         timestampMillis = now,
                     )
-                }
-
-                // Immediately reflect writes to live-polled registers in the active telemetry snapshot
-                if (matched && !isPulseCommand) {
-                    patchLiveSnapshotAfterWrite(definition, effectiveValue)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -460,6 +506,11 @@ class ControllerSession(
     }
 
     private fun patchLiveSnapshotAfterWrite(definition: RegisterDefinition, value: Int) {
+        if (definition.table == VendorTable.WORD && definition.documentedAddress in cachedSlowWords) {
+            cachedSlowWords = cachedSlowWords + (definition.documentedAddress to value)
+        } else if (definition.table == VendorTable.BIT && definition.documentedAddress in cachedSlowBits) {
+            cachedSlowBits = cachedSlowBits + (definition.documentedAddress to (value != 0))
+        }
         _snapshot.update { snap ->
             if (snap == null) return@update null
             val patchedReadings = snap.readings.map { r ->
@@ -520,9 +571,16 @@ class ControllerSession(
         }
     }
 
-    private suspend fun ensureConnectedLocked(config: GatewayConfig, target: String, isSim: Boolean) {
+    private suspend fun ensureConnectedLocked(
+        config: GatewayConfig,
+        target: String,
+        isSim: Boolean,
+        silent: Boolean = false,
+    ) {
         if (transport?.isOpen == true && readClient != null && writeClient != null) return
-        _connectionState.value = ConnectionState.Connecting(target, isSim)
+        if (!silent) {
+            _connectionState.value = ConnectionState.Connecting(target, isSim)
+        }
         val t = transportFactory(config) { _simulationScenario.value }
         t.open()
         transport = t
@@ -557,8 +615,14 @@ class ControllerSession(
         const val MAX_LOG_ENTRIES = 120
         const val MAX_HISTORY_POINTS = 40
 
-        /** Gentle spacing between consecutive live RS485 requests via Samin ES 487. */
-        const val LIVE_INTER_BLOCK_DELAY_MS = 35L
+        /** Comfortable spacing between consecutive live RS485 requests via Samin ES 487. */
+        const val LIVE_INTER_BLOCK_DELAY_MS = 65L
+
+        /** Refresh slower telemetry (work timers, setpoint, control mode, LCD page) every 4th live cycle. */
+        const val LIVE_SLOW_POLL_EVERY_N = 4
+
+        /** Pause before silently reopening after a single transient ES 487 glitch. */
+        const val LIVE_SILENT_RECOVER_DELAY_MS = 350L
 
         /** Bus quiet period before transmitting an FC05/FC06 write frame on live RS485. */
         const val LIVE_PRE_WRITE_QUIET_MS = 150L

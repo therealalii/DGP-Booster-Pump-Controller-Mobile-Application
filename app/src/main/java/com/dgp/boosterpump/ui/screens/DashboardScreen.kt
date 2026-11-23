@@ -291,13 +291,14 @@ private fun HeroTelemetryPanel(snapshot: ControllerSnapshot) {
                     .height(40.dp)
                     .background(p.hairline),
             )
-            val pumpCaption = if (snapshot.disabledPumpCount > 0) {
-                "${snapshot.disabledPumpCount} پمپ غیرفعال (S)"
-            } else {
-                "صفحه LCD: ${snapshot.displayedPage ?: "—"}"
+            val enabledCount = snapshot.pumps.count { it.enabled == true }
+            val pumpCaption = when {
+                snapshot.disabledPumpCount > 0 -> "$enabledCount فعال • ${snapshot.disabledPumpCount} غیرفعال (S)"
+                enabledCount > 0 -> "$enabledCount آماده • صفحه ${snapshot.displayedPage ?: "—"}"
+                else -> "صفحه LCD: ${snapshot.displayedPage ?: "—"}"
             }
             KpiRailCell(
-                title = "پمپ فعال",
+                title = "در حال کار",
                 value = "${snapshot.runningPumpCount} / 6",
                 caption = pumpCaption,
                 accent = when {
@@ -406,10 +407,15 @@ private fun AlarmsPanel(
 private fun BoosterStationPumpsPanel(pumps: List<PumpState>, onOpenPumps: () -> Unit) {
     val p = LocalScadaPalette.current
     val running = pumps.count { it.running == true }
+    val enabled = pumps.count { it.enabled == true }
     val failed = pumps.count { it.failed == true }
     val disabled = pumps.count { it.enabled == false }
     val subtitle = buildString {
         if (failed > 0) append("$failed خطا")
+        if (enabled > 0) {
+            if (isNotEmpty()) append(" • ")
+            append("$enabled فعال در مدار")
+        }
         if (disabled > 0) {
             if (isNotEmpty()) append(" • ")
             append("$disabled غیرفعال (S)")
@@ -458,10 +464,12 @@ private fun BoosterStationPumpsPanel(pumps: List<PumpState>, onOpenPumps: () -> 
 private fun PumpHmiTile(pump: PumpState, modifier: Modifier = Modifier) {
     val p = LocalScadaPalette.current
     val isDisabled = pump.enabled == false
+    val isReady = !isDisabled && pump.failed != true && pump.running == false && pump.enabled == true
     val borderColor = when {
         pump.failed == true -> p.fault.copy(alpha = 0.55f)
         isDisabled -> p.warning.copy(alpha = 0.58f)
-        pump.running == true -> p.ok.copy(alpha = 0.42f)
+        pump.running == true -> p.ok.copy(alpha = 0.48f)
+        isReady -> p.cyan.copy(alpha = 0.34f)
         else -> p.panelBorder
     }
     Row(
@@ -473,7 +481,13 @@ private fun PumpHmiTile(pump: PumpState, modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        AnimatedImpellerIcon(running = pump.running, failed = pump.failed, disabled = isDisabled, size = 38.dp)
+        AnimatedImpellerIcon(
+            running = pump.running,
+            failed = pump.failed,
+            disabled = isDisabled,
+            ready = isReady,
+            size = 38.dp,
+        )
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -483,10 +497,11 @@ private fun PumpHmiTile(pump: PumpState, modifier: Modifier = Modifier) {
                 pump.failed == true -> "خطا" to BadgeTone.FAULT
                 isDisabled -> "غیرفعال (S)" to BadgeTone.WARNING
                 pump.running == true -> "در حال کار" to BadgeTone.OK
-                pump.running == false -> "توقف" to BadgeTone.NEUTRAL
+                isReady -> "آماده‌به‌کار" to BadgeTone.INFO
+                pump.running == false -> "آماده‌به‌کار" to BadgeTone.NEUTRAL
                 else -> "نامشخص" to BadgeTone.NEUTRAL
             }
-            StatusBadge(label, tone, pulsing = pump.failed == true)
+            StatusBadge(label, tone, pulsing = pump.failed == true || pump.running == true)
             LtrText(
                 text = when {
                     pump.runTime != null -> PersianLabels.formatRunTimeCompact(pump.runTime)
