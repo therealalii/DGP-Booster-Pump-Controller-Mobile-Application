@@ -105,15 +105,19 @@ class TcpModbusTransport(
             val protocol = ((header[2].toInt() and 0xFF) shl 8) or (header[3].toInt() and 0xFF)
             val rxLength = ((header[4].toInt() and 0xFF) shl 8) or (header[5].toInt() and 0xFF)
             val rxUnit = header[6].toInt() and 0xFF
-            if (protocol != 0) throw ModbusException.InvalidResponse("MBAP protocol id $protocol (expected 0)")
-            if (rxLength !in 2..254) throw ModbusException.InvalidResponse("MBAP length $rxLength")
+            if (protocol != 0) {
+                throw ModbusException.InvalidResponse("MBAP protocol id $protocol (expected 0, hdr=${header.toHex()})")
+            }
+            if (rxLength !in 2..254) {
+                throw ModbusException.InvalidResponse("MBAP length $rxLength (hdr=${header.toHex()})")
+            }
             val body = readFully(inp, rxLength - 1, deadline)
             if (rxTid != tid) {
                 // Stale answer to an earlier request; discard and keep waiting for ours.
                 continue
             }
             if (rxUnit != unitId) {
-                throw ModbusException.InvalidResponse("unit id $rxUnit in response, expected $unitId")
+                throw ModbusException.InvalidResponse("unit id $rxUnit in response, expected $unitId (hdr=${header.toHex()})")
             }
             return body
         }

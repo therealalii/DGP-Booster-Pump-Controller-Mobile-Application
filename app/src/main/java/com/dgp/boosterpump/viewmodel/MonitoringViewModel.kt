@@ -121,6 +121,8 @@ class MonitoringViewModel(
         newValue: Int,
     ) = session.writeHardwareParameter(definition, newValue)
 
+    fun resetPumpErrors() = session.resetPumpErrors()
+
     fun clearLastWriteNotice() = session.clearLastWriteNotice()
 
     fun runReadProbe(function: ReadFunction, pduAddress: Int, quantity: Int) =

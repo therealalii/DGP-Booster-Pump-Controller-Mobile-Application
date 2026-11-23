@@ -35,14 +35,22 @@ import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.SettingsEthernet
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.WaterDrop
+import androidx.compose.material.icons.outlined.RestartAlt
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -76,12 +84,55 @@ import com.dgp.boosterpump.viewmodel.MonitoringUiState
 @Composable
 fun DashboardScreen(
     uiState: MonitoringUiState,
+    canResetErrors: Boolean,
     onConnect: () -> Unit,
+    onResetPumpErrors: () -> Unit,
     onOpenGatewaySettings: () -> Unit,
     onOpenPumps: () -> Unit,
 ) {
+    val p = LocalScadaPalette.current
     val snapshot = uiState.snapshot
     val conn = uiState.connectionState
+    var showResetDialog by remember { mutableStateOf(false) }
+
+    if (showResetDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetDialog = false },
+            containerColor = p.panel,
+            shape = RoundedCornerShape(22.dp),
+            icon = { Icon(Icons.Outlined.RestartAlt, contentDescription = null, tint = p.gold) },
+            title = { Text("تایید ریست خطای پمپ‌ها", style = MaterialTheme.typography.titleMedium, color = p.textPrimary) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "فرمان رسمی ریست خطای پمپ‌ها (FC06 • Word 99 = 25) به کنترلر BPC02 ارسال خواهد شد.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = p.textPrimary,
+                    )
+                    Text(
+                        "پیش از ریست، از رفع علت خطای پمپ‌ها و ایمنی مدار اطمینان حاصل کنید.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = p.warning,
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showResetDialog = false
+                        onResetPumpErrors()
+                    },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = p.gold, contentColor = Color(0xFF0E0A03)),
+                ) {
+                    Text("ارسال ریست خطا (کد ۲۵)", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetDialog = false }) { Text("انصراف", color = p.textSecondary) }
+            },
+        )
+    }
 
     if (snapshot == null) {
         EmptyConnectionState(
@@ -116,7 +167,6 @@ fun DashboardScreen(
         item { HeroTelemetryPanel(snapshot) }
 
         item {
-            val p = LocalScadaPalette.current
             ScadaPanel(
                 title = "شماتیک هیدرولیک ایستگاه بوستر",
                 subtitle = "جریان زنده مکش، هسته پمپاژ و کلکتور تحت فشار",
@@ -132,10 +182,15 @@ fun DashboardScreen(
             }
         }
 
-        item { AlarmsPanel(snapshot) }
+        item {
+            AlarmsPanel(
+                snapshot = snapshot,
+                canReset = canResetErrors && conn is ConnectionState.Connected && uiState.configSnapshot.writingKey == null,
+                onRequestReset = { showResetDialog = true },
+            )
+        }
 
         item {
-            val p = LocalScadaPalette.current
             ScadaPanel(
                 title = "روند لحظه‌ای فشار کلکتور",
                 subtitle = "نمودار تغییرات در ۴۰ نمونه‌برداری اخیر",
@@ -155,18 +210,28 @@ fun DashboardScreen(
 @Composable
 private fun HeroTelemetryPanel(snapshot: ControllerSnapshot) {
     val p = LocalScadaPalette.current
+    val modeLabel = PersianLabels.controlStatusShort(snapshot.controlStatus)
+    val modeTone = when (snapshot.controlStatus) {
+        1, 2 -> BadgeTone.GOLD
+        0 -> BadgeTone.WARNING
+        else -> BadgeTone.NEUTRAL
+    }
     ScadaPanel(
         title = "وضعیت اصلی بوستر پمپ",
-        subtitle = "فشار کلکتور (ورد ۲) • سطح مخزن (کویل ۳۲–۳۳)",
+        subtitle = "فشار (ورد ۲) • هدف (ورد ۴۰۹۶) • سطح مخزن (کویل ۳۲–۳۳)",
         icon = Icons.Outlined.Speed,
         accentColor = p.gold,
         trailing = {
-            val (label, tone) = when (snapshot.driveFailed) {
-                true -> "خطای درایو" to BadgeTone.FAULT
-                false -> "درایو سالم" to BadgeTone.OK
-                null -> "درایو —" to BadgeTone.NEUTRAL
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                StatusBadge(modeLabel, modeTone)
+                val (label, tone) = when {
+                    snapshot.driveFailed == true -> "خطای درایو" to BadgeTone.FAULT
+                    snapshot.driveEnabled == false -> "درایو غیرفعال" to BadgeTone.WARNING
+                    snapshot.driveFailed == false -> "درایو سالم" to BadgeTone.OK
+                    else -> "درایو —" to BadgeTone.NEUTRAL
+                }
+                StatusBadge(label, tone, pulsing = snapshot.driveFailed == true)
             }
-            StatusBadge(label, tone, pulsing = snapshot.driveFailed == true)
         },
     ) {
         Row(
@@ -178,6 +243,7 @@ private fun HeroTelemetryPanel(snapshot: ControllerSnapshot) {
         ) {
             PressureArcGauge(
                 pressureBar = snapshot.pressureBar,
+                setpointBar = snapshot.pressureSetpointBar,
                 drActive = snapshot.drStatus,
             )
             WaterTankIndicator(
@@ -196,10 +262,13 @@ private fun HeroTelemetryPanel(snapshot: ControllerSnapshot) {
                 .padding(vertical = 11.dp, horizontal = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            val drive2Caption = snapshot.drive2FrequencyHz?.takeIf { it > 0.0 }
+                ?.let { "درایو ۲: %.2f Hz".format(it) }
+                ?: "ورد ۲۵ (۰.۰۱ هرتز)"
             KpiRailCell(
-                title = "فرکانس درایو",
-                value = snapshot.driveFrequencyRaw?.toString() ?: "—",
-                caption = "خام ۰–۱۶۰۰",
+                title = "فرکانس درایو ۱",
+                value = snapshot.drive1FrequencyHz?.let { "%.2f Hz".format(it) } ?: "—",
+                caption = drive2Caption,
                 accent = p.warning,
                 modifier = Modifier.weight(1f),
             )
@@ -222,11 +291,20 @@ private fun HeroTelemetryPanel(snapshot: ControllerSnapshot) {
                     .height(40.dp)
                     .background(p.hairline),
             )
+            val pumpCaption = if (snapshot.disabledPumpCount > 0) {
+                "${snapshot.disabledPumpCount} پمپ غیرفعال (S)"
+            } else {
+                "صفحه LCD: ${snapshot.displayedPage ?: "—"}"
+            }
             KpiRailCell(
                 title = "پمپ فعال",
                 value = "${snapshot.runningPumpCount} / 6",
-                caption = "صفحه LCD: ${snapshot.displayedPage ?: "—"}",
-                accent = if (snapshot.runningPumpCount > 0) p.ok else p.gold,
+                caption = pumpCaption,
+                accent = when {
+                    snapshot.disabledPumpCount > 0 && snapshot.runningPumpCount == 0 -> p.warning
+                    snapshot.runningPumpCount > 0 -> p.ok
+                    else -> p.gold
+                },
                 modifier = Modifier.weight(0.95f),
             )
         }
@@ -258,19 +336,25 @@ private fun KpiRailCell(
 }
 
 @Composable
-private fun AlarmsPanel(snapshot: ControllerSnapshot) {
+private fun AlarmsPanel(
+    snapshot: ControllerSnapshot,
+    canReset: Boolean,
+    onRequestReset: () -> Unit,
+) {
     val p = LocalScadaPalette.current
     val alarms = snapshot.alarms
     val hasAlarms = alarms.isNotEmpty()
+    val w80 = snapshot.systemErrorWord?.let { "0x%04X".format(it) } ?: "—"
+    val w81 = snapshot.systemErrorWord2?.let { "0x%04X".format(it) } ?: "—"
     ScadaPanel(
         title = "وضعیت حفاظت و آلارم‌ها",
-        subtitle = "کلمه خطا (ورد ۸۰: ${snapshot.systemErrorWord?.let { "0x%04X".format(it) } ?: "—"}) و بیت‌های ۲۵–۳۱",
+        subtitle = "ورد ۸۰ ($w80) • ورد ۸۱ ($w81) • کویل‌های ۲۵–۳۱",
         icon = if (hasAlarms) Icons.Outlined.NotificationsActive else Icons.Outlined.CheckCircleOutline,
         accentColor = if (hasAlarms) p.fault else p.ok,
         borderColor = if (hasAlarms) p.fault.copy(alpha = 0.55f) else null,
         trailing = {
             if (hasAlarms) {
-                StatusBadge("${alarms.size} خطای فعال", BadgeTone.FAULT, pulsing = true)
+                StatusBadge("${alarms.size} هشدار فعال", BadgeTone.FAULT, pulsing = true)
             } else {
                 StatusBadge("بدون خطا", BadgeTone.OK)
             }
@@ -303,6 +387,16 @@ private fun AlarmsPanel(snapshot: ControllerSnapshot) {
                         tone = if (alarm.severity == AlarmSeverity.FAULT) BadgeTone.FAULT else BadgeTone.WARNING,
                     )
                 }
+                if (canReset) {
+                    Spacer(Modifier.height(2.dp))
+                    DgpGoldButton(
+                        text = "ریست خطای پمپ‌ها (کد ۲۵)",
+                        icon = Icons.Outlined.RestartAlt,
+                        onClick = onRequestReset,
+                        height = 42.dp,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
         }
     }
@@ -313,11 +407,24 @@ private fun BoosterStationPumpsPanel(pumps: List<PumpState>, onOpenPumps: () -> 
     val p = LocalScadaPalette.current
     val running = pumps.count { it.running == true }
     val failed = pumps.count { it.failed == true }
+    val disabled = pumps.count { it.enabled == false }
+    val subtitle = buildString {
+        if (failed > 0) append("$failed خطا")
+        if (disabled > 0) {
+            if (isNotEmpty()) append(" • ")
+            append("$disabled غیرفعال (S)")
+        }
+        if (isEmpty()) append("کویل ۱۹–۳۱ و فعال‌سازی ۴۰۹۷–۴۱۰۲")
+    }
     ScadaPanel(
         title = "وضعیت پمپ‌ها ($running در حال کار)",
-        subtitle = if (failed > 0) "$failed پمپ دارای خطا است • کویل‌های ۱۹–۳۱" else "چرخش زنده پروانه و تایمر کارکرد پمپ‌های ۱–۴",
+        subtitle = subtitle,
         icon = Icons.Outlined.WaterDrop,
-        accentColor = if (failed > 0) p.fault else p.ok,
+        accentColor = when {
+            failed > 0 -> p.fault
+            disabled > 0 -> p.warning
+            else -> p.ok
+        },
         trailing = {
             Surface(
                 onClick = onOpenPumps,
@@ -350,21 +457,23 @@ private fun BoosterStationPumpsPanel(pumps: List<PumpState>, onOpenPumps: () -> 
 @Composable
 private fun PumpHmiTile(pump: PumpState, modifier: Modifier = Modifier) {
     val p = LocalScadaPalette.current
+    val isDisabled = pump.enabled == false
     val borderColor = when {
         pump.failed == true -> p.fault.copy(alpha = 0.55f)
+        isDisabled -> p.warning.copy(alpha = 0.58f)
         pump.running == true -> p.ok.copy(alpha = 0.42f)
         else -> p.panelBorder
     }
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
-            .background(p.panelElevated)
+            .background(if (isDisabled) p.warningBg.copy(alpha = 0.45f) else p.panelElevated)
             .border(0.9.dp, borderColor, RoundedCornerShape(14.dp))
             .padding(11.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        AnimatedImpellerIcon(running = pump.running, failed = pump.failed, size = 38.dp)
+        AnimatedImpellerIcon(running = pump.running, failed = pump.failed, disabled = isDisabled, size = 38.dp)
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -372,6 +481,7 @@ private fun PumpHmiTile(pump: PumpState, modifier: Modifier = Modifier) {
             Text("پمپ ${pump.number}", style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
             val (label, tone) = when {
                 pump.failed == true -> "خطا" to BadgeTone.FAULT
+                isDisabled -> "غیرفعال (S)" to BadgeTone.WARNING
                 pump.running == true -> "در حال کار" to BadgeTone.OK
                 pump.running == false -> "توقف" to BadgeTone.NEUTRAL
                 else -> "نامشخص" to BadgeTone.NEUTRAL

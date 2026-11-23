@@ -87,6 +87,7 @@ object Bpc02Profile : ControllerProfile {
                 number = n,
                 running = bit(map.pumpStatusKey(n)),
                 failed = bit(map.pumpFailKey(n)),
+                enabled = bit(map.pumpActivationKey(n)),
                 runTime = runTime,
                 hasRunTimeRegisters = n <= Bpc02RegisterMap.RUN_TIME_PUMP_COUNT,
             )
@@ -97,6 +98,8 @@ object Bpc02Profile : ControllerProfile {
             source = source,
             timestampMillis = timestampMillis,
             pressureBar = scaled(Bpc02RegisterMap.SYSTEM_PRESSURE),
+            pressureSetpointBar = scaled(Bpc02RegisterMap.SYSTEM_PRESSURE_SETPOINT),
+            controlStatus = raw(Bpc02RegisterMap.CONTROL_STATUS),
             voltages = PhaseVoltages(
                 rn = raw(Bpc02RegisterMap.V_RN),
                 sn = raw(Bpc02RegisterMap.V_SN),
@@ -106,9 +109,11 @@ object Bpc02Profile : ControllerProfile {
                 tr = raw(Bpc02RegisterMap.V_TR),
             ),
             mainsFrequencyHz = scaled(Bpc02RegisterMap.MAINS_FREQUENCY),
-            driveFrequencyRaw = raw(Bpc02RegisterMap.DRIVE_FREQUENCY),
+            drive1FrequencyHz = scaled(Bpc02RegisterMap.DRIVE1_FREQUENCY),
+            drive2FrequencyHz = scaled(Bpc02RegisterMap.DRIVE2_FREQUENCY),
             displayedPage = raw(Bpc02RegisterMap.DISPLAYED_PAGE),
             pumps = pumps,
+            driveEnabled = bit(Bpc02RegisterMap.DRIVE_ACTIVATION),
             driveFailed = bit(Bpc02RegisterMap.DRIVE_FAIL),
             drStatus = bit(Bpc02RegisterMap.DR_STATUS),
             outputs = (0 until Bpc02RegisterMap.OUTPUT_COUNT).map { bit(map.outputKey(it)) },
@@ -117,6 +122,7 @@ object Bpc02Profile : ControllerProfile {
             floaterLowConnected = bit(Bpc02RegisterMap.FLOATER_LOW),
             floaterHighConnected = bit(Bpc02RegisterMap.FLOATER_HIGH),
             systemErrorWord = raw(Bpc02RegisterMap.SYSTEM_ERROR),
+            systemErrorWord2 = raw(Bpc02RegisterMap.SYSTEM_ERROR_2),
             readings = polled.map { RegisterReading(it, raw(it)) },
             blockErrors = readings.blockErrors,
         )

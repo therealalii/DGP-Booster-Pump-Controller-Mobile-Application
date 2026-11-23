@@ -169,23 +169,29 @@ private fun ProbeTabContent(
                             .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(7.dp),
                     ) {
-                        DgpPillChip("فشار و ولتاژ (W2..10)", selected = false, accent = p.cyan, onClick = {
-                            selectedFn = ReadFunction.READ_HOLDING_REGISTERS; addrText = "2"; qtyText = "9"
+                        DgpPillChip("فشار و ولتاژ (W2..9)", selected = false, accent = p.cyan, onClick = {
+                            selectedFn = ReadFunction.READ_HOLDING_REGISTERS; addrText = "2"; qtyText = "8"
+                        })
+                        DgpPillChip("فرکانس درایو (W25..26)", selected = false, accent = p.cyan, onClick = {
+                            selectedFn = ReadFunction.READ_HOLDING_REGISTERS; addrText = "25"; qtyText = "2"
+                        })
+                        DgpPillChip("فعال‌سازی پمپ (B4096..4102)", selected = false, accent = p.cyan, onClick = {
+                            selectedFn = ReadFunction.READ_COILS; addrText = "4096"; qtyText = "7"
+                        })
+                        DgpPillChip("فشار هدف (W4096)", selected = false, accent = p.cyan, onClick = {
+                            selectedFn = ReadFunction.READ_HOLDING_REGISTERS; addrText = "4096"; qtyText = "1"
+                        })
+                        DgpPillChip("خطاها (W80..81)", selected = false, accent = p.cyan, onClick = {
+                            selectedFn = ReadFunction.READ_HOLDING_REGISTERS; addrText = "80"; qtyText = "2"
+                        })
+                        DgpPillChip("حالت کنترل (W4173)", selected = false, accent = p.cyan, onClick = {
+                            selectedFn = ReadFunction.READ_HOLDING_REGISTERS; addrText = "4173"; qtyText = "1"
                         })
                         DgpPillChip("تایمر پمپ ۱–۴ (W34)", selected = false, accent = p.cyan, onClick = {
                             selectedFn = ReadFunction.READ_HOLDING_REGISTERS; addrText = "34"; qtyText = "12"
                         })
                         DgpPillChip("کل بیت‌ها (B0..33)", selected = false, accent = p.cyan, onClick = {
                             selectedFn = ReadFunction.READ_COILS; addrText = "0"; qtyText = "34"
-                        })
-                        DgpPillChip("خطای سیستم (W80)", selected = false, accent = p.cyan, onClick = {
-                            selectedFn = ReadFunction.READ_HOLDING_REGISTERS; addrText = "80"; qtyText = "1"
-                        })
-                        DgpPillChip("حالت دستی (W99)", selected = false, accent = p.cyan, onClick = {
-                            selectedFn = ReadFunction.READ_HOLDING_REGISTERS; addrText = "99"; qtyText = "1"
-                        })
-                        DgpPillChip("شناسه مدباس (W4195)", selected = false, accent = p.cyan, onClick = {
-                            selectedFn = ReadFunction.READ_HOLDING_REGISTERS; addrText = "4195"; qtyText = "1"
                         })
                     }
                 }
@@ -459,7 +465,8 @@ private fun RegisterMapTabContent(uiState: MonitoringUiState) {
                         RegisterGroup.ALARM to "آلارم",
                         RegisterGroup.DIGITAL_IO to "دیجیتال I/O",
                         RegisterGroup.CONFIGURATION to "سخت‌افزار",
-                        RegisterGroup.MANUAL_CONTROL to "قفل‌شده",
+                        RegisterGroup.COMMAND to "فرمان (RW)",
+                        RegisterGroup.MANUAL_CONTROL to "دستی (R)",
                     )
                     groups.forEach { (g, title) ->
                         DgpPillChip(

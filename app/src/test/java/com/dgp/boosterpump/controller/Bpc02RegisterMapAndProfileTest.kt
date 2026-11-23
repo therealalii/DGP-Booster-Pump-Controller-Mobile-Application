@@ -4,7 +4,6 @@ import com.dgp.boosterpump.controller.register.AccessPolicy
 import com.dgp.boosterpump.controller.register.Bpc02RegisterMap
 import com.dgp.boosterpump.controller.register.ReadBlock
 import com.dgp.boosterpump.controller.register.VendorTable
-import com.dgp.boosterpump.controller.register.Verification
 import com.dgp.boosterpump.gateway.ConfigValidation
 import com.dgp.boosterpump.gateway.DataSourceMode
 import com.dgp.boosterpump.gateway.GatewayConfig
@@ -18,21 +17,36 @@ import org.junit.Test
 class Bpc02RegisterMapAndProfileTest {
 
     @Test
-    fun pollBlocksRespectGapsAndNeverSpanUndocumentedAddresses() {
+    fun officialExcelMapContainsAll154RegistersWithoutDuplicates() {
+        val bits = Bpc02RegisterMap.all.filter { it.table == VendorTable.BIT }
+        val words = Bpc02RegisterMap.all.filter { it.table == VendorTable.WORD }
+        assertEquals("Official Excel has 56 Bit addresses", 56, bits.size)
+        assertEquals("Official Excel has 98 Word addresses", 98, words.size)
+        assertEquals(154, Bpc02RegisterMap.all.size)
+        assertEquals(bits.size, bits.map { it.documentedAddress }.toSet().size)
+        assertEquals(words.size, words.map { it.documentedAddress }.toSet().size)
+    }
+
+    @Test
+    fun pollBlocksIncludePumpActivationsDriveFrequenciesErrorsSetpointAndControlMode() {
         val expected = listOf(
-            ReadBlock(VendorTable.BIT, 0, 34), // 0..33
-            ReadBlock(VendorTable.WORD, 0, 1), // 0 (Word 1 is undocumented)
-            ReadBlock(VendorTable.WORD, 2, 9), // 2..10 (Words 11..33 are undocumented)
-            ReadBlock(VendorTable.WORD, 34, 12), // 34..45 (Words 46..79 are undocumented)
-            ReadBlock(VendorTable.WORD, 80, 1), // 80
+            ReadBlock(VendorTable.BIT, 0, 34), // 0..33 live status I/O & faults
+            ReadBlock(VendorTable.BIT, 4096, 7), // 4096 Drive + 4097..4102 Pump 1..6 activation ('S')
+            ReadBlock(VendorTable.WORD, 0, 1), // Displayed Page
+            ReadBlock(VendorTable.WORD, 2, 8), // 2..9 Pressure, Voltages, Mains Freq
+            ReadBlock(VendorTable.WORD, 25, 2), // 25..26 Drive1 & Drive2 Frequency (0.01 Hz)
+            ReadBlock(VendorTable.WORD, 34, 12), // 34..45 Pump 1..4 Work Time
+            ReadBlock(VendorTable.WORD, 80, 2), // 80..81 System Error Word 1 & Word 2
+            ReadBlock(VendorTable.WORD, 4096, 1), // System Pressure Setpoint
+            ReadBlock(VendorTable.WORD, 4173, 1), // Control Status (0=Disable, 1=PID, 2=ON/OFF)
         )
         assertEquals(expected, Bpc02RegisterMap.pollBlocks)
     }
 
     @Test
-    fun manualControlRegistersAreLockedAndNeverPolled() {
+    fun manualOutputRegistersAreLockedAndNeverPolled() {
         val polledKeys = Bpc02RegisterMap.polled.map { it.key }.toSet()
-        assertTrue(Bpc02RegisterMap.manualControl.isNotEmpty())
+        assertEquals(12, Bpc02RegisterMap.manualControl.size) // 10 coils (50..59) + 2 words (50..51)
         Bpc02RegisterMap.manualControl.forEach { def ->
             assertEquals(AccessPolicy.CONTROL_LOCKED, def.access)
             assertFalse("${def.key} must not be polled", def.key in polledKeys)
@@ -40,100 +54,147 @@ class Bpc02RegisterMapAndProfileTest {
     }
 
     @Test
-    fun driveFrequencyIsMarkedAmbiguousWithNoAssumedScale() {
-        val drive = Bpc02RegisterMap.byKey(Bpc02RegisterMap.DRIVE_FREQUENCY)
-        assertEquals(10, drive.documentedAddress)
-        assertNull(drive.scale)
-        assertEquals(Verification.AMBIGUOUS, drive.verification)
-    }
-
-    @Test
-    fun configurationBlocksUseVerifiedContiguousRangesIncluding4178And4180() {
+    fun configurationBlocksCoverCompleteOfficialRangesAndSkipUndocumentedGaps() {
         val expected = listOf(
-            ReadBlock(VendorTable.BIT, 4096, 6), // 4096..4101
+            ReadBlock(VendorTable.BIT, 4096, 7), // 4096..4102
             ReadBlock(VendorTable.BIT, 4106, 5), // 4106..4110
-            ReadBlock(VendorTable.WORD, 4173, 1),
-            ReadBlock(VendorTable.WORD, 4175, 1),
-            ReadBlock(VendorTable.WORD, 4177, 10), // 4177..4186 (4178 & 4180 confirmed contiguous)
-            ReadBlock(VendorTable.WORD, 4195, 1),
+            ReadBlock(VendorTable.WORD, 4096, 16), // 4096..4111
+            ReadBlock(VendorTable.WORD, 4122, 4), // 4122..4125
+            ReadBlock(VendorTable.WORD, 4127, 3), // 4127..4129
+            ReadBlock(VendorTable.WORD, 4131, 8), // 4131..4138
+            ReadBlock(VendorTable.WORD, 4142, 2), // 4142..4143
+            ReadBlock(VendorTable.WORD, 4149, 4), // 4149..4152
+            ReadBlock(VendorTable.WORD, 4156, 1), // 4156
+            ReadBlock(VendorTable.WORD, 4161, 4), // 4161..4164
+            ReadBlock(VendorTable.WORD, 4166, 1), // 4166
+            ReadBlock(VendorTable.WORD, 4170, 1), // 4170
+            ReadBlock(VendorTable.WORD, 4173, 1), // 4173
+            ReadBlock(VendorTable.WORD, 4175, 1), // 4175
+            ReadBlock(VendorTable.WORD, 4177, 19), // 4177..4195
+            ReadBlock(VendorTable.WORD, 4206, 5), // 4206..4210
         )
         assertEquals(expected, Bpc02RegisterMap.configurationBlocks)
-        assertEquals(Verification.HARDWARE_VERIFIED, Bpc02RegisterMap.byKey("auto_service_on_time").verification)
-        assertEquals(Verification.HARDWARE_VERIFIED, Bpc02RegisterMap.byKey("mfi_1_type").verification)
     }
 
     @Test
-    fun configurationWritePoliciesProtectControlStatusAndSlaveId() {
-        val expectedWritable = setOf(
-            4096, 4097, 4098, 4099, 4100, 4101,
-            4106, 4107, 4108, 4109, 4110,
-            4175, 4177, 4178, 4179,
-            4180, 4181, 4182, 4183, 4184, 4185, 4186,
-        )
-        val actualWritable = Bpc02RegisterMap.all
-            .filter { it.access == AccessPolicy.READ_WRITE_VERIFIED }
+    fun writePoliciesMatchOfficialExcelReadWriteColumnsExactly() {
+        val expectedWritableCoils = setOf(4096, 4097, 4098, 4099, 4100, 4101, 4102)
+        val actualWritableCoils = Bpc02RegisterMap.all
+            .filter { it.table == VendorTable.BIT && it.isWritable }
             .map { it.documentedAddress }
             .toSet()
-        assertEquals(expectedWritable, actualWritable)
+        assertEquals(expectedWritableCoils, actualWritableCoils)
+
+        val expectedWritableWords = setOf(
+            99, // Multi Function Register (25 = Reset Pump Error)
+            4096, // System Pressure Setpoint
+            4123, 4124, 4125, 4127, 4128, 4129, // Control Phase & Floater
+            4135, 4136, 4137, 4138, // Jockey & PID
+            4143, // Sensor Calibration
+            4149, 4150, 4151, // Wakeup & Sleep
+            4161, 4162, 4163, 4164, 4166, // Timing & Constant Pump %
+            4173, 4175, // Control Status & Sleep Gap
+            4177, 4178, 4179, // Auto Service
+        )
+        val actualWritableWords = Bpc02RegisterMap.all
+            .filter { it.table == VendorTable.WORD && it.isWritable }
+            .map { it.documentedAddress }
+            .toSet()
+        assertEquals(expectedWritableWords, actualWritableWords)
 
         // All writable entries must declare explicit min/max bounds
         Bpc02RegisterMap.all.filter { it.isWritable }.forEach { def ->
-            assertTrue("${def.key} must have minValue <= maxValue", def.minValue != null && def.maxValue != null && def.minValue!! <= def.maxValue!!)
+            assertTrue(
+                "${def.key} must have minValue <= maxValue",
+                def.minValue != null && def.maxValue != null && def.minValue!! <= def.maxValue!!,
+            )
         }
 
-        // Control Status (4173) and ModBus Address (4195) stay read-only in app
-        assertEquals(AccessPolicy.READ, Bpc02RegisterMap.byKey("control_status").access)
-        assertFalse(Bpc02RegisterMap.byKey("control_status").isWritable)
-        assertEquals(AccessPolicy.READ, Bpc02RegisterMap.byKey("modbus_address").access)
-        assertFalse(Bpc02RegisterMap.byKey("modbus_address").isWritable)
+        // Verify previously mis-marked registers are strictly Read-Only (R) per official Excel
+        listOf(
+            "control_phase_activation",
+            "off_changing_activation",
+            "time_changing_activation",
+            "reserve_auto_activation",
+            "reserve_auto_type",
+            "mfi_1_type",
+            "mfo_1_type",
+            "mfo_4_type",
+            "modbus_address",
+        ).forEach { key ->
+            val def = Bpc02RegisterMap.byKey(key)
+            assertEquals("$key must be READ", AccessPolicy.READ, def.access)
+            assertFalse("$key must not be writable", def.isWritable)
+        }
     }
 
     @Test
-    fun decodeAppliesDocumentedScalesAndFlagsUndocumentedErrorBits() {
+    fun decodeMapsPumpDeactivatedStateDriveFrequenciesAndWord80Word81Errors() {
         val raw = RawReadings(
             bits = mapOf(
                 19 to true, // Pump 1 running
+                20 to false, // Pump 2 stopped
                 25 to true, // Drive fail
                 27 to true, // Pump 2 fail
                 32 to false, // Floater L not connected
                 33 to true, // Floater H connected
+                4096 to true, // Mode 2,3 Drive Activation = Enabled
+                4097 to true, // Pump 1 Enabled
+                4098 to false, // Pump 2 manually deactivated ('S' on LCD!)
+                4099 to true, // Pump 3 Enabled
             ),
             words = mapOf(
                 0 to 2,
                 2 to 435, // 4.35 bar
                 3 to 230,
                 9 to 5002, // 50.02 Hz
-                10 to 1200, // raw drive freq
+                25 to 3850, // Drive 1 = 38.50 Hz
+                26 to 2400, // Drive 2 = 24.00 Hz
                 34 to 15, // Pump 1 sec
                 35 to 42, // Pump 1 min
                 36 to 105, // Pump 1 hours
-                // Bit 3 (Floater) + Bit 5 (Sensor disconnected) + Bit 0 (undocumented!)
-                80 to ((1 shl 3) or (1 shl 5) or (1 shl 0)),
+                // Word 80: Bit 0 (FLOATER) + Bit 2 (SENSOR_DISCONNECT) + Bit 7 (DRIVE)
+                80 to ((1 shl 0) or (1 shl 2) or (1 shl 7)),
+                // Word 81: Bit 5 (EMG_STOPPED) + Bit 7 (BATTERY_VOLTAGE) + Bit 12 (undocumented)
+                81 to ((1 shl 5) or (1 shl 7) or (1 shl 12)),
+                4096 to 450, // Setpoint = 4.50 bar
+                4173 to 1, // Control Status = PID
             ),
         )
 
         val snap = Bpc02Profile.decode(raw, DataSourceMode.LIVE, timestampMillis = 1234L)
         assertFalse(snap.isSimulated)
         assertEquals(4.35, snap.pressureBar!!, 1e-6)
+        assertEquals(4.50, snap.pressureSetpointBar!!, 1e-6)
+        assertEquals(1, snap.controlStatus)
         assertEquals(50.02, snap.mainsFrequencyHz!!, 1e-6)
-        assertEquals(1200, snap.driveFrequencyRaw)
+        assertEquals(38.50, snap.drive1FrequencyHz!!, 1e-6)
+        assertEquals(24.00, snap.drive2FrequencyHz!!, 1e-6)
         assertEquals(230, snap.voltages.rn)
         assertNull(snap.voltages.sn) // Unread value stays null, never 0
 
+        assertEquals(true, snap.driveEnabled)
         assertEquals(6, snap.pumps.size)
         assertEquals(true, snap.pumps[0].running)
+        assertEquals(true, snap.pumps[0].enabled)
         assertEquals(RunTime(105, 42, 15), snap.pumps[0].runTime)
+        assertEquals(false, snap.pumps[1].enabled) // Pump 2 deactivated ('S')
         assertEquals(true, snap.pumps[1].failed)
+        assertEquals(1, snap.disabledPumpCount)
         assertFalse(snap.pumps[4].hasRunTimeRegisters)
         assertNull(snap.pumps[4].runTime)
 
         assertEquals(
-            listOf(SystemErrorBit.FLOATER, SystemErrorBit.PRESSURE_SENSOR_DISCONNECTED),
+            listOf(SystemErrorBit.FLOATER, SystemErrorBit.PRESSURE_SENSOR_DISCONNECTED, SystemErrorBit.DRIVE),
             snap.activeSystemErrors,
         )
-        assertEquals(listOf(0), snap.undocumentedErrorBits)
-        // 2 documented system errors + 1 undocumented bit + Drive fail + Pump 2 fail = 5 alarms
-        assertEquals(5, snap.alarms.size)
+        assertEquals(
+            listOf(SystemErrorBit2.EMG_STOPPED, SystemErrorBit2.BATTERY_VOLTAGE),
+            snap.activeSystemErrors2,
+        )
+        assertEquals(listOf(12), snap.undocumentedErrorBits2)
+        // 3 Word80 errors + 2 Word81 errors + 1 undocumented Word81 bit + Pump 2 fail coil (Drive coil deduplicated) = 7 alarms
+        assertEquals(7, snap.alarms.size)
     }
 
     @Test
@@ -146,7 +207,7 @@ class Bpc02RegisterMapAndProfileTest {
         assertFalse(liveBadIp.isValid)
         assertTrue(ConfigValidation.Field.HOST in liveBadIp.errors)
 
-        val liveGood = GatewayConfig(mode = DataSourceMode.LIVE, host = "192.168.1.50", port = 502, unitId = 1).validate()
+        val liveGood = GatewayConfig(mode = DataSourceMode.LIVE, host = "192.168.1.74", port = 502, unitId = 1).validate()
         assertTrue(liveGood.isValid)
 
         val bpc04 = GatewayConfig(mode = DataSourceMode.SIMULATION, controllerModel = ControllerModel.BPC04).validate()

@@ -1,42 +1,100 @@
 package com.dgp.boosterpump.controller.register
 
 /**
- * DGP BPC02 register map, transcribed from the BPC-02 User Manual (pages 25-28,
- * "ModBus Address" section: Protocol ModBus-RTU, 9600 8-N-1) and verified on a physical
- * DGP BPC02 controller (BPC02_FULL_READ_RESULTS.txt & BPC02_WRITE_TEST_RESULTS.txt).
+ * Complete official DGP BPC02 Modbus RTU register map (9600 8-N-1), transcribed 1:1 from
+ * DGP's official "Booster Pump Memory Map.xlsx" (56 Bit addresses + 98 Word addresses = 154
+ * registers) and cross-verified against physical bench tests (BPC02_FULL_READ_RESULTS.txt &
+ * BPC02_WRITE_TEST_RESULTS.txt).
  *
  * Confirmed BPC02 Modbus function codes:
  *  - Supported: FC01 (Read Coils), FC03 (Read Holding Registers),
  *               FC05 (Write Single Coil), FC06 (Write Single Holding Register).
  *  - Unsupported (4-byte valid-CRC rejection): FC02, FC04, FC15 (0x0F), FC16 (0x10).
- *  - Zero-based PDU addressing (offset = 0) confirmed across all groups.
- *  - Manual print typos "417B" and "41B0" on p.28 confirmed as decimal 4178 and 4180.
- *  - Hardware config writes verified via FC05 (Coil 4101) and FC06 (Word 4175).
- *  - Manual mode writes (Coils 50-59, Words 50-51) returned Exception 0x02 and
- *    Addr 99 = 0 returned Exception 0x03 -> remain CONTROL_LOCKED until DGP confirms.
+ *  - Zero-based PDU addressing (offset = 0) confirmed across all blocks.
+ *  - Coil 4096 is Mode 2,3 Drive Activation (RW); Coils 4097..4102 are Pump 1..6 Activation (RW).
+ *  - Coils 4106..4110 and Words 4180..4187 are strictly R (Read-Only) in firmware.
+ *  - Manual outputs (Coils 50..59, Words 50..51) are R (Read-Only) in firmware (Exception 0x02).
+ *  - Word 99 (Multi Function Register, RW) supports command 25 = Reset Pump Error.
  */
 object Bpc02RegisterMap {
 
-    private const val SRC_BIT = "BPC-02 manual p.25-26, Bit Address table (FC01 verified)"
-    private const val SRC_WORD = "BPC-02 manual p.27, Word Address table (FC03 verified)"
-    private const val SRC_CFG_BIT = "BPC-02 manual p.26-27, Hardware settings (FC01/FC05 verified)"
-    private const val SRC_CFG_WORD = "BPC-02 manual p.28, Hardware settings (FC03/FC06 verified)"
-    private const val SRC_MANUAL = "BPC-02 manual p.28, manual-mode note"
+    private const val SRC_BIT = "Booster Pump Memory Map.xlsx, Bit Address table (FC01/FC05)"
+    private const val SRC_WORD = "Booster Pump Memory Map.xlsx, Word Address table (FC03/FC06)"
 
     private val ON_OFF = mapOf(0 to "OFF", 1 to "ON")
     private val FAIL = mapOf(0 to "Normal", 1 to "Failed")
     private val CONNECTED = mapOf(0 to "Not connected", 1 to "Connected")
     private val ENABLE = mapOf(0 to "Disabled", 1 to "Enabled")
+    private val RESERVE_TYPE = mapOf(0 to "NC", 1 to "NO")
+    private val CONTROL_PHASE_TYPE = mapOf(1 to "1P", 3 to "3P")
+    private val FLOATER_TYPE = mapOf(0 to "Disable", 1 to "Internal", 2 to "External")
+    private val SENSOR_OUTPUT_TYPE = mapOf(
+        2 to "4~20mA",
+        3 to "0~20mA",
+        4 to "0~5V",
+        5 to "0~10V",
+        6 to "2~10V",
+    )
+    private val JOCKEY_TYPE = mapOf(0 to "Disable", 1 to "Jockey On", 2 to "Jockey Off")
+    private val SENSOR_INPUT_TYPE = mapOf(
+        0 to "0-6 bar",
+        1 to "0-10 bar",
+        2 to "0-16 bar",
+        3 to "0-25 bar",
+        4 to "0-40 bar",
+        5 to "0-60 bar",
+        10 to "PS",
+    )
+    private val CONTROL_STATUS_ENUM = mapOf(0 to "Disable", 1 to "PID", 2 to "ON/OFF")
+    private val MFI_TYPES = mapOf(
+        0 to "DISABLE",
+        1 to "PS",
+        2 to "TS",
+        3 to "MP",
+        4 to "EMG",
+        5 to "CP",
+        6 to "FL",
+        7 to "PR5",
+        8 to "PR6",
+        9 to "RESET",
+        10 to "FIX",
+    )
+    private val MFO_TYPES = mapOf(
+        0 to "DISABLE",
+        1 to "MC3",
+        2 to "DC4",
+        3 to "MC4",
+        4 to "FAN",
+        5 to "ALARM",
+        6 to "E_VALVE",
+        7 to "RUN",
+        8 to "READY",
+        9 to "FILLER",
+        10 to "P1_ERR",
+        11 to "P2_ERR",
+        12 to "P3_ERR",
+        13 to "P4_ERR",
+    )
+    private val CONTROL_DIRECTION_ENUM = mapOf(0 to "Down", 1 to "Up")
+    private val AO_TYPE_ENUM = mapOf(0 to "Pump1", 1 to "Pump2")
+    private val MULTI_FUNCTION_ENUM = mapOf(0 to "No Function", 25 to "Reset Pump Error")
 
-    /** Number of pumps with status/failure bits in the Bit table (Pump1..Pump6). */
+    private const val RW_NOTE = "Official RW parameter (FC05/FC06). Confirm safe operating conditions before writing."
+    private const val RO_NOTE = "Read-only (R) in official DGP BPC02 firmware memory map."
+
+    /** Number of pumps with status/failure/activation bits (Pump 1..Pump 6). */
     const val STATUS_PUMP_COUNT = 6
 
-    /** Number of pumps with run-time words in the Word table (Pump1..Pump4). */
+    /** Number of pumps with run-time words in the Word table (Pump 1..Pump 4). */
     const val RUN_TIME_PUMP_COUNT = 4
 
     const val OUTPUT_COUNT = 10
     const val PR_INPUT_COUNT = 4
     const val MFI_INPUT_COUNT = 4
+    const val MFO_OUTPUT_COUNT = 4
+
+    /** Command value written to Word 99 to reset active pump errors. */
+    const val CMD_RESET_PUMP_ERROR = 25
 
     // ------------------------------------------------------------------ keys
 
@@ -50,6 +108,9 @@ object Bpc02RegisterMap {
     const val FLOATER_LOW = "floater_low"
     const val FLOATER_HIGH = "floater_high"
 
+    const val DRIVE_ACTIVATION = "drive_activation"
+    fun pumpActivationKey(n: Int) = "pump_${n}_activation"
+
     const val DISPLAYED_PAGE = "displayed_page"
     const val SYSTEM_PRESSURE = "system_pressure"
     const val V_RN = "v_rn"
@@ -59,39 +120,75 @@ object Bpc02RegisterMap {
     const val V_ST = "v_st"
     const val V_TR = "v_tr"
     const val MAINS_FREQUENCY = "mains_frequency"
-    const val DRIVE_FREQUENCY = "drive_frequency"
+    const val DRIVE1_FREQUENCY = "drive1_frequency"
+    const val DRIVE2_FREQUENCY = "drive2_frequency"
     fun runSecondsKey(n: Int) = "pump_${n}_run_sec"
     fun runMinutesKey(n: Int) = "pump_${n}_run_min"
     fun runHoursKey(n: Int) = "pump_${n}_run_hour"
     const val SYSTEM_ERROR = "system_error"
+    const val SYSTEM_ERROR_2 = "system_error_2"
+    const val MULTI_FUNCTION_REGISTER = "multi_function_register"
 
-    // ------------------------------------------------------------------ polled bit table (FC01, 0..33)
+    const val SYSTEM_PRESSURE_SETPOINT = "system_pressure_setpoint"
+    const val CONTROL_STATUS = "control_status"
+
+    // ------------------------------------------------------------------ shared live-polled RW control registers
+
+    val driveActivationDef: RegisterDefinition = cfgBit(
+        key = DRIVE_ACTIVATION,
+        label = "Mode 2,3 Drive Activation",
+        address = 4096,
+        labels = ENABLE,
+        row = 44,
+        access = AccessPolicy.READ_WRITE_VERIFIED,
+    )
+
+    val pumpActivationDefs: List<RegisterDefinition> = (1..STATUS_PUMP_COUNT).map { n ->
+        cfgBit(
+            key = pumpActivationKey(n),
+            label = "Pump $n activation",
+            address = 4096 + n, // 4097=Pump1 .. 4102=Pump6 per Booster Pump Memory Map.xlsx
+            labels = ENABLE,
+            row = 44 + n,
+            access = AccessPolicy.READ_WRITE_VERIFIED,
+        )
+    }
+
+    val pressureSetpointDef: RegisterDefinition = cfgWord(
+        key = SYSTEM_PRESSURE_SETPOINT,
+        label = "System Pressure Setpoint",
+        address = 4096,
+        row = 29,
+        unit = "bar",
+        scale = 0.01,
+        minValue = 0,
+        maxValue = 6000,
+        access = AccessPolicy.READ_WRITE_VERIFIED,
+        rangeNote = "Target discharge pressure setpoint (0~6000 = 0.00–60.00 bar).",
+    )
+
+    val controlStatusDef: RegisterDefinition = cfgEnum(
+        key = CONTROL_STATUS,
+        label = "Control Status",
+        address = 4173,
+        labels = CONTROL_STATUS_ENUM,
+        row = 73,
+        access = AccessPolicy.READ_WRITE_VERIFIED,
+        extra = "0: Disable (stops booster station), 1: PID, 2: ON/OFF.",
+    )
+
+    // ------------------------------------------------------------------ polled bit table (FC01: 0..33 & 4096..4102)
 
     private val bitStatus: List<RegisterDefinition> = buildList {
         for (i in 0 until OUTPUT_COUNT) {
             add(bit(outputKey(i), "Output $i status", i, RegisterGroup.DIGITAL_IO, ON_OFF, row = i + 1))
         }
-        add(
-            bit(
-                DR_STATUS, "DR status", 10, RegisterGroup.DIGITAL_IO, ON_OFF, row = 11,
-                notes = "Printed as 'DR Status'. Verified readable via FC01.",
-            ),
-        )
+        add(bit(DR_STATUS, "DR status", 10, RegisterGroup.DIGITAL_IO, ON_OFF, row = 11))
         for (n in 1..PR_INPUT_COUNT) {
-            add(
-                bit(
-                    prKey(n), "PR$n input status", 10 + n, RegisterGroup.DIGITAL_IO, ON_OFF, row = 11 + n,
-                    notes = "Manual p.8: PR$n is the direct-contactor feedback input of pump $n.",
-                ),
-            )
+            add(bit(prKey(n), "PR$n input status", 10 + n, RegisterGroup.DIGITAL_IO, ON_OFF, row = 11 + n))
         }
         for (n in 1..MFI_INPUT_COUNT) {
-            add(
-                bit(
-                    mfiKey(n), "MFI$n input status", 14 + n, RegisterGroup.DIGITAL_IO, ON_OFF, row = 15 + n,
-                    notes = "Multi-function input; its role is configured on the controller (MFI$n Type at 4180+).",
-                ),
-            )
+            add(bit(mfiKey(n), "MFI$n input status", 14 + n, RegisterGroup.DIGITAL_IO, ON_OFF, row = 15 + n))
         }
         for (n in 1..STATUS_PUMP_COUNT) {
             add(bit(pumpStatusKey(n), "Pump $n status", 18 + n, RegisterGroup.PUMP_STATUS, ON_OFF, row = 19 + n))
@@ -102,6 +199,9 @@ object Bpc02RegisterMap {
         }
         add(bit(FLOATER_LOW, "Floater L level", 32, RegisterGroup.DIGITAL_IO, CONNECTED, row = 33))
         add(bit(FLOATER_HIGH, "Floater H level", 33, RegisterGroup.DIGITAL_IO, CONNECTED, row = 34))
+        // Polled live so manual deactivation ('S' on LCD) updates immediately on Dashboard & Pumps screens.
+        add(driveActivationDef)
+        addAll(pumpActivationDefs)
     }
 
     // ------------------------------------------------------------------ polled word table (FC03)
@@ -118,165 +218,225 @@ object Bpc02RegisterMap {
         add(word(MAINS_FREQUENCY, "Mains frequency", 9, RegisterGroup.MEASUREMENT, "Hz", 0.01, row = 9))
         add(
             word(
-                DRIVE_FREQUENCY, "Drive frequency", 10, RegisterGroup.MEASUREMENT, row = 10,
-                verification = Verification.AMBIGUOUS,
-                notes = "Manual prints range 0-1600 without unit or scale (hardware test read 1000). Shown as raw value until confirmed.",
+                DRIVE1_FREQUENCY, "Drive 1 frequency", 25, RegisterGroup.MEASUREMENT,
+                unit = "Hz", scale = 0.01, row = 10,
+                notes = "Range 0~5000 (0.00–50.00 Hz).",
+            ),
+        )
+        add(
+            word(
+                DRIVE2_FREQUENCY, "Drive 2 frequency", 26, RegisterGroup.MEASUREMENT,
+                unit = "Hz", scale = 0.01, row = 11,
+                notes = "Range 0~5000 (0.00–50.00 Hz).",
             ),
         )
         for (n in 1..RUN_TIME_PUMP_COUNT) {
             val base = 34 + (n - 1) * 3
-            val row = 11 + (n - 1) * 3
-            add(word(runSecondsKey(n), "Pump $n work time (seconds part)", base, RegisterGroup.RUN_TIME, "s", 1.0, row = row))
-            add(word(runMinutesKey(n), "Pump $n work time (minutes part)", base + 1, RegisterGroup.RUN_TIME, "min", 1.0, row = row + 1))
-            add(word(runHoursKey(n), "Pump $n work time (hours part)", base + 2, RegisterGroup.RUN_TIME, "h", 1.0, row = row + 2))
+            val row = 12 + (n - 1) * 3
+            add(word(runSecondsKey(n), "Pump $n work time (seconds)", base, RegisterGroup.RUN_TIME, "s", 1.0, row = row))
+            add(word(runMinutesKey(n), "Pump $n work time (minutes)", base + 1, RegisterGroup.RUN_TIME, "min", 1.0, row = row + 1))
+            add(word(runHoursKey(n), "Pump $n work time (hours)", base + 2, RegisterGroup.RUN_TIME, "h", 1.0, row = row + 2))
         }
         add(
             RegisterDefinition(
                 key = SYSTEM_ERROR,
-                label = "System error",
+                label = "System error (Word 1)",
                 table = VendorTable.WORD,
                 documentedAddress = 80,
                 rawType = RawType.BITFIELD16,
                 group = RegisterGroup.ALARM,
                 verification = Verification.HARDWARE_VERIFIED,
-                source = "$SRC_WORD, row 25",
-                notes = "Verified via FC03 (0x0000 when healthy). Bits 3-10 documented.",
+                source = "$SRC_WORD, row 26",
+                notes = "Bits 0–15: Floater, Max Pressure, Sensor Disconnect, Control Phase (3–6), Drive (7), Pump 1–6 (8–13), All Pump (14), System Stop by User (15).",
             ),
         )
+        add(
+            RegisterDefinition(
+                key = SYSTEM_ERROR_2,
+                label = "System error (Word 2)",
+                table = VendorTable.WORD,
+                documentedAddress = 81,
+                rawType = RawType.BITFIELD16,
+                group = RegisterGroup.ALARM,
+                verification = Verification.DOCUMENTED,
+                source = "$SRC_WORD, row 27",
+                notes = "Bits 0–7: Mode3 Main Pump (0), Mode3 Drive (1), Full Load (2), Reserve (3), System Stopped (4), EMG Stopped (5), Reserve (6), Battery Voltage (7).",
+            ),
+        )
+        // Live polled setpoint and control mode so Dashboard displays real target pressure & mode
+        add(pressureSetpointDef)
+        add(controlStatusDef)
     }
 
-    // ------------------------------------------------------------------ hardware configuration (FC01/FC05 & FC03/FC06)
+    // ------------------------------------------------------------------ hardware configuration (4096..4210)
 
-    private val MFI_TYPES = mapOf(0 to "Disable", 1 to "PS", 2 to "MP", 3 to "EMG", 4 to "CP", 5 to "FL")
-    private val MFO_TYPES = mapOf(0 to "Disable", 1 to "E Valve", 2 to "Fan", 3 to "Alarm", 4 to "DC3", 5 to "MC3")
-    private const val CFG_WARNING = "Hardware setting (FC05/FC06 verified). Confirm safe operating conditions before changing."
-
-    /** Hardware configuration entries. Read on demand; verified items support FC05/FC06 editing with confirmation. */
+    /** Complete hardware configuration map (RW and R registers strictly per official Excel). */
     val configuration: List<RegisterDefinition> = buildList {
-        for (n in 1..6) {
-            add(cfgBit("pump_${n}_activation", "Pump $n activation", 4095 + n, ENABLE, row = 44 + n))
-        }
-        add(cfgBit("control_phase_activation", "Control phase activation", 4106, ENABLE, row = 51))
-        add(cfgBit("off_changing_activation", "OFF changing activation", 4107, ENABLE, row = 52))
-        add(cfgBit("time_changing_activation", "Time changing activation", 4108, ENABLE, row = 53))
-        add(cfgBit("reserve_auto_activation", "Reserve automatic activation", 4109, ENABLE, row = 54))
-        add(cfgBit("reserve_auto_type", "Reserve automatic type", 4110, mapOf(0 to "NO", 1 to "NC"), row = 55))
+        // ---- Coils 4096..4102 (RW) ----
+        add(driveActivationDef)
+        addAll(pumpActivationDefs)
 
-        // Protected read-only: manual p.16 notes disabling Control Status triggers System Stopped; polarity not write-tested.
-        add(
-            cfgWord(
-                key = "control_status",
-                label = "Control status",
-                address = 4173,
-                row = 56,
-                minValue = 0,
-                maxValue = 1,
-                access = AccessPolicy.READ,
-                rangeNote = "Protected read-only in app (range 0-1; manual p.16 warns disabling stops the system).",
-            ),
-        )
+        // ---- Coils 4106..4110 (R - Read-Only in official Excel) ----
+        add(cfgBit("control_phase_activation", "Control phase activation", 4106, ENABLE, row = 51, access = AccessPolicy.READ))
+        add(cfgBit("off_changing_activation", "OFF changing activation", 4107, ENABLE, row = 52, access = AccessPolicy.READ))
+        add(cfgBit("time_changing_activation", "Time changing activation", 4108, ENABLE, row = 53, access = AccessPolicy.READ))
+        add(cfgBit("reserve_auto_activation", "Reserve automatic activation", 4109, ENABLE, row = 54, access = AccessPolicy.READ))
+        add(cfgBit("reserve_auto_type", "Reserve automatic type", 4110, RESERVE_TYPE, row = 55, access = AccessPolicy.READ))
+
+        // ---- Word 4096 (RW) ----
+        add(pressureSetpointDef)
+
+        // ---- Words 4097..4111 (R - Pump 1..4 ON/OFF pressures & delays) ----
+        add(cfgWord("pump_1_on_delay", "On Delay Pump 1", 4097, row = 30, unit = "s", scale = 1.0, minValue = 0, maxValue = 9999, access = AccessPolicy.READ, rangeNote = "Range 0–9999 s."))
+        add(cfgWord("pump_1_off_pressure", "OFF Pressure Pump 1", 4098, row = 31, unit = "bar", scale = 0.01, minValue = 0, maxValue = 6000, access = AccessPolicy.READ, rangeNote = "Range 0.00–60.00 bar."))
+        add(cfgWord("pump_1_off_delay", "OFF Delay Pump 1", 4099, row = 32, unit = "s", scale = 1.0, minValue = 0, maxValue = 9999, access = AccessPolicy.READ, rangeNote = "Range 0–9999 s."))
+
+        add(cfgWord("pump_2_on_pressure", "On Pressure Pump 2", 4100, row = 33, unit = "bar", scale = 0.01, minValue = 0, maxValue = 6000, access = AccessPolicy.READ, rangeNote = "Range 0.00–60.00 bar."))
+        add(cfgWord("pump_2_on_delay", "On Delay Pump 2", 4101, row = 34, unit = "s", scale = 1.0, minValue = 0, maxValue = 9999, access = AccessPolicy.READ, rangeNote = "Range 0–9999 s."))
+        add(cfgWord("pump_2_off_pressure", "OFF Pressure Pump 2", 4102, row = 35, unit = "bar", scale = 0.01, minValue = 0, maxValue = 6000, access = AccessPolicy.READ, rangeNote = "Range 0.00–60.00 bar."))
+        add(cfgWord("pump_2_off_delay", "OFF Delay Pump 2", 4103, row = 36, unit = "s", scale = 1.0, minValue = 0, maxValue = 9999, access = AccessPolicy.READ, rangeNote = "Range 0–9999 s."))
+
+        add(cfgWord("pump_3_on_pressure", "On Pressure Pump 3", 4104, row = 37, unit = "bar", scale = 0.01, minValue = 0, maxValue = 6000, access = AccessPolicy.READ, rangeNote = "Range 0.00–60.00 bar."))
+        add(cfgWord("pump_3_on_delay", "On Delay Pump 3", 4105, row = 38, unit = "s", scale = 1.0, minValue = 0, maxValue = 9999, access = AccessPolicy.READ, rangeNote = "Range 0–9999 s."))
+        add(cfgWord("pump_3_off_pressure", "OFF Pressure Pump 3", 4106, row = 39, unit = "bar", scale = 0.01, minValue = 0, maxValue = 6000, access = AccessPolicy.READ, rangeNote = "Range 0.00–60.00 bar."))
+        add(cfgWord("pump_3_off_delay", "OFF Delay Pump 3", 4107, row = 40, unit = "s", scale = 1.0, minValue = 0, maxValue = 9999, access = AccessPolicy.READ, rangeNote = "Range 0–9999 s."))
+
+        add(cfgWord("pump_4_on_pressure", "On Pressure Pump 4", 4108, row = 41, unit = "bar", scale = 0.01, minValue = 0, maxValue = 6000, access = AccessPolicy.READ, rangeNote = "Range 0.00–60.00 bar."))
+        add(cfgWord("pump_4_on_delay", "On Delay Pump 4", 4109, row = 42, unit = "s", scale = 1.0, minValue = 0, maxValue = 9999, access = AccessPolicy.READ, rangeNote = "Range 0–9999 s."))
+        add(cfgWord("pump_4_off_pressure", "OFF Pressure Pump 4", 4110, row = 43, unit = "bar", scale = 0.01, minValue = 0, maxValue = 6000, access = AccessPolicy.READ, rangeNote = "Range 0.00–60.00 bar."))
+        add(cfgWord("pump_4_off_delay", "OFF Delay Pump 4", 4111, row = 44, unit = "s", scale = 1.0, minValue = 0, maxValue = 9999, access = AccessPolicy.READ, rangeNote = "Range 0–9999 s."))
+
+        // ---- Words 4122..4125 (Control Phase) ----
+        add(cfgEnum("control_phase_type", "Control Phase Type", 4122, CONTROL_PHASE_TYPE, row = 45, access = AccessPolicy.READ))
+        add(cfgWord("control_phase_min_voltage", "Control Phase Min Voltage", 4123, row = 46, unit = "V", scale = 1.0, minValue = 180, maxValue = 210, rangeNote = "Range 180–210 V."))
+        add(cfgWord("control_phase_max_voltage", "Control Phase Max Voltage", 4124, row = 47, unit = "V", scale = 1.0, minValue = 240, maxValue = 280, rangeNote = "Range 240–280 V."))
+        add(cfgWord("control_phase_delay", "Control Phase On/Off Delay", 4125, row = 48, unit = "s", scale = 1.0, minValue = 1, maxValue = 99, rangeNote = "Range 1–99 s."))
+
+        // ---- Words 4127..4129 (Control Phase Sensitivity & Floater) ----
+        add(cfgWord("control_phase_sensitivity", "Control Phase Sensitivity", 4127, row = 49, unit = "%", scale = 1.0, minValue = 5, maxValue = 20, rangeNote = "Range 5–20 %."))
+        add(cfgWord("floater_trigger_level", "Floater Trigger Level", 4128, row = 50, unit = "kΩ", scale = 1.0, minValue = 0, maxValue = 1000, rangeNote = "Range 0–1000 kΩ."))
+        add(cfgWord("floater_delay", "Floater On/Off Delay", 4129, row = 52, unit = "s", scale = 1.0, minValue = 0, maxValue = 99, rangeNote = "Range 0–99 s."))
+
+        // ---- Words 4131..4138 (Floater/Sensor/Pumps R; Jockey & PID RW) ----
+        add(cfgEnum("floater_type", "Floater Type", 4131, FLOATER_TYPE, row = 51, access = AccessPolicy.READ))
+        add(cfgEnum("pressure_sensor_output_type", "Pressure Sensor Output Type", 4132, SENSOR_OUTPUT_TYPE, row = 53, access = AccessPolicy.READ))
+        add(cfgWord("number_of_pump", "Number Of Pump", 4133, row = 54, scale = 1.0, minValue = 1, maxValue = 4, access = AccessPolicy.READ, rangeNote = "Range 1–4."))
+        add(cfgWord("number_of_variable_pump", "Number Of Variable Pump", 4134, row = 55, scale = 1.0, minValue = 0, maxValue = 2, access = AccessPolicy.READ, rangeNote = "Range 0–2."))
+        add(cfgEnum("jockey_type", "Jockey Type", 4135, JOCKEY_TYPE, row = 56, access = AccessPolicy.READ_WRITE_VERIFIED))
+        add(cfgWord("pid_p_value", "P Value", 4136, row = 57, scale = 1.0, minValue = 0, maxValue = 999, rangeNote = "PID Proportional gain (0–999)."))
+        add(cfgWord("pid_i_value", "I Value", 4137, row = 58, scale = 1.0, minValue = 0, maxValue = 999, rangeNote = "PID Integral gain (0–999)."))
+        add(cfgWord("pid_d_value", "D Value", 4138, row = 59, scale = 1.0, minValue = 0, maxValue = 999, rangeNote = "PID Derivative gain (0–999)."))
+
+        // ---- Words 4142..4143 (Max Pressure R, Sensor Calibration RW) ----
+        add(cfgWord("max_pressure_value", "Max Pressure Value", 4142, row = 60, unit = "bar", scale = 0.01, minValue = 0, maxValue = 2500, access = AccessPolicy.READ, rangeNote = "Range 0.00–25.00 bar."))
+        add(cfgWord("sensor_calibration_value", "Sensor Calibration Value", 4143, row = 61, scale = 1.0, minValue = 1, maxValue = 999, rangeNote = "Range 1–999."))
+
+        // ---- Words 4149..4152 (Wakeup/Sleep RW, Sensor Input Type R) ----
+        add(cfgWord("wakeup_differential", "Wake up Differential", 4149, row = 62, unit = "bar", scale = 0.01, minValue = 0, maxValue = 1000, rangeNote = "Range 0.00–10.00 bar."))
+        add(cfgWord("sleep_frequency", "Sleep Frequency", 4150, row = 63, unit = "Hz", scale = 0.01, minValue = 0, maxValue = 5000, rangeNote = "Range 0.00–50.00 Hz."))
+        add(cfgWord("sleep_off_delay", "Sleep Off Delay", 4151, row = 64, unit = "s", scale = 1.0, minValue = 0, maxValue = 99, rangeNote = "Range 0–99 s."))
+        add(cfgEnum("pressure_sensor_input_type", "Pressure Sensor Input Type", 4152, SENSOR_INPUT_TYPE, row = 65, access = AccessPolicy.READ))
+
+        // ---- Word 4156 (Mode 3 Switch Time R) ----
+        add(cfgWord("mode3_switch_time", "Mode 3 Switch Time", 4156, row = 66, unit = "s", scale = 0.01, minValue = 2, maxValue = 100, access = AccessPolicy.READ, rangeNote = "Range 0.02–1.00 s."))
+
+        // ---- Words 4161..4164, 4166 (Timing & Constant Pump RW) ----
+        add(cfgWord("time_changing_time", "Time Changing Time", 4161, row = 67, unit = "min", scale = 1.0, minValue = 1, maxValue = 9999, rangeNote = "Range 1–9999 min."))
+        add(cfgWord("add_delay", "Add Delay", 4162, row = 68, unit = "s", scale = 0.1, minValue = 0, maxValue = 999, rangeNote = "Range 0.0–99.9 s."))
+        add(cfgWord("remove_delay", "Remove Delay", 4163, row = 69, unit = "s", scale = 0.1, minValue = 0, maxValue = 999, rangeNote = "Range 0.0–99.9 s."))
+        add(cfgWord("wakeup_on_delay", "Wake up On Delay", 4164, row = 70, unit = "s", scale = 1.0, minValue = 0, maxValue = 99, rangeNote = "Range 0–99 s."))
+        add(cfgWord("constant_pump_percent", "Constant Pump Percent", 4166, row = 71, unit = "%", scale = 1.0, minValue = 0, maxValue = 100, rangeNote = "Range 0–100 %."))
+
+        // ---- Word 4170 (Wiring Mode R), Word 4173 (Control Status RW), Word 4175 (Sleep Gap RW) ----
+        add(cfgWord("wiring_mode", "Wiring Mode", 4170, row = 72, scale = 1.0, minValue = 1, maxValue = 3, access = AccessPolicy.READ, rangeNote = "Wiring Mode 1–3."))
+        add(controlStatusDef)
         add(
             cfgWord(
                 key = "sleep_gap",
-                label = "Sleep gap",
+                label = "Sleep Gap",
                 address = 4175,
-                row = 57,
+                row = 74,
                 unit = "bar",
                 scale = 0.01,
                 minValue = 1,
                 maxValue = 100,
-                rangeNote = "FC06 write verified on hardware (40 -> 41 -> 40; range 1-100 = 0.01-1.00 bar).",
+                rangeNote = "FC06 write verified on hardware (40 -> 41 -> 40; range 1–100 = 0.01–1.00 bar).",
+                verification = Verification.HARDWARE_VERIFIED,
             ),
         )
+
+        // ---- Words 4177..4179 (Auto Service RW) ----
+        add(cfgWord("auto_service_off_time", "Auto Service Off Time", 4177, row = 75, unit = "h", scale = 1.0, minValue = 1, maxValue = 9999, rangeNote = "Range 1–9999 h.", verification = Verification.HARDWARE_VERIFIED))
+        add(cfgWord("auto_service_on_time", "Auto Service On Time", 4178, row = 76, unit = "s", scale = 0.1, minValue = 1, maxValue = 999, rangeNote = "Range 0.1–99.9 s.", verification = Verification.HARDWARE_VERIFIED))
+        add(cfgWord("auto_service_interval", "Auto Service Interval", 4179, row = 77, unit = "min", scale = 1.0, minValue = 1, maxValue = 99, rangeNote = "Range 1–99 min.", verification = Verification.HARDWARE_VERIFIED))
+
+        // ---- Words 4180..4187 (MFI1..4 & MFO1..4 Types — R in official Excel) ----
+        for (n in 1..MFI_INPUT_COUNT) {
+            add(cfgEnum("mfi_${n}_type", "MFI$n Type", 4179 + n, MFI_TYPES, row = 77 + n, access = AccessPolicy.READ, verification = Verification.HARDWARE_VERIFIED))
+        }
+        for (n in 1..MFO_OUTPUT_COUNT) {
+            add(cfgEnum("mfo_${n}_type", "MFO$n Type", 4183 + n, MFO_TYPES, row = 81 + n, access = AccessPolicy.READ, verification = if (n <= 3) Verification.HARDWARE_VERIFIED else Verification.DOCUMENTED))
+        }
+
+        // ---- Words 4188..4195 (System / Drive / Full Load / Modbus Address — R) ----
+        add(cfgWord("serial_number", "Serial Number", 4188, row = 86, scale = 1.0, minValue = 0, maxValue = 99999, access = AccessPolicy.READ, rangeNote = "Controller serial number."))
+        add(cfgWord("start_frequency", "Start Frequency", 4189, row = 87, unit = "Hz", scale = 0.01, minValue = 100, maxValue = 5000, access = AccessPolicy.READ, rangeNote = "Range 1.00–50.00 Hz."))
+        add(cfgEnum("full_load_status", "Full Load Status", 4190, ENABLE, row = 88, access = AccessPolicy.READ))
+        add(cfgWord("full_load_pressure", "Full Load Pressure", 4191, row = 89, unit = "bar", scale = 0.01, minValue = 0, maxValue = 9999, access = AccessPolicy.READ, rangeNote = "Range 0.00–99.99 bar."))
+        add(cfgWord("full_load_time", "Full Load Time", 4192, row = 90, unit = "s", scale = 1.0, minValue = 0, maxValue = 9999, access = AccessPolicy.READ, rangeNote = "Range 0–9999 s."))
         add(
             cfgWord(
-                key = "auto_service_off_time",
-                label = "Auto service off time",
-                address = 4177,
-                row = 58,
-                unit = "h",
-                scale = 1.0,
-                minValue = 1,
-                maxValue = 9999,
-                rangeNote = "Range 1-9999 hours (hardware read 159 h).",
-            ),
-        )
-        add(
-            cfgWord(
-                key = "auto_service_on_time",
-                label = "Auto service on time",
-                address = 4178,
-                row = 59,
-                unit = "s",
-                scale = 0.1,
-                minValue = 1,
-                maxValue = 999,
-                rangeNote = "Range 1-999 (0.1-99.9 s). PDF prints '417B'; verified as decimal 4178 (33 = 3.3 s).",
-            ),
-        )
-        add(
-            cfgWord(
-                key = "auto_service_interval",
-                label = "Auto service interval",
-                address = 4179,
-                row = 60,
-                unit = "min",
-                scale = 1.0,
-                minValue = 1,
-                maxValue = 99,
-                rangeNote = "Range 1-99 minutes (hardware read 11 min).",
-            ),
-        )
-        add(
-            cfgEnum(
-                "mfi_1_type", "MFI1 type", 4180, MFI_TYPES, row = 61,
-                extra = "PDF prints '41B0'; verified as decimal 4180 via FC03 block read (4177 qty 10).",
-            ),
-        )
-        add(cfgEnum("mfi_2_type", "MFI2 type", 4181, MFI_TYPES, row = 62))
-        add(cfgEnum("mfi_3_type", "MFI3 type", 4182, MFI_TYPES, row = 63))
-        add(cfgEnum("mfi_4_type", "MFI4 type", 4183, MFI_TYPES, row = 64))
-        add(cfgEnum("mfo_1_type", "MFO1 type", 4184, MFO_TYPES, row = 65))
-        add(cfgEnum("mfo_2_type", "MFO2 type", 4185, MFO_TYPES, row = 66))
-        add(cfgEnum("mfo_3_type", "MFO3 type", 4186, MFO_TYPES, row = 67))
-        // Protected read-only: changing Slave ID remotely would immediately sever communication.
-        add(
-            cfgWord(
-                key = "modbus_address",
-                label = "Modbus address",
-                address = 4195,
-                row = 68,
-                minValue = 1,
-                maxValue = 247,
+                key = "stop_frequency",
+                label = "Stop Frequency",
+                address = 4193,
+                row = 91,
+                unit = "Hz",
+                scale = 0.01,
+                minValue = 100,
+                maxValue = 5000,
                 access = AccessPolicy.READ,
-                rangeNote = "Protected read-only in app to prevent losing Slave ID communication (verified = 1).",
+                rangeNote = "Range 1.00–50.00 Hz (Excel col G typo '0.01Bar' corrected to 0.01 Hz matching Start Frequency 4189).",
             ),
         )
+        add(cfgEnum("control_direction", "Control Direction", 4194, CONTROL_DIRECTION_ENUM, row = 92, access = AccessPolicy.READ))
+        add(cfgWord("modbus_address", "ModBus Address", 4195, row = 93, scale = 1.0, minValue = 1, maxValue = 247, access = AccessPolicy.READ, rangeNote = "Modbus Slave ID (verified = 1).", verification = Verification.HARDWARE_VERIFIED))
+
+        // ---- Words 4206..4210 (AO Type, LCD Contrast, AO Gain — R) ----
+        add(cfgEnum("ao1_type", "AO1 Type", 4206, AO_TYPE_ENUM, row = 94, access = AccessPolicy.READ))
+        add(cfgEnum("ao2_type", "AO2 Type", 4207, AO_TYPE_ENUM, row = 95, access = AccessPolicy.READ))
+        add(cfgWord("lcd_contrast", "LCD Contrast", 4208, row = 96, scale = 1.0, minValue = 0, maxValue = 20, access = AccessPolicy.READ, rangeNote = "Range 0–20."))
+        add(cfgWord("ao1_gain", "AO1 Gain", 4209, row = 97, scale = 0.0001, minValue = 900, maxValue = 1100, access = AccessPolicy.READ, rangeNote = "Range 900–1100 (× 1E-4)."))
+        add(cfgWord("ao2_gain", "AO2 Gain", 4210, row = 98, scale = 0.0001, minValue = 900, maxValue = 1100, access = AccessPolicy.READ, rangeNote = "Range 900–1100 (× 1E-4)."))
     }
 
-    // ------------------------------------------------------------------ manual control (LOCKED)
+    // ------------------------------------------------------------------ command register (Word 99, RW)
+
+    val multiFunctionRegisterDef: RegisterDefinition = RegisterDefinition(
+        key = MULTI_FUNCTION_REGISTER,
+        label = "Multi Function Register (Reset Pump Error)",
+        table = VendorTable.WORD,
+        documentedAddress = 99,
+        rawType = RawType.ENUM16,
+        group = RegisterGroup.COMMAND,
+        minValue = CMD_RESET_PUMP_ERROR,
+        maxValue = CMD_RESET_PUMP_ERROR,
+        enumLabels = MULTI_FUNCTION_ENUM,
+        access = AccessPolicy.READ_WRITE_VERIFIED,
+        verification = Verification.HARDWARE_VERIFIED,
+        source = "$SRC_WORD, row 28",
+        notes = "Official RW command register: 0 = No Function, 25 = Reset Pump Error (pulse command, auto-clears to 0).",
+    )
+
+    val commands: List<RegisterDefinition> = listOf(multiFunctionRegisterDef)
+
+    // ------------------------------------------------------------------ manual outputs (R in official firmware -> LOCKED)
 
     /**
-     * Manual control items described in the manual. Bench write testing (BPC02_WRITE_TEST_RESULTS.txt)
-     * showed FC06 99=1234 echoed OK, but Word 50 & Coil 56 returned Exception 0x02 (Illegal Data Address)
-     * and Word 99=0 returned Exception 0x03 (Illegal Data Value). Remain strictly CONTROL_LOCKED until
-     * DGP confirms the manual-mode sequence for this firmware.
+     * Manual output registers are explicitly marked Read-Only (R) in DGP's official
+     * Booster Pump Memory Map.xlsx, matching physical bench results (FC05 Coil 56 &
+     * FC06 Word 50 returned Exception 0x02 Illegal Data Address).
      */
     val manualControl: List<RegisterDefinition> = buildList {
-        add(
-            RegisterDefinition(
-                key = "multi_function_register",
-                label = "Multi Function Register (manual mode)",
-                table = VendorTable.WORD,
-                documentedAddress = 99,
-                rawType = RawType.UINT16,
-                group = RegisterGroup.MANUAL_CONTROL,
-                access = AccessPolicy.CONTROL_LOCKED,
-                verification = Verification.AMBIGUOUS,
-                source = SRC_MANUAL,
-                notes = "Bench test: FC06 99=1234 echoed OK, but FC06 99=0 returned Exception 0x03 and outputs stayed locked. Disabled pending DGP clarification.",
-            ),
-        )
         for (i in 0 until OUTPUT_COUNT) {
             add(
                 RegisterDefinition(
@@ -288,9 +448,9 @@ object Bpc02RegisterMap {
                     group = RegisterGroup.MANUAL_CONTROL,
                     enumLabels = ON_OFF,
                     access = AccessPolicy.CONTROL_LOCKED,
-                    verification = Verification.AMBIGUOUS,
+                    verification = Verification.HARDWARE_VERIFIED,
                     source = "$SRC_BIT, row ${35 + i}",
-                    notes = "Readable via FC01 (all 0). Bench test FC05 returned Exception 0x02 and FC15 was rejected; locked pending DGP clarification.",
+                    notes = "Marked Read-Only (R) in official DGP Excel memory map and confirmed Exception 0x02 on FC05 write.",
                 ),
             )
         }
@@ -308,9 +468,9 @@ object Bpc02RegisterMap {
                     minValue = 0,
                     maxValue = 500,
                     access = AccessPolicy.CONTROL_LOCKED,
-                    verification = Verification.AMBIGUOUS,
-                    source = "$SRC_WORD, row ${23 + i}",
-                    notes = "Readable via FC03 (0). Bench test FC06 returned Exception 0x02; locked pending DGP clarification.",
+                    verification = Verification.HARDWARE_VERIFIED,
+                    source = "$SRC_WORD, row ${24 + i}",
+                    notes = "Marked Read-Only (R) in official DGP Excel memory map and confirmed Exception 0x02 on FC06 write.",
                 ),
             )
         }
@@ -318,23 +478,21 @@ object Bpc02RegisterMap {
 
     // ------------------------------------------------------------------ aggregates
 
-    /** Values read on every poll cycle. */
+    /** Values read on every live poll cycle. */
     val polled: List<RegisterDefinition> = bitStatus + wordStatus
 
-    val all: List<RegisterDefinition> = polled + configuration + manualControl
+    /** Deduplicated complete registry of all 154 documented BPC02 registers. */
+    val all: List<RegisterDefinition> = (polled + commands + configuration + manualControl).distinctBy { it.key }
 
     private val byKey: Map<String, RegisterDefinition> = all.associateBy { it.key }
 
     fun byKey(key: String): RegisterDefinition =
         byKey[key] ?: throw IllegalArgumentException("Unknown BPC02 register key '$key'")
 
-    /** Read blocks covering [polled], skipping undocumented gaps (Word 1, 11-33, 46-79). */
+    /** Contiguous live read blocks covering [polled], skipping all undocumented gaps. */
     val pollBlocks: List<ReadBlock> = buildBlocks(polled)
 
-    /**
-     * Read blocks covering [configuration] (4096..4101, 4106..4110 via FC01; 4173, 4175,
-     * 4177..4186, 4195 via FC03). All 6 blocks verified in BPC02_FULL_READ_RESULTS.txt.
-     */
+    /** Contiguous on-demand read blocks covering [configuration], skipping all undocumented gaps. */
     val configurationBlocks: List<ReadBlock> = buildBlocks(configuration)
 
     /** Groups definitions of one table into contiguous runs of documented addresses. */
@@ -396,7 +554,7 @@ object Bpc02RegisterMap {
         address: Int,
         labels: Map<Int, String>,
         row: Int,
-        access: AccessPolicy = AccessPolicy.READ_WRITE_VERIFIED,
+        access: AccessPolicy = AccessPolicy.READ,
     ) = RegisterDefinition(
         key = key, label = label, table = VendorTable.BIT, documentedAddress = address,
         rawType = RawType.BIT, group = RegisterGroup.CONFIGURATION,
@@ -404,7 +562,8 @@ object Bpc02RegisterMap {
         enumLabels = labels,
         access = access,
         verification = Verification.HARDWARE_VERIFIED,
-        source = "$SRC_CFG_BIT, row $row", notes = CFG_WARNING,
+        source = "$SRC_BIT, row $row",
+        notes = if (access == AccessPolicy.READ_WRITE_VERIFIED) RW_NOTE else RO_NOTE,
     )
 
     private fun cfgWord(
@@ -418,15 +577,16 @@ object Bpc02RegisterMap {
         maxValue: Int? = null,
         access: AccessPolicy = AccessPolicy.READ_WRITE_VERIFIED,
         rangeNote: String,
-        verification: Verification = Verification.HARDWARE_VERIFIED,
+        verification: Verification = Verification.DOCUMENTED,
     ) = RegisterDefinition(
         key = key, label = label, table = VendorTable.WORD, documentedAddress = address,
         rawType = RawType.UINT16, group = RegisterGroup.CONFIGURATION,
         unit = unit, scale = scale,
         minValue = minValue, maxValue = maxValue,
         access = access,
-        verification = verification, source = "$SRC_CFG_WORD, row $row",
-        notes = "$rangeNote $CFG_WARNING",
+        verification = verification,
+        source = "$SRC_WORD, row $row",
+        notes = "$rangeNote ${if (access == AccessPolicy.READ_WRITE_VERIFIED) RW_NOTE else RO_NOTE}",
     )
 
     private fun cfgEnum(
@@ -435,15 +595,19 @@ object Bpc02RegisterMap {
         address: Int,
         labels: Map<Int, String>,
         row: Int,
+        access: AccessPolicy = AccessPolicy.READ,
         extra: String = "",
-        verification: Verification = Verification.HARDWARE_VERIFIED,
+        verification: Verification = Verification.DOCUMENTED,
     ) = RegisterDefinition(
         key = key, label = label, table = VendorTable.WORD, documentedAddress = address,
         rawType = RawType.ENUM16, group = RegisterGroup.CONFIGURATION,
         minValue = labels.keys.minOrNull(), maxValue = labels.keys.maxOrNull(),
         enumLabels = labels,
-        access = AccessPolicy.READ_WRITE_VERIFIED,
-        verification = verification, source = "$SRC_CFG_WORD, row $row",
-        notes = listOf(extra, CFG_WARNING).filter { it.isNotBlank() }.joinToString(" "),
+        access = access,
+        verification = verification,
+        source = "$SRC_WORD, row $row",
+        notes = listOf(extra, if (access == AccessPolicy.READ_WRITE_VERIFIED) RW_NOTE else RO_NOTE)
+            .filter { it.isNotBlank() }
+            .joinToString(" "),
     )
 }

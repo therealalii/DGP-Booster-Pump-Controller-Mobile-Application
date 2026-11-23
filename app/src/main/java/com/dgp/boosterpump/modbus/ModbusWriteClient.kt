@@ -19,22 +19,29 @@ class ModbusWriteClient(
 
     suspend fun writeSingleCoil(address: Int, value: Boolean) {
         val request = ModbusPdu.buildWriteSingleCoilRequest(address, value)
-        val response = exchange(WriteFunction.WRITE_SINGLE_COIL, address, request)
-        ModbusPdu.parseWriteSingleCoilResponse(address, value, response)
+        exchange(WriteFunction.WRITE_SINGLE_COIL, address, request) { response ->
+            ModbusPdu.parseWriteSingleCoilResponse(address, value, response)
+        }
     }
 
     suspend fun writeSingleRegister(address: Int, value: Int) {
         val request = ModbusPdu.buildWriteSingleRegisterRequest(address, value)
-        val response = exchange(WriteFunction.WRITE_SINGLE_REGISTER, address, request)
-        ModbusPdu.parseWriteSingleRegisterResponse(address, value, response)
+        exchange(WriteFunction.WRITE_SINGLE_REGISTER, address, request) { response ->
+            ModbusPdu.parseWriteSingleRegisterResponse(address, value, response)
+        }
     }
 
-    private suspend fun exchange(function: WriteFunction, address: Int, request: ByteArray): ByteArray {
+    private suspend fun exchange(
+        function: WriteFunction,
+        address: Int,
+        request: ByteArray,
+        validateEcho: (ByteArray) -> Unit,
+    ): ByteArray {
         val start = clock()
         var response: ByteArray? = null
         try {
             response = transport.transact(unitId, request)
-            ModbusPdu.checkForException(function.code, response)
+            validateEcho(response)
             onTransaction(record(start, function.code, address, request, response, null))
             return response
         } catch (e: ModbusException) {

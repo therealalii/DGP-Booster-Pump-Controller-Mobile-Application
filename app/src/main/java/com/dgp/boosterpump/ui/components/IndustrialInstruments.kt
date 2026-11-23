@@ -62,12 +62,14 @@ import kotlin.math.sin
 @Composable
 fun PressureArcGauge(
     pressureBar: Double?,
+    setpointBar: Double? = null,
     maxBar: Double = 10.0,
     drActive: Boolean? = null,
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalScadaPalette.current
-    val targetFraction = ((pressureBar ?: 0.0) / maxBar).toFloat().coerceIn(0f, 1f)
+    val effectiveMax = maxOf(maxBar, ((setpointBar ?: 0.0) + 2.0), ((pressureBar ?: 0.0) + 1.5))
+    val targetFraction = ((pressureBar ?: 0.0) / effectiveMax).toFloat().coerceIn(0f, 1f)
     val animatedFraction by animateFloatAsState(
         targetValue = targetFraction,
         animationSpec = tween(durationMillis = 550, easing = FastOutSlowInEasing),
@@ -76,8 +78,8 @@ fun PressureArcGauge(
 
     val activeColor = when {
         pressureBar == null -> palette.standby
-        pressureBar >= 7.5 -> palette.fault
-        pressureBar >= 6.0 -> palette.warning
+        pressureBar >= effectiveMax * 0.78 -> palette.fault
+        pressureBar >= effectiveMax * 0.65 -> palette.warning
         pressureBar <= 0.5 -> palette.warning
         else -> palette.cyan
     }
@@ -118,7 +120,7 @@ fun PressureArcGauge(
                 style = Stroke(width = 1.2.dp.toPx()),
             )
 
-            // Scale tick marks (0..10 bar, major every 2 bar)
+            // Scale tick marks
             val tickCount = 20
             for (i in 0..tickCount) {
                 val deg = startAngle + (totalSweep * i / tickCount)
@@ -195,6 +197,21 @@ fun PressureArcGauge(
                 drawCircle(color = activeColor.copy(alpha = 0.38f), radius = tipGlowPulse.dp.toPx(), center = tipOffset)
                 drawCircle(color = Color.White, radius = 4.2.dp.toPx(), center = tipOffset)
             }
+
+            // Brushed champagne-gold setpoint marker notch on the arc
+            if (setpointBar != null && setpointBar > 0.0) {
+                val spFraction = (setpointBar / effectiveMax).toFloat().coerceIn(0f, 1f)
+                val spRad = (startAngle + totalSweep * spFraction) * PI / 180.0
+                val rIn = radius - strokePx * 0.65f
+                val rOut = radius + strokePx * 0.72f
+                drawLine(
+                    color = palette.gold,
+                    start = Offset(center.x + (rIn * cos(spRad)).toFloat(), center.y + (rIn * sin(spRad)).toFloat()),
+                    end = Offset(center.x + (rOut * cos(spRad)).toFloat(), center.y + (rOut * sin(spRad)).toFloat()),
+                    strokeWidth = 2.6.dp.toPx(),
+                    cap = StrokeCap.Round,
+                )
+            }
         }
 
         Column(
@@ -209,17 +226,17 @@ fun PressureArcGauge(
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 Text(
                     text = pressureBar?.let { "%.2f".format(it) } ?: "—",
-                    style = MaterialTheme.typography.displaySmall.copy(fontSize = 32.sp),
+                    style = MaterialTheme.typography.displaySmall.copy(fontSize = 31.sp),
                     color = palette.textPrimary,
                 )
             }
             Text(
-                text = "bar (مقیاس ۰–۱۰)",
+                text = if (setpointBar != null) "هدف: %.2f bar".format(setpointBar) else "bar",
                 style = MaterialTheme.typography.labelSmall,
-                color = activeColor,
+                color = if (setpointBar != null) palette.gold else activeColor,
                 fontWeight = FontWeight.Bold,
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(4.dp))
             val drText = when (drActive) {
                 true -> "DR: فعال"
                 false -> "DR: خاموش"
@@ -501,6 +518,7 @@ fun PressureTrendChart(
 fun AnimatedImpellerIcon(
     running: Boolean?,
     failed: Boolean?,
+    disabled: Boolean = false,
     size: Dp = 36.dp,
 ) {
     val palette = LocalScadaPalette.current
@@ -520,15 +538,17 @@ fun AnimatedImpellerIcon(
 
     val ringColor = when {
         failed == true -> palette.fault
+        disabled -> palette.warning
         running == true -> palette.ok
         else -> palette.panelBorder
     }
     val bladeColor = when {
         failed == true -> palette.fault
+        disabled -> palette.warning.copy(alpha = 0.55f)
         running == true -> palette.cyan
         else -> palette.standby
     }
-    val rotation = if (running == true && failed != true) angle else 0f
+    val rotation = if (running == true && failed != true && !disabled) angle else 0f
 
     Canvas(modifier = Modifier.size(size)) {
         val c = Offset(this.size.width / 2f, this.size.height / 2f)
@@ -550,7 +570,7 @@ fun AnimatedImpellerIcon(
 
         // Outer pump housing
         drawCircle(
-            color = ringColor.copy(alpha = if (running == true || failed == true) 0.18f else 0.10f),
+            color = ringColor.copy(alpha = if (running == true || failed == true || disabled) 0.16f else 0.10f),
             radius = r,
             center = c,
         )
@@ -583,6 +603,18 @@ fun AnimatedImpellerIcon(
             }
         }
         drawCircle(color = bladeColor, radius = r * 0.18f, center = c)
+
+        // Clean diagonal stop-bar when manually deactivated ('S' on controller LCD)
+        if (disabled && failed != true) {
+            val d = r * 0.62f
+            drawLine(
+                color = palette.warning,
+                start = Offset(c.x - d, c.y + d),
+                end = Offset(c.x + d, c.y - d),
+                strokeWidth = 2.2.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
+        }
     }
 }
 

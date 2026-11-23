@@ -221,7 +221,7 @@ fun GatewaySettingsScreen(
                     )
 
                     NoticeBox(
-                        text = "در صفحه تنظیمات وب مبدل سمین ES 487 مطمئن شوید: حالت کاری = TCP Server (تبدیل Modbus TCP به Modbus RTU) و پورت RS485 روی 9600 8N1 تنظیم شده باشد.",
+                        text = "در صفحه تنظیمات وب مبدل سمین ES 487 مطمئن شوید: حالت کاری = Use server MODBUS TCP/IP، پورت RS485 روی 9600 8N1، و مقدار Waiting for slave reply(ms) حداقل 1000ms (برای پایداری نوشتن در EEPROM کنترلر) تنظیم شده باشد.",
                         tone = BadgeTone.INFO,
                     )
                 }

@@ -39,13 +39,13 @@ enum class Verification(val label: String, val description: String) {
 
 /** Access policy enforced by the application. */
 enum class AccessPolicy {
-    /** Read-only (live telemetry or protected parameters such as Slave ID 4195 / Control Status 4173). */
+    /** Read-only (live telemetry or R-only parameters in the official DGP memory map). */
     READ,
 
-    /** Hardware-verified writable via FC05 (Bit) or FC06 (Word), subject to explicit confirmation & range check. */
+    /** Official RW parameter verified for single-write FC05 (Bit) or FC06 (Word) with confirmation & range check. */
     READ_WRITE_VERIFIED,
 
-    /** Manual-control item whose write behavior was rejected/unverified on hardware; strictly locked. */
+    /** Manual-output registers documented as read-only (R) in official DGP firmware and rejected with Exception 0x02 on write. */
     CONTROL_LOCKED,
 }
 
@@ -57,7 +57,8 @@ enum class RegisterGroup(val label: String) {
     ALARM("Alarms"),
     RUN_TIME("Pump run times"),
     CONFIGURATION("Hardware configuration"),
-    MANUAL_CONTROL("Manual control"),
+    COMMAND("Commands"),
+    MANUAL_CONTROL("Manual outputs (R)"),
 }
 
 /**
@@ -92,11 +93,13 @@ data class RegisterDefinition(
             val decimals = when {
                 scale >= 1.0 -> 0
                 scale >= 0.1 -> 1
-                else -> 2
+                scale >= 0.01 -> 2
+                scale >= 0.001 -> 3
+                else -> 4
             }
             "%.${decimals}f".format(raw * scale) + (unit?.let { " $it" } ?: "")
         } else {
-            "raw $raw" + (unit?.let { " ($it, scale unverified)" } ?: "")
+            raw.toString() + (unit?.let { " $it" } ?: "")
         }
     }
 }

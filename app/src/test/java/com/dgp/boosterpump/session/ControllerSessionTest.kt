@@ -48,11 +48,13 @@ class ControllerSessionTest {
             assertTrue("Simulated snapshot must always be flagged simulated", snap1.isSimulated)
             assertNotNull(snap1.pressureBar)
             assertTrue(snap1.pressureBar!! in 3.5..5.0)
+            assertEquals(4.50, snap1.pressureSetpointBar!!, 1e-6)
+            assertEquals(1, snap1.controlStatus)
             assertTrue(snap1.alarms.isEmpty())
             assertTrue(session.transactions.value.isNotEmpty())
             assertTrue("Pressure history must record live samples", session.pressureHistory.value.isNotEmpty())
 
-            // Switch to floater alarm scenario and confirm alarm appears on next poll
+            // Switch to floater alarm scenario and confirm Word 80 bit 0 alarm appears on next poll
             session.setSimulationScenario(SimulationScenario.FLOATER_LOW_ALARM)
             val snap2 = withTimeout(4000) {
                 session.snapshot.first { it != null && SystemErrorBit.FLOATER in it.activeSystemErrors }
@@ -66,10 +68,10 @@ class ControllerSessionTest {
             assertEquals(null, probe.error)
             assertEquals(listOf(115), probe.values)
 
-            // On-demand hardware configuration read
+            // On-demand hardware configuration read covers all 84 configuration registers
             session.readHardwareConfiguration()
-            val cfgState = withTimeout(3000) { session.configSnapshot.first { it.readings.isNotEmpty() && !it.loading } }
-            assertEquals(24, cfgState.readings.size)
+            val cfgState = withTimeout(4000) { session.configSnapshot.first { it.readings.isNotEmpty() && !it.loading } }
+            assertEquals(Bpc02RegisterMap.configuration.size, cfgState.readings.size)
 
             // Simulated timeout transitions connection state to Error
             session.setSimulationScenario(SimulationScenario.LINK_TIMEOUT)
@@ -85,7 +87,7 @@ class ControllerSessionTest {
     }
 
     @Test
-    fun verifiedHardwareWritesPersistWithReadBackAndSafetyGuardsBlockLockedRegisters() = runBlocking {
+    fun verifiedHardwareWritesResetErrorsAndSafetyGuardsBlockReadOnlyRegisters() = runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val session = ControllerSession(
             scope = scope,
@@ -98,13 +100,14 @@ class ControllerSessionTest {
             session.connect(GatewayConfig(mode = DataSourceMode.SIMULATION, pollIntervalMs = 500))
             withTimeout(4000) { session.snapshot.first { it != null } }
 
-            // Load initial hardware config matching BPC02_FULL_READ_RESULTS.txt defaults
+            // Load full hardware config
             session.readHardwareConfiguration()
-            val initialCfg = withTimeout(3000) { session.configSnapshot.first { it.readings.size == 24 && !it.loading } }
+            val initialCfg = withTimeout(4000) {
+                session.configSnapshot.first { it.readings.size == Bpc02RegisterMap.configuration.size && !it.loading }
+            }
             assertEquals(40, initialCfg.readings.first { it.definition.key == "sleep_gap" }.raw)
             assertEquals(1, initialCfg.readings.first { it.definition.key == "pump_6_activation" }.raw)
-            assertEquals(0, initialCfg.readings.first { it.definition.key == "reserve_auto_activation" }.raw)
-            assertEquals(1, initialCfg.readings.first { it.definition.key == "reserve_auto_type" }.raw)
+            assertEquals(450, initialCfg.readings.first { it.definition.key == "system_pressure_setpoint" }.raw)
 
             // 1. FC06 write to Sleep Gap (4175 = 45 -> 0.45 bar) with immediate read-back
             val sleepGap = Bpc02RegisterMap.byKey("sleep_gap")
@@ -117,24 +120,47 @@ class ControllerSessionTest {
             assertEquals(45, afterWordWrite.readings.first { it.definition.key == "sleep_gap" }.raw)
             assertTrue(session.transactions.value.any { it.isWrite && it.functionCode == 0x06 && it.pduAddress == 4175 })
 
-            // 2. FC05 write to Pump 6 Activation (4101 = 0 -> Disabled) with immediate read-back
-            val pump6 = Bpc02RegisterMap.byKey("pump_6_activation")
-            session.writeHardwareParameter(pump6, 0)
+            // 2. FC05 write to Pump 1 Activation (4097 = 0 -> Disabled 'S') immediately patches live snapshot
+            val pump1 = Bpc02RegisterMap.byKey("pump_1_activation")
+            session.writeHardwareParameter(pump1, 0)
             val afterCoilWrite = withTimeout(3000) {
-                session.configSnapshot.first { it.lastWrite?.definition?.key == "pump_6_activation" && it.writingKey == null }
+                session.configSnapshot.first { it.lastWrite?.definition?.key == "pump_1_activation" && it.writingKey == null }
             }
             assertTrue(afterCoilWrite.lastWrite!!.success)
             assertEquals(0, afterCoilWrite.lastWrite!!.readBackValue)
-            assertEquals(0, afterCoilWrite.readings.first { it.definition.key == "pump_6_activation" }.raw)
-            assertTrue(session.transactions.value.any { it.isWrite && it.functionCode == 0x05 && it.pduAddress == 4101 })
+            assertEquals(false, session.snapshot.value!!.pumps[0].enabled)
+            assertTrue(session.transactions.value.any { it.isWrite && it.functionCode == 0x05 && it.pduAddress == 4097 })
 
-            // 3. Safety guardrails MUST block protected & locked registers + out-of-range values
+            // 3. FC06 Reset Pump Error command (Word 99 = 25) succeeds and clears active simulated faults
+            session.setSimulationScenario(SimulationScenario.PUMP_AND_DRIVE_FAULT)
+            withTimeout(4000) {
+                session.snapshot.first { it != null && it.alarms.isNotEmpty() }
+            }
+            session.resetPumpErrors()
+            val afterReset = withTimeout(3000) {
+                session.configSnapshot.first {
+                    it.lastWrite?.definition?.key == Bpc02RegisterMap.MULTI_FUNCTION_REGISTER && it.writingKey == null
+                }
+            }
+            assertTrue(afterReset.lastWrite!!.success)
+            assertTrue(session.transactions.value.any { it.isWrite && it.functionCode == 0x06 && it.pduAddress == 99 })
+            withTimeout(4000) {
+                session.snapshot.first { it != null && it.alarms.isEmpty() }
+            }
+
+            // 4. Safety guardrails MUST block all R-only & locked registers + out-of-range values
             val txCountBeforeGuards = session.transactions.value.count { it.isWrite }
 
             session.writeHardwareParameter(Bpc02RegisterMap.byKey("modbus_address"), 2)
             assertFalse(session.configSnapshot.value.lastWrite!!.success)
 
-            session.writeHardwareParameter(Bpc02RegisterMap.byKey("control_status"), 1)
+            session.writeHardwareParameter(Bpc02RegisterMap.byKey("control_phase_activation"), 1)
+            assertFalse(session.configSnapshot.value.lastWrite!!.success)
+
+            session.writeHardwareParameter(Bpc02RegisterMap.byKey("mfi_1_type"), 1)
+            assertFalse(session.configSnapshot.value.lastWrite!!.success)
+
+            session.writeHardwareParameter(Bpc02RegisterMap.byKey("output_0_manual"), 1)
             assertFalse(session.configSnapshot.value.lastWrite!!.success)
 
             session.writeHardwareParameter(Bpc02RegisterMap.byKey("multi_function_register"), 1234)

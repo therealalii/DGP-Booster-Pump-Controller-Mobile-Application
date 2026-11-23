@@ -5,6 +5,7 @@ import com.dgp.boosterpump.controller.ControllerReader
 import com.dgp.boosterpump.controller.ControllerSnapshot
 import com.dgp.boosterpump.controller.RegisterReading
 import com.dgp.boosterpump.controller.register.AccessPolicy
+import com.dgp.boosterpump.controller.register.Bpc02RegisterMap
 import com.dgp.boosterpump.controller.register.RegisterDefinition
 import com.dgp.boosterpump.controller.register.VendorTable
 import com.dgp.boosterpump.gateway.DataSourceMode
@@ -63,7 +64,7 @@ data class ProbeResult(
     val timestampMillis: Long,
 )
 
-/** Result of a verified hardware configuration write (FC05/FC06) with immediate read-back check. */
+/** Result of a verified hardware configuration write (FC05/FC06) with read-back check. */
 data class WriteResult(
     val definition: RegisterDefinition,
     val requestedValue: Int,
@@ -87,9 +88,9 @@ data class ConfigSnapshotState(
 data class PressureSample(val timestampMillis: Long, val pressureBar: Double)
 
 /**
- * Coordinates the Modbus transport, read-only polling loop, transaction log, on-demand
- * configuration read, verified FC05/FC06 configuration writes with immediate read-back
- * confirmation, and single-request read probe.
+ * Coordinates the Modbus transport, polling loop, transaction log, on-demand
+ * configuration read, verified FC05/FC06 writes with RS485/EEPROM settle timing & read-back
+ * confirmation, Reset Pump Error command (Word 99 = 25), and single-request read probe.
  *
  * Writes are NEVER executed automatically on startup/reconnect and are strictly limited
  * to registers marked [AccessPolicy.READ_WRITE_VERIFIED] within documented bounds.
@@ -142,7 +143,7 @@ class ControllerSession(
         _configSnapshot.update { it.copy(lastWrite = null) }
     }
 
-    /** Starts connecting and read-only polling with [config]. Any previous session is stopped first. */
+    /** Starts connecting and polling with [config]. Any previous session is stopped first. */
     fun connect(config: GatewayConfig) {
         val validation = config.validate()
         if (!validation.isValid) {
@@ -164,16 +165,21 @@ class ControllerSession(
         val profile = ControllerProfiles.forModel(config.controllerModel)
         val target = describeTarget(config)
         val isSim = config.mode == DataSourceMode.SIMULATION
+        val interBlockDelay = if (isSim) 0L else LIVE_INTER_BLOCK_DELAY_MS
 
         pollJob = scope.launch(ioDispatcher) {
             var pollCount = 0
             while (isActive) {
                 try {
-                    ensureConnected(config, target, isSim)
-                    val activeReaderClient = readClient ?: continue
-                    val reader = ControllerReader(activeReaderClient, config.mapping)
-
-                    val raw = ioMutex.withLock { reader.readBlocks(profile.pollBlocks) }
+                    // Check/establish transport and read poll blocks atomically under ioMutex so a
+                    // concurrent write cannot leave pollJob holding a stale/closed client reference.
+                    val raw = ioMutex.withLock {
+                        ensureConnectedLocked(config, target, isSim)
+                        val activeReaderClient = readClient
+                            ?: throw IllegalStateException("Read client not initialized")
+                        val reader = ControllerReader(activeReaderClient, config.mapping)
+                        reader.readBlocks(profile.pollBlocks, interBlockDelayMs = interBlockDelay)
+                    }
                     val now = clock()
                     val snap = profile.decode(raw, config.mode, now)
                     pollCount++
@@ -198,7 +204,7 @@ class ControllerSession(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    closeTransport()
+                    ioMutex.withLock { closeTransportLocked() }
                     val msg = e.message ?: e::class.java.simpleName
                     val retrySec = 3
                     for (rem in retrySec downTo 1) {
@@ -213,24 +219,28 @@ class ControllerSession(
     fun disconnect() {
         pollJob?.cancel()
         pollJob = null
-        closeTransport()
+        closeTransportLocked()
         _connectionState.value = ConnectionState.Disconnected
     }
 
     /**
-     * Reads all documented hardware configuration registers once using the hardware-verified
-     * contiguous blocks (4096..4101, 4106..4110 via FC01; 4173, 4175, 4177..4186, 4195 via FC03).
+     * Reads all documented hardware configuration registers once using contiguous blocks
+     * derived from Booster Pump Memory Map.xlsx.
      */
     fun readHardwareConfiguration() {
         val cfg = _activeConfig.value ?: return
-        val activeReaderClient = readClient ?: return
         val profile = ControllerProfiles.forModel(cfg.controllerModel)
+        val interBlockDelay = if (cfg.mode == DataSourceMode.SIMULATION) 0L else LIVE_INTER_BLOCK_DELAY_MS
 
         scope.launch(ioDispatcher) {
             _configSnapshot.update { it.copy(loading = true, errors = emptyList()) }
             try {
-                val reader = ControllerReader(activeReaderClient, cfg.mapping)
-                val raw = ioMutex.withLock { reader.readBlocks(profile.configurationBlocks) }
+                val raw = ioMutex.withLock {
+                    val activeReaderClient = readClient
+                        ?: throw IllegalStateException("Not connected")
+                    val reader = ControllerReader(activeReaderClient, cfg.mapping)
+                    reader.readBlocks(profile.configurationBlocks, interBlockDelayMs = interBlockDelay)
+                }
                 val readings = profile.configuration.map { def ->
                     val value = when (def.table) {
                         VendorTable.BIT -> raw.bits[def.documentedAddress]?.let { if (it) 1 else 0 }
@@ -256,9 +266,17 @@ class ControllerSession(
         }
     }
 
+    /** Sends official Reset Pump Error command (FC06 Word 99 = 25). */
+    fun resetPumpErrors() {
+        writeHardwareParameter(
+            definition = Bpc02RegisterMap.multiFunctionRegisterDef,
+            newValue = Bpc02RegisterMap.CMD_RESET_PUMP_ERROR,
+        )
+    }
+
     /**
-     * Writes a single hardware-verified configuration register using FC05 (Coil) or FC06 (Word),
-     * then immediately reads it back via FC01/FC03 to verify the controller stored the new value.
+     * Writes a single official RW register using FC05 (Coil) or FC06 (Word), pausing cleanly
+     * for RS485 bus turnaround and BPC02 EEPROM commit before reading back to confirm storage.
      *
      * Guardrails:
      *  - Rejects any register not marked [AccessPolicy.READ_WRITE_VERIFIED].
@@ -274,7 +292,7 @@ class ControllerSession(
                         requestedValue = newValue,
                         readBackValue = null,
                         success = false,
-                        error = "Write blocked by safety policy: ${definition.label} is not verified writable.",
+                        error = "Write blocked by safety policy: ${definition.label} is read-only or locked.",
                         timestampMillis = clock(),
                     ),
                 )
@@ -300,9 +318,7 @@ class ControllerSession(
         }
 
         val cfg = _activeConfig.value
-        val activeWrite = writeClient
-        val activeRead = readClient
-        if (cfg == null || activeWrite == null || activeRead == null) {
+        if (cfg == null || transport?.isOpen != true || writeClient == null || readClient == null) {
             _configSnapshot.update {
                 it.copy(
                     lastWrite = WriteResult(
@@ -318,43 +334,76 @@ class ControllerSession(
             return
         }
 
+        val isLive = cfg.mode == DataSourceMode.LIVE
+        val isPulseCommand = definition.key == Bpc02RegisterMap.MULTI_FUNCTION_REGISTER
+
         scope.launch(ioDispatcher) {
             _configSnapshot.update { it.copy(writingKey = definition.key) }
             try {
                 val pduAddr = cfg.mapping.pduAddress(definition.documentedAddress)
-                val readBack: Int = ioMutex.withLock {
+                val outcome: Pair<Int?, String?> = ioMutex.withLock {
+                    val activeWrite = writeClient
+                        ?: throw IllegalStateException("Not connected")
+                    val activeRead = readClient
+                        ?: throw IllegalStateException("Not connected")
+
+                    // 1. Let RS485 bus & Samin ES 487 serial buffer settle after prior poll frames.
+                    if (isLive) delay(LIVE_PRE_WRITE_QUIET_MS)
+
+                    // 2. Execute FC05 / FC06 single write (echo verified by ModbusWriteClient).
                     when (definition.table) {
-                        VendorTable.BIT -> {
-                            activeWrite.writeSingleCoil(pduAddr, newValue != 0)
-                            val bits = activeRead.readBits(cfg.mapping.bitReadFunction, pduAddr, 1)
-                            if (bits.firstOrNull() == true) 1 else 0
-                        }
-                        VendorTable.WORD -> {
-                            activeWrite.writeSingleRegister(pduAddr, newValue)
-                            val regs = activeRead.readRegisters(cfg.mapping.wordReadFunction, pduAddr, 1)
-                            regs.first()
-                        }
+                        VendorTable.BIT -> activeWrite.writeSingleCoil(pduAddr, newValue != 0)
+                        VendorTable.WORD -> activeWrite.writeSingleRegister(pduAddr, newValue)
+                    }
+
+                    // 3. Pause for BPC02 EEPROM commit (~240-300 ms observed on hardware).
+                    if (isLive) delay(LIVE_POST_WRITE_SETTLE_MS)
+
+                    // 4. Pulse commands (Word 99 = 25) auto-clear to 0 in firmware; echo confirms acceptance.
+                    if (isPulseCommand) {
+                        newValue to null
+                    } else {
+                        // 5. Read back to verify controller stored the value, with 1 retry if bus is still busy.
+                        readBackWithRetry(cfg, activeRead, definition.table, pduAddr, isLive)
                     }
                 }
-                val matched = (readBack == newValue)
+
+                val (readBack, readBackWarn) = outcome
+                val matched = isPulseCommand || (readBack == newValue)
+                val errorText = when {
+                    matched && readBackWarn == null -> null
+                    readBack == null && readBackWarn != null ->
+                        "Write echo confirmed by controller, but read-back failed: $readBackWarn"
+                    !matched -> "Read-back mismatch: wrote $newValue, read back $readBack"
+                    else -> null
+                }
+                val success = matched && readBackWarn == null
+                val now = clock()
                 val result = WriteResult(
                     definition = definition,
                     requestedValue = newValue,
                     readBackValue = readBack,
-                    success = matched,
-                    error = if (matched) null else "Read-back mismatch: wrote $newValue, read back $readBack",
-                    timestampMillis = clock(),
+                    success = success,
+                    error = errorText,
+                    timestampMillis = now,
                 )
+
+                val effectiveValue = readBack ?: newValue
                 _configSnapshot.update { state ->
                     val updatedReadings = state.readings.map { r ->
-                        if (r.definition.key == definition.key) r.copy(raw = readBack) else r
+                        if (r.definition.key == definition.key) r.copy(raw = effectiveValue) else r
                     }
                     state.copy(
                         writingKey = null,
                         readings = updatedReadings,
                         lastWrite = result,
-                        timestampMillis = clock(),
+                        timestampMillis = now,
                     )
+                }
+
+                // Immediately reflect writes to live-polled registers in the active telemetry snapshot
+                if (matched && !isPulseCommand) {
+                    patchLiveSnapshotAfterWrite(definition, effectiveValue)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -376,10 +425,72 @@ class ControllerSession(
         }
     }
 
+    private suspend fun readBackWithRetry(
+        cfg: GatewayConfig,
+        activeRead: ModbusReadClient,
+        table: VendorTable,
+        pduAddr: Int,
+        isLive: Boolean,
+    ): Pair<Int?, String?> {
+        var lastErr: Exception? = null
+        repeat(2) { attempt ->
+            if (attempt > 0 && isLive) delay(LIVE_POST_WRITE_SETTLE_MS)
+            try {
+                val value = when (table) {
+                    VendorTable.BIT -> {
+                        val bits = activeRead.readBits(cfg.mapping.bitReadFunction, pduAddr, 1)
+                        if (bits.firstOrNull() == true) 1 else 0
+                    }
+                    VendorTable.WORD -> {
+                        val regs = activeRead.readRegisters(cfg.mapping.wordReadFunction, pduAddr, 1)
+                        regs.first()
+                    }
+                }
+                return value to null
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                lastErr = e
+                if (transport?.isOpen != true) {
+                    return null to (e.message ?: e::class.java.simpleName)
+                }
+            }
+        }
+        return null to (lastErr?.message ?: "Read-back failed")
+    }
+
+    private fun patchLiveSnapshotAfterWrite(definition: RegisterDefinition, value: Int) {
+        _snapshot.update { snap ->
+            if (snap == null) return@update null
+            val patchedReadings = snap.readings.map { r ->
+                if (r.definition.key == definition.key) r.copy(raw = value) else r
+            }
+            when {
+                definition.key == Bpc02RegisterMap.DRIVE_ACTIVATION ->
+                    snap.copy(driveEnabled = value != 0, readings = patchedReadings)
+                definition.key == Bpc02RegisterMap.SYSTEM_PRESSURE_SETPOINT ->
+                    snap.copy(pressureSetpointBar = value * 0.01, readings = patchedReadings)
+                definition.key == Bpc02RegisterMap.CONTROL_STATUS ->
+                    snap.copy(controlStatus = value, readings = patchedReadings)
+                definition.key.startsWith("pump_") && definition.key.endsWith("_activation") -> {
+                    val pumpNum = definition.key.removePrefix("pump_").removeSuffix("_activation").toIntOrNull()
+                    if (pumpNum != null) {
+                        val updatedPumps = snap.pumps.map { pump ->
+                            if (pump.number == pumpNum) pump.copy(enabled = value != 0) else pump
+                        }
+                        snap.copy(pumps = updatedPumps, readings = patchedReadings)
+                    } else {
+                        snap
+                    }
+                }
+                else -> snap
+            }
+        }
+    }
+
     /** Executes a single read-only Modbus request (FC01-FC04) directly against the active link. */
     fun runReadProbe(function: ReadFunction, pduAddress: Int, quantity: Int) {
-        val activeRead = readClient
-        if (activeRead == null) {
+        if (readClient == null) {
             _probeResult.value = ProbeResult(
                 function, pduAddress, quantity, values = null,
                 error = "Connect to a gateway (or simulation) before running a probe.",
@@ -390,6 +501,7 @@ class ControllerSession(
         scope.launch(ioDispatcher) {
             try {
                 val values = ioMutex.withLock {
+                    val activeRead = readClient ?: throw IllegalStateException("Not connected")
                     if (function.isBitAccess) {
                         activeRead.readBits(function, pduAddress, quantity).map { if (it) 1 else 0 }
                     } else {
@@ -408,7 +520,7 @@ class ControllerSession(
         }
     }
 
-    private suspend fun ensureConnected(config: GatewayConfig, target: String, isSim: Boolean) {
+    private suspend fun ensureConnectedLocked(config: GatewayConfig, target: String, isSim: Boolean) {
         if (transport?.isOpen == true && readClient != null && writeClient != null) return
         _connectionState.value = ConnectionState.Connecting(target, isSim)
         val t = transportFactory(config) { _simulationScenario.value }
@@ -434,7 +546,7 @@ class ControllerSession(
         }
     }
 
-    private fun closeTransport() {
+    private fun closeTransportLocked() {
         runCatching { transport?.close() }
         transport = null
         readClient = null
@@ -444,6 +556,15 @@ class ControllerSession(
     companion object {
         const val MAX_LOG_ENTRIES = 120
         const val MAX_HISTORY_POINTS = 40
+
+        /** Gentle spacing between consecutive live RS485 requests via Samin ES 487. */
+        const val LIVE_INTER_BLOCK_DELAY_MS = 35L
+
+        /** Bus quiet period before transmitting an FC05/FC06 write frame on live RS485. */
+        const val LIVE_PRE_WRITE_QUIET_MS = 150L
+
+        /** EEPROM commit settle delay after FC05/FC06 echo before issuing read-back. */
+        const val LIVE_POST_WRITE_SETTLE_MS = 350L
 
         fun describeTarget(config: GatewayConfig): String = when (config.mode) {
             DataSourceMode.SIMULATION -> "Simulated ${config.controllerModel.label}"

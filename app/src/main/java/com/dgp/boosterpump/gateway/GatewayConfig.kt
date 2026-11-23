@@ -55,9 +55,9 @@ data class GatewayConfig(
     val port: Int = 502,
     val unitId: Int = 1,
     val framing: Framing = Framing.MODBUS_TCP,
-    val connectTimeoutMs: Int = 3000,
-    val responseTimeoutMs: Int = 1500,
-    val pollIntervalMs: Int = 2000,
+    val connectTimeoutMs: Int = 4000,
+    val responseTimeoutMs: Int = 2500,
+    val pollIntervalMs: Int = 1500,
     val mapping: ProtocolMapping = ProtocolMapping(),
 ) {
     companion object {

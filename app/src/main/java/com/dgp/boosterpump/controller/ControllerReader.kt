@@ -6,6 +6,7 @@ import com.dgp.boosterpump.controller.register.VendorTable
 import com.dgp.boosterpump.gateway.ProtocolMapping
 import com.dgp.boosterpump.modbus.ModbusException
 import com.dgp.boosterpump.modbus.ModbusReadClient
+import kotlinx.coroutines.delay
 
 /**
  * Translates documented vendor addresses into Modbus reads using the configured
@@ -18,11 +19,14 @@ class ControllerReader(
     private val client: ModbusReadClient,
     private val mapping: ProtocolMapping,
 ) {
-    suspend fun readBlocks(blocks: List<ReadBlock>): RawReadings {
+    suspend fun readBlocks(blocks: List<ReadBlock>, interBlockDelayMs: Long = 0L): RawReadings {
         val bits = mutableMapOf<Int, Boolean>()
         val words = mutableMapOf<Int, Int>()
         val errors = mutableListOf<BlockError>()
-        for (block in blocks) {
+        for ((index, block) in blocks.withIndex()) {
+            if (index > 0 && interBlockDelayMs > 0L) {
+                delay(interBlockDelayMs)
+            }
             try {
                 readBlock(block, bits, words)
             } catch (e: ModbusException) {

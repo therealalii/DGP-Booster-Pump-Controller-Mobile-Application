@@ -1,6 +1,7 @@
 package com.dgp.boosterpump.simulation
 
 import com.dgp.boosterpump.controller.SystemErrorBit
+import com.dgp.boosterpump.controller.SystemErrorBit2
 import com.dgp.boosterpump.controller.register.AccessPolicy
 import com.dgp.boosterpump.controller.register.Bpc02RegisterMap
 import com.dgp.boosterpump.controller.register.VendorTable
@@ -18,19 +19,19 @@ import kotlin.math.sin
 enum class SimulationScenario(val label: String, val description: String) {
     NORMAL_DUTY(
         "Normal duty (1-2 pumps)",
-        "Steady ~4.2 bar, Pump 1 running on drive, Pump 2 standby, healthy 3-phase supply, tank OK.",
+        "Steady ~4.2 bar (setpoint 4.50 bar), Pump 1 running on drive, Pump 4 deactivated (S), healthy 3-phase supply.",
     ),
     PEAK_DEMAND(
         "Peak demand (3 pumps)",
-        "Higher flow at ~3.8 bar with Pumps 1-3 running and higher drive frequency.",
+        "Higher flow at ~3.85 bar with Pumps 1-3 running and Drive 1 at ~47.5 Hz.",
     ),
     FLOATER_LOW_ALARM(
         "Low-tank floater fault",
-        "Floater L & H disconnected, System Error bit 3 active, all pumps stopped.",
+        "Floater L & H disconnected, Word 80 bit 0 (FLOATER_ERROR) active, all pumps stopped.",
     ),
     PUMP_AND_DRIVE_FAULT(
         "Pump 2 & drive fault",
-        "Drive fail (bit 25), Pump 2 fail (bit 27), max voltage & max pressure errors active.",
+        "Drive fail (bit 25 / Word 80 bit 7), Pump 2 fail (bit 27 / Word 80 bit 9), max pressure & max voltage errors.",
     ),
     LINK_TIMEOUT(
         "Simulated timeout",
@@ -39,9 +40,9 @@ enum class SimulationScenario(val label: String, val description: String) {
 }
 
 /**
- * In-memory [ModbusTransport] simulating a DGP BPC02 across FC01, FC03, and verified
- * hardware configuration writes (FC05, FC06). Also reproduces observed BPC02 exceptions
- * for unverified manual-control addresses (50-59 / 99).
+ * In-memory [ModbusTransport] simulating a DGP BPC02 across all 154 registers of
+ * Booster Pump Memory Map.xlsx, enforcing exact R vs RW permissions (returning Exception 0x02
+ * on read-only registers and supporting FC06 Word 99 = 25 Reset Pump Error).
  */
 class SimulatedBpc02Transport(
     private val mapping: ProtocolMapping,
@@ -53,35 +54,98 @@ class SimulatedBpc02Transport(
     private var open = false
     private var startMillis = 0L
 
-    /** Mutable simulated hardware configuration mirrors real controller EEPROM state. */
+    @Volatile
+    private var faultsResetForScenario: SimulationScenario? = null
+
+    /** Mutable simulated hardware configuration mirroring official Excel Bit addresses 4096..4110. */
     private val cfgBits = ConcurrentHashMap<Int, Boolean>().apply {
-        put(4096, true)
-        put(4097, true)
-        put(4098, true)
-        put(4099, true)
-        put(4100, true)
-        put(4101, true)
-        put(4106, false) // Matches BPC02_FULL_READ_RESULTS.txt (0xD0)
-        put(4107, false)
-        put(4108, false)
-        put(4109, false)
-        put(4110, true) // NC
+        put(4096, true) // Mode 2,3 Drive Activation (RW)
+        put(4097, true) // Pump 1 Activation (RW)
+        put(4098, true) // Pump 2 Activation (RW)
+        put(4099, true) // Pump 3 Activation (RW)
+        put(4100, true) // Pump 4 Activation (RW)
+        put(4101, true) // Pump 5 Activation (RW)
+        put(4102, true) // Pump 6 Activation (RW)
+        put(4106, true) // Control Phase Activation (R)
+        put(4107, true) // Off Changing Activation (R)
+        put(4108, false) // Time Changing Activation (R)
+        put(4109, false) // Reserve Auto Activation (R)
+        put(4110, false) // Reserve Auto Type: 0 = NC, 1 = NO (R)
     }
 
+    /** Mutable simulated hardware configuration mirroring official Excel Word addresses 4096..4210. */
     private val cfgWords = ConcurrentHashMap<Int, Int>().apply {
-        put(4173, 0) // Control status
-        put(4175, 40) // 0.40 bar sleep gap
-        put(4177, 159) // 159 h
-        put(4178, 33) // 3.3 s
-        put(4179, 11) // 11 min
-        put(4180, 0) // MFI1..4 Disable
+        put(4096, 450) // System Pressure Setpoint = 4.50 bar (RW)
+        put(4097, 2) // On Delay Pump 1 = 2 s
+        put(4098, 500) // OFF Pressure Pump 1 = 5.00 bar
+        put(4099, 3) // OFF Delay Pump 1 = 3 s
+        put(4100, 380) // On Pressure Pump 2 = 3.80 bar
+        put(4101, 2)
+        put(4102, 480)
+        put(4103, 3)
+        put(4104, 340) // On Pressure Pump 3
+        put(4105, 2)
+        put(4106, 460)
+        put(4107, 3)
+        put(4108, 300) // On Pressure Pump 4
+        put(4109, 2)
+        put(4110, 440)
+        put(4111, 3)
+
+        put(4122, 3) // Control Phase Type = 3P (R)
+        put(4123, 190) // Min Voltage = 190 V (RW)
+        put(4124, 255) // Max Voltage = 255 V (RW)
+        put(4125, 5) // Control Phase Delay = 5 s (RW)
+        put(4127, 10) // Sensitivity = 10% (RW)
+        put(4128, 350) // Floater Trigger = 350 kOhm (RW)
+        put(4129, 3) // Floater Delay = 3 s (RW)
+        put(4131, 1) // Floater Type = Internal (R)
+        put(4132, 2) // Pressure Sensor Output = 4~20mA (R)
+        put(4133, 4) // Number Of Pump = 4 (R)
+        put(4134, 1) // Number Of Variable Pump = 1 (R)
+        put(4135, 0) // Jockey Type = Disable (RW)
+        put(4136, 120) // P Value (RW)
+        put(4137, 45) // I Value (RW)
+        put(4138, 10) // D Value (RW)
+        put(4142, 850) // Max Pressure = 8.50 bar (R)
+        put(4143, 500) // Sensor Calibration (RW)
+        put(4149, 50) // Wake up Differential = 0.50 bar (RW)
+        put(4150, 2800) // Sleep Frequency = 28.00 Hz (RW)
+        put(4151, 15) // Sleep Off Delay = 15 s (RW)
+        put(4152, 1) // Pressure Sensor Input = 0-10 bar (R)
+        put(4156, 30) // Mode 3 Switch Time = 0.30 s (R)
+        put(4161, 60) // Time Changing Time = 60 min (RW)
+        put(4162, 50) // Add Delay = 5.0 s (RW)
+        put(4163, 50) // Remove Delay = 5.0 s (RW)
+        put(4164, 2) // Wake up On Delay = 2 s (RW)
+        put(4166, 85) // Constant Pump Percent = 85% (RW)
+        put(4170, 2) // Wiring Mode = 2 (R)
+        put(4173, 1) // Control Status = 1 (PID) (RW)
+        put(4175, 40) // Sleep Gap = 0.40 bar (RW)
+        put(4177, 159) // Auto Service Off Time = 159 h (RW)
+        put(4178, 33) // Auto Service On Time = 3.3 s (RW)
+        put(4179, 11) // Auto Service Interval = 11 min (RW)
+        put(4180, 0) // MFI1..4 (R)
         put(4181, 0)
         put(4182, 0)
         put(4183, 0)
-        put(4184, 0) // MFO1..3 Disable
-        put(4185, 0)
+        put(4184, 5) // MFO1 = ALARM (R)
+        put(4185, 7) // MFO2 = RUN (R)
         put(4186, 0)
-        put(4195, 1) // Modbus Slave ID
+        put(4187, 0)
+        put(4188, 24081) // Serial Number (R)
+        put(4189, 2500) // Start Frequency = 25.00 Hz (R)
+        put(4190, 1) // Full Load Status = Enable (R)
+        put(4191, 200) // Full Load Pressure = 2.00 bar (R)
+        put(4192, 120) // Full Load Time = 120 s (R)
+        put(4193, 2000) // Stop Frequency = 20.00 Hz (R)
+        put(4194, 1) // Control Direction = Up (R)
+        put(4195, 1) // ModBus Address = 1 (R)
+        put(4206, 0) // AO1 Type = Pump1 (R)
+        put(4207, 1) // AO2 Type = Pump2 (R)
+        put(4208, 12) // LCD Contrast = 12 (R)
+        put(4209, 1000) // AO1 Gain = 0.1000 (R)
+        put(4210, 1000) // AO2 Gain = 0.1000 (R)
     }
 
     private val writableBitAddrs = Bpc02RegisterMap.configuration
@@ -109,7 +173,7 @@ class SimulatedBpc02Transport(
         val scenario = scenarioProvider()
         if (scenario == SimulationScenario.LINK_TIMEOUT) {
             delay(180)
-            throw ModbusException.Timeout(1500)
+            throw ModbusException.Timeout(2500)
         }
         if (responseDelayMs > 0) delay(responseDelayMs)
 
@@ -119,7 +183,7 @@ class SimulatedBpc02Transport(
         val param = ((requestPdu[3].toInt() and 0xFF) shl 8) or (requestPdu[4].toInt() and 0xFF)
         val docAddr = pduAddr - mapping.addressOffset
 
-        // Handle verified FC05 / FC06 writes
+        // Handle verified FC05 / FC06 writes strictly per official RW policy
         if (fcCode == WriteFunction.WRITE_SINGLE_COIL.code) {
             if (param != 0xFF00 && param != 0x0000) return byteArrayOf(0x85.toByte(), 0x03)
             if (docAddr !in writableBitAddrs) return byteArrayOf(0x85.toByte(), 0x02)
@@ -128,7 +192,12 @@ class SimulatedBpc02Transport(
         }
         if (fcCode == WriteFunction.WRITE_SINGLE_REGISTER.code) {
             if (docAddr == 99) {
-                return if (param == 1234) requestPdu.copyOf() else byteArrayOf(0x86.toByte(), 0x03)
+                return if (param == Bpc02RegisterMap.CMD_RESET_PUMP_ERROR) {
+                    faultsResetForScenario = scenario
+                    requestPdu.copyOf()
+                } else {
+                    byteArrayOf(0x86.toByte(), 0x03)
+                }
             }
             val def = writableWordAddrs[docAddr] ?: return byteArrayOf(0x86.toByte(), 0x02)
             val min = def.minValue ?: 0
@@ -210,6 +279,11 @@ class SimulatedBpc02Transport(
         bits.putAll(cfgBits)
         words.putAll(cfgWords)
 
+        val systemEnabled = (cfgWords[4173] ?: 1) != 0
+        val driveEnabled = cfgBits[4096] != false
+        val pumpEnabled = { n: Int -> cfgBits[4096 + n] != false }
+        val cleared = faultsResetForScenario == scenario
+
         // Baseline mains supply (3-phase 230/400 V, 50.00 Hz)
         val vShift = (ripple * 1.5).roundToInt()
         words[0] = 0
@@ -220,6 +294,7 @@ class SimulatedBpc02Transport(
         words[7] = 399
         words[8] = 401 - vShift
         words[9] = 5000 + (ripple * 4).roundToInt()
+        words[99] = 0 // Command register auto-clears to 0
 
         fun setRunTime(pump: Int, baseHours: Int, baseMin: Int, baseSec: Int, running: Boolean) {
             val totalSec = baseSec + if (running) tSec.toInt() else 0
@@ -235,45 +310,67 @@ class SimulatedBpc02Transport(
 
         bits[32] = true // Floater L
         bits[33] = true // Floater H
-        bits[10] = true // DR status
+        bits[10] = systemEnabled && driveEnabled // DR status
+
+        if (!systemEnabled) {
+            words[2] = 210
+            words[25] = 0
+            words[26] = 0
+            words[80] = 1 shl SystemErrorBit.SYSTEM_STOP_BY_USER.bit
+            words[81] = 1 shl SystemErrorBit2.SYSTEM_STOPPED.bit
+            setRunTime(1, 2, 44, 40, running = false)
+            setRunTime(2, 2, 42, 57, running = false)
+            setRunTime(3, 2, 41, 53, running = false)
+            setRunTime(4, 2, 40, 59, running = false)
+            return SimState(bits, words)
+        }
 
         when (scenario) {
             SimulationScenario.NORMAL_DUTY -> {
+                val p1Run = pumpEnabled(1) && driveEnabled
                 words[2] = (420 + ripple * 8).roundToInt()
-                words[10] = (980 + ripple * 25).roundToInt()
-                bits[19] = cfgBits[4096] != false
-                bits[0] = bits[19] == true
-                bits[11] = bits[19] == true
-                setRunTime(1, 2, 44, 40, running = bits[19] == true)
+                words[25] = if (p1Run) (3850 + ripple * 65).roundToInt() else 0 // ~38.50 Hz
+                words[26] = 0
+                bits[19] = p1Run
+                bits[0] = p1Run
+                bits[11] = p1Run
+                setRunTime(1, 2, 44, 40, running = p1Run)
                 setRunTime(2, 2, 42, 57, running = false)
                 setRunTime(3, 2, 41, 53, running = false)
                 setRunTime(4, 2, 40, 59, running = false)
                 words[80] = 0
+                words[81] = 0
             }
 
             SimulationScenario.PEAK_DEMAND -> {
+                val p1Run = pumpEnabled(1) && driveEnabled
+                val p2Run = pumpEnabled(2)
+                val p3Run = pumpEnabled(3)
                 words[2] = (385 + ripple * 12).roundToInt()
-                words[10] = (1460 + ripple * 20).roundToInt()
-                bits[19] = cfgBits[4096] != false
-                bits[20] = cfgBits[4097] != false
-                bits[21] = cfgBits[4098] != false
-                bits[0] = bits[19] == true
-                bits[1] = bits[20] == true
-                bits[2] = bits[21] == true
-                bits[11] = bits[19] == true
-                bits[12] = bits[20] == true
-                bits[13] = bits[21] == true
+                words[25] = if (p1Run) (4750 + ripple * 45).roundToInt() else 0 // ~47.50 Hz
+                words[26] = 0
+                bits[19] = p1Run
+                bits[20] = p2Run
+                bits[21] = p3Run
+                bits[0] = p1Run
+                bits[1] = p2Run
+                bits[2] = p3Run
+                bits[11] = p1Run
+                bits[12] = p2Run
+                bits[13] = p3Run
                 bits[33] = false
-                setRunTime(1, 2, 44, 40, running = bits[19] == true)
-                setRunTime(2, 2, 42, 57, running = bits[20] == true)
-                setRunTime(3, 2, 41, 53, running = bits[21] == true)
+                setRunTime(1, 2, 44, 40, running = p1Run)
+                setRunTime(2, 2, 42, 57, running = p2Run)
+                setRunTime(3, 2, 41, 53, running = p3Run)
                 setRunTime(4, 2, 40, 59, running = false)
                 words[80] = 0
+                words[81] = 0
             }
 
             SimulationScenario.FLOATER_LOW_ALARM -> {
                 words[2] = 115
-                words[10] = 0
+                words[25] = 0
+                words[26] = 0
                 bits[10] = false
                 bits[32] = false
                 bits[33] = false
@@ -282,25 +379,34 @@ class SimulatedBpc02Transport(
                 setRunTime(2, 2, 42, 57, running = false)
                 setRunTime(3, 2, 41, 53, running = false)
                 setRunTime(4, 2, 40, 59, running = false)
-                words[80] = 1 shl SystemErrorBit.FLOATER.bit
+                words[80] = if (cleared) 0 else (1 shl SystemErrorBit.FLOATER.bit)
+                words[81] = 0
             }
 
             SimulationScenario.PUMP_AND_DRIVE_FAULT -> {
                 words[2] = 685
                 words[3] = 254
                 words[6] = 432
-                words[10] = 0
-                bits[19] = true
-                bits[0] = true
-                bits[11] = true
-                bits[25] = true
-                bits[27] = true
-                setRunTime(1, 2, 44, 40, running = true)
+                words[25] = 0
+                words[26] = 0
+                bits[19] = pumpEnabled(1)
+                bits[0] = bits[19] == true
+                bits[11] = bits[19] == true
+                bits[25] = !cleared // Drive fail
+                bits[27] = !cleared // Pump 2 fail
+                setRunTime(1, 2, 44, 40, running = bits[19] == true)
                 setRunTime(2, 2, 42, 57, running = false)
                 setRunTime(3, 2, 41, 53, running = false)
                 setRunTime(4, 2, 40, 59, running = false)
-                words[80] = (1 shl SystemErrorBit.MAX_PRESSURE.bit) or
-                    (1 shl SystemErrorBit.PHASE_MAX_VOLTAGE.bit)
+                words[80] = if (cleared) {
+                    0
+                } else {
+                    (1 shl SystemErrorBit.MAX_PRESSURE.bit) or
+                        (1 shl SystemErrorBit.PHASE_MAX_VOLTAGE.bit) or
+                        (1 shl SystemErrorBit.DRIVE.bit) or
+                        (1 shl SystemErrorBit.PUMP2.bit)
+                }
+                words[81] = 0
             }
 
             SimulationScenario.LINK_TIMEOUT -> Unit

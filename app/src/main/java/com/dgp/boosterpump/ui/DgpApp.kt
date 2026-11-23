@@ -386,7 +386,9 @@ private fun MainScadaShell(
             composable(Destination.DASHBOARD.route) {
                 DashboardScreen(
                     uiState = uiState,
+                    canResetErrors = user.role.canWriteConfig,
                     onConnect = monitoringViewModel::connectWithSavedConfig,
+                    onResetPumpErrors = monitoringViewModel::resetPumpErrors,
                     onOpenGatewaySettings = { navigateTo(Destination.GATEWAY.route) },
                     onOpenPumps = { navigateTo(Destination.PUMPS.route) },
                 )
@@ -400,6 +402,7 @@ private fun MainScadaShell(
                     canWriteConfig = user.role.canWriteConfig,
                     onReadHardwareConfig = monitoringViewModel::readHardwareConfiguration,
                     onWriteParameter = monitoringViewModel::writeHardwareParameter,
+                    onResetPumpErrors = monitoringViewModel::resetPumpErrors,
                     onDismissWriteNotice = monitoringViewModel::clearLastWriteNotice,
                 )
             }
