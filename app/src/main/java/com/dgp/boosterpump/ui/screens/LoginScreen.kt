@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,7 +30,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -44,8 +42,6 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -67,7 +63,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -86,6 +81,7 @@ import androidx.compose.ui.unit.sp
 import com.dgp.boosterpump.auth.AppUser
 import com.dgp.boosterpump.auth.AuthRepository
 import com.dgp.boosterpump.ui.components.BadgeTone
+import com.dgp.boosterpump.ui.components.DgpGoldButton
 import com.dgp.boosterpump.ui.components.LtrText
 import com.dgp.boosterpump.ui.components.NoticeBox
 import com.dgp.boosterpump.ui.theme.MonoStyle
@@ -93,18 +89,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-private val LoginObsidian = Color(0xFF03050A)
-private val LoginCardBg = Color(0xFF0B101C)
-private val LoginFieldBg = Color(0xFF101829)
-private val LoginBorder = Color(0xFF22314D)
-private val LoginGold = Color(0xFFE8B84B)
-private val LoginGoldBright = Color(0xFFFCE08B)
-private val LoginCyan = Color(0xFF22D3EE)
+private val AuthBg = Color(0xFF06080D)
+private val AuthCard = Color(0xFF0E121B)
+private val AuthField = Color(0xFF141A26)
+private val AuthBorder = Color(0x1CFFFFFF)
+private val AuthHighlight = Color(0x2EFFFFFF)
+private val AuthGold = Color(0xFFE2B85E)
+private val AuthGoldBright = Color(0xFFF5D68A)
 
 /**
- * Luxury obsidian-black Persian RTL login screen featuring the dark DGP logo prominently
- * framed at the top with subtle animated orbital rings, carbon-glass login card, shake-on-error
- * feedback, and role-based offline authentication.
+ * Refined flagship obsidian & brushed champagne-gold Persian login screen.
+ * Showcases the beveled DGP medallion prominently at the top above a glass-bevel login card.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -121,50 +116,46 @@ fun LoginScreen(
     var isSubmitting by remember { mutableStateOf(false) }
 
     val entranceAlpha = remember { Animatable(0f) }
+    val cardOffsetY = remember { Animatable(24f) }
     val shakeOffset = remember { Animatable(0f) }
 
-    val infinite = rememberInfiniteTransition(label = "login_ambient")
+    val infinite = rememberInfiniteTransition(label = "login_luxury")
     val outerOrbit by infinite.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(18_000, easing = LinearEasing)),
-        label = "login_outer_orbit",
+        animationSpec = infiniteRepeatable(tween(28_000, easing = LinearEasing)),
+        label = "login_bezel",
     )
-    val innerOrbit by infinite.animateFloat(
-        initialValue = 360f,
-        targetValue = 0f,
-        animationSpec = infiniteRepeatable(tween(7_200, easing = LinearEasing)),
-        label = "login_inner_orbit",
-    )
-    val particlePhase by infinite.animateFloat(
+    val tracerOrbit by infinite.animateFloat(
         initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(9_000, easing = LinearEasing)),
-        label = "login_particles",
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(6_000, easing = LinearEasing)),
+        label = "login_tracer",
     )
-    val breathGlow by infinite.animateFloat(
+    val breath by infinite.animateFloat(
         initialValue = 0.65f,
         targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(tween(2_000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        animationSpec = infiniteRepeatable(tween(2_400, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "login_breath",
     )
-    val shimmerSweep by infinite.animateFloat(
-        initialValue = -0.5f,
-        targetValue = 1.6f,
-        animationSpec = infiniteRepeatable(tween(3_400, easing = FastOutSlowInEasing)),
+    val shimmer by infinite.animateFloat(
+        initialValue = -0.6f,
+        targetValue = 1.9f,
+        animationSpec = infiniteRepeatable(tween(4_200, easing = FastOutSlowInEasing)),
         label = "login_shimmer",
     )
 
     LaunchedEffect(Unit) {
-        entranceAlpha.animateTo(1f, tween(550, easing = FastOutSlowInEasing))
+        launch { entranceAlpha.animateTo(1f, tween(520, easing = FastOutSlowInEasing)) }
+        launch { cardOffsetY.animateTo(0f, tween(560, easing = FastOutSlowInEasing)) }
     }
 
     fun triggerErrorShake(message: String) {
         errorMessage = message
         scope.launch {
-            val sequence = listOf(-14f, 14f, -10f, 10f, -5f, 5f, 0f)
+            val sequence = listOf(-12f, 12f, -8f, 8f, -4f, 4f, 0f)
             for (target in sequence) {
-                shakeOffset.animateTo(target, tween(45))
+                shakeOffset.animateTo(target, tween(42))
             }
         }
     }
@@ -186,7 +177,7 @@ fun LoginScreen(
                 onAuthenticated(user)
             } else {
                 isSubmitting = false
-                triggerErrorShake("نام کاربری یا رمز عبور نادرست است. دسترسی رد شد.")
+                triggerErrorShake("نام کاربری یا رمز عبور نادرست است. دسترسی تایید نشد.")
             }
         }
     }
@@ -194,12 +185,11 @@ fun LoginScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(LoginObsidian),
+            .background(AuthBg),
     ) {
-        ObsidianScadaBackdrop(
-            particlePhase = particlePhase,
-            breathGlow = breathGlow,
-            spotlightYFraction = 0.21f,
+        ObsidianBrandBackdrop(
+            breathGlow = breath,
+            spotlightYFraction = 0.19f,
         )
 
         Column(
@@ -208,70 +198,78 @@ fun LoginScreen(
                 .systemBarsPadding()
                 .imePadding()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 22.dp, vertical = 20.dp)
+                .padding(horizontal = 24.dp, vertical = 22.dp)
                 .alpha(entranceAlpha.value),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(6.dp))
 
-            // Prominent dark obsidian DGP logo on top with animated gold & cyan rings
+            // Prominent refined brushed-gold DGP crest at the top
             DgpAnimatedCrest(
-                size = 186.dp,
-                logoSize = 136.dp,
+                size = 184.dp,
+                logoSize = 152.dp,
                 outerAngle = outerOrbit,
-                innerAngle = innerOrbit,
-                sonarPhase = 0f,
-                breathGlow = breathGlow,
-                shimmerSweep = shimmerSweep,
-                showSonar = false,
+                innerAngle = tracerOrbit,
+                breathGlow = breath,
+                shimmerSweep = shimmer,
+                activeTracer = true,
             )
 
-            // Brand Title
+            // Editorial Persian & brand heading
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
                     text = "ورود به پنل کنترل بوستر پمپ",
-                    style = MaterialTheme.typography.headlineSmall.copy(fontSize = 20.sp),
-                    color = Color(0xFFF8FAFC),
+                    style = MaterialTheme.typography.headlineSmall.copy(
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                    color = Color(0xFFF4F6FA),
                     textAlign = TextAlign.Center,
                 )
                 LtrText(
                     text = "DIGITAL GOSTAR PARSIAN  •  BPC02 SCADA",
-                    style = MonoStyle.copy(fontSize = 10.5.sp, letterSpacing = 0.8.sp),
-                    color = LoginGold.copy(alpha = 0.90f),
+                    style = MonoStyle.copy(fontSize = 10.sp, letterSpacing = 1.1.sp),
+                    color = AuthGold.copy(alpha = 0.88f),
                 )
             }
 
-            // Luxury Carbon-Glass Login Card
+            // Glass-Bevel Obsidian Login Card
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .offset { IntOffset(shakeOffset.value.roundToInt(), 0) },
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = LoginCardBg.copy(alpha = 0.95f)),
+                    .offset { IntOffset(shakeOffset.value.roundToInt(), cardOffsetY.value.roundToInt()) },
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = AuthCard.copy(alpha = 0.96f)),
                 border = BorderStroke(
                     width = 1.dp,
-                    brush = Brush.linearGradient(
+                    brush = Brush.verticalGradient(
                         listOf(
-                            LoginGold.copy(alpha = 0.48f),
-                            LoginBorder,
-                            LoginCyan.copy(alpha = 0.35f),
+                            AuthGold.copy(alpha = 0.36f),
+                            AuthHighlight,
+                            AuthBorder,
                         ),
                     ),
                 ),
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    // Metallic gold-to-cyan top accent stripe
+                    // Subtle champagne-gold top hairline
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(3.dp)
+                            .height(1.5.dp)
                             .background(
                                 Brush.horizontalGradient(
-                                    listOf(LoginGold, LoginGoldBright, LoginCyan),
+                                    listOf(
+                                        Color.Transparent,
+                                        AuthGold.copy(alpha = 0.65f),
+                                        AuthGoldBright.copy(alpha = 0.85f),
+                                        AuthGold.copy(alpha = 0.65f),
+                                        Color.Transparent,
+                                    ),
                                 ),
                             ),
                     )
@@ -279,41 +277,55 @@ fun LoginScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 18.dp, vertical = 20.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                            .padding(horizontal = 20.dp, vertical = 22.dp),
+                        verticalArrangement = Arrangement.spacedBy(15.dp),
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(9.dp),
                         ) {
-                            Icon(
-                                imageVector = Icons.Outlined.VerifiedUser,
-                                contentDescription = null,
-                                tint = LoginGold,
-                                modifier = Modifier.size(20.dp),
-                            )
-                            Text(
-                                text = "احراز هویت اپراتور و نصاب",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = Color(0xFFF1F5F9),
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .background(Color(0xFF241D10), RoundedCornerShape(9.dp))
+                                    .border(0.8.dp, AuthGold.copy(alpha = 0.32f), RoundedCornerShape(9.dp)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.VerifiedUser,
+                                    contentDescription = null,
+                                    tint = AuthGold,
+                                    modifier = Modifier.size(17.dp),
+                                )
+                            }
+                            Column {
+                                Text(
+                                    text = "احراز هویت اپراتور و نصاب",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = Color(0xFFF4F6FA),
+                                )
+                                Text(
+                                    text = "ورود آفلاین امن بدون نیاز به اینترنت",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFF8390A6),
+                                )
+                            }
                         }
 
                         val fieldColors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = LoginGold,
-                            unfocusedBorderColor = LoginBorder,
-                            focusedLabelColor = LoginGold,
-                            unfocusedLabelColor = Color(0xFF94A3B8),
-                            focusedTextColor = Color(0xFFF8FAFC),
-                            unfocusedTextColor = Color(0xFFF1F5F9),
-                            cursorColor = LoginGold,
-                            focusedContainerColor = LoginFieldBg,
-                            unfocusedContainerColor = LoginFieldBg.copy(alpha = 0.78f),
-                            focusedLeadingIconColor = LoginGold,
-                            unfocusedLeadingIconColor = Color(0xFF94A3B8),
+                            focusedBorderColor = AuthGold,
+                            unfocusedBorderColor = AuthBorder,
+                            focusedLabelColor = AuthGold,
+                            unfocusedLabelColor = Color(0xFF8B98AE),
+                            focusedTextColor = Color(0xFFF4F6FA),
+                            unfocusedTextColor = Color(0xFFE8EDF5),
+                            cursorColor = AuthGold,
+                            focusedContainerColor = AuthField,
+                            unfocusedContainerColor = AuthField.copy(alpha = 0.72f),
+                            focusedLeadingIconColor = AuthGold,
+                            unfocusedLeadingIconColor = Color(0xFF7D8A9F),
                         )
 
-                        // Username input (LTR text entry inside RTL Persian label)
                         OutlinedTextField(
                             value = username,
                             onValueChange = {
@@ -325,10 +337,10 @@ fun LoginScreen(
                                 LtrText(
                                     "admin / nasab / service / operator",
                                     style = MonoStyle.copy(fontSize = 11.5.sp),
-                                    color = Color(0xFF64748B),
+                                    color = Color(0xFF5A657A),
                                 )
                             },
-                            leadingIcon = { Icon(Icons.Outlined.Person, contentDescription = null) },
+                            leadingIcon = { Icon(Icons.Outlined.Person, contentDescription = null, modifier = Modifier.size(19.dp)) },
                             singleLine = true,
                             enabled = !isSubmitting,
                             colors = fieldColors,
@@ -343,7 +355,6 @@ fun LoginScreen(
                             modifier = Modifier.fillMaxWidth(),
                         )
 
-                        // Password input with visibility toggle
                         OutlinedTextField(
                             value = password,
                             onValueChange = {
@@ -351,14 +362,15 @@ fun LoginScreen(
                                 if (errorMessage != null) errorMessage = null
                             },
                             label = { Text("رمز عبور") },
-                            placeholder = { Text("رمز عبور اختصاصی را وارد کنید", color = Color(0xFF64748B)) },
-                            leadingIcon = { Icon(Icons.Outlined.Lock, contentDescription = null) },
+                            placeholder = { Text("رمز عبور اختصاصی را وارد کنید", color = Color(0xFF5A657A)) },
+                            leadingIcon = { Icon(Icons.Outlined.Lock, contentDescription = null, modifier = Modifier.size(19.dp)) },
                             trailingIcon = {
                                 IconButton(onClick = { passwordVisible = !passwordVisible }) {
                                     Icon(
                                         imageVector = if (passwordVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
                                         contentDescription = if (passwordVisible) "مخفی کردن رمز" else "نمایش رمز",
-                                        tint = Color(0xFF94A3B8),
+                                        tint = Color(0xFF8B98AE),
+                                        modifier = Modifier.size(19.dp),
                                     )
                                 }
                             },
@@ -381,98 +393,83 @@ fun LoginScreen(
 
                         AnimatedVisibility(
                             visible = errorMessage != null,
-                            enter = fadeIn() + slideInVertically(),
-                            exit = fadeOut(),
+                            enter = fadeIn(tween(220)) + slideInVertically { -it / 3 },
+                            exit = fadeOut(tween(180)),
                         ) {
                             errorMessage?.let { msg ->
                                 NoticeBox(text = msg, tone = BadgeTone.FAULT)
                             }
                         }
 
-                        // Primary Gold-to-Cyan Gradient Sign-in Button
-                        Button(
-                            onClick = ::submitLogin,
-                            enabled = !isSubmitting,
-                            shape = RoundedCornerShape(14.dp),
-                            contentPadding = PaddingValues(0.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color.Transparent,
-                                disabledContainerColor = Color.Transparent,
-                            ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(52.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(
-                                    Brush.horizontalGradient(
-                                        listOf(LoginGold, Color(0xFFDDA53A), LoginCyan),
-                                    ),
-                                ),
-                        ) {
-                            if (isSubmitting) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(22.dp),
-                                    strokeWidth = 2.5.dp,
-                                    color = Color(0xFF04070E),
-                                )
-                                Spacer(Modifier.width(10.dp))
-                                Text(
-                                    text = "در حال بررسی دسترسی…",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF04070E),
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Outlined.Login,
-                                    contentDescription = null,
-                                    tint = Color(0xFF04070E),
-                                    modifier = Modifier.size(20.dp),
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    text = "ورود به سامانه SCADA",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF04070E),
-                                )
+                        if (isSubmitting) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(50.dp)
+                                    .background(Color(0xFF241D10), RoundedCornerShape(13.dp))
+                                    .border(0.9.dp, AuthGold.copy(alpha = 0.45f), RoundedCornerShape(13.dp)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(19.dp),
+                                        strokeWidth = 2.2.dp,
+                                        color = AuthGold,
+                                    )
+                                    Text(
+                                        text = "در حال تایید دسترسی…",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = AuthGold,
+                                    )
+                                }
                             }
+                        } else {
+                            DgpGoldButton(
+                                text = "ورود به سامانه SCADA",
+                                icon = Icons.AutoMirrored.Outlined.Login,
+                                onClick = ::submitLogin,
+                                height = 50.dp,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
                         }
                     }
                 }
             }
 
-            // Supported role level pills (informational, no passwords shown)
+            // Quiet architectural role hierarchy pills (no credentials shown on screen)
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
-                    text = "سطوح دسترسی تعریف‌شده در سامانه:",
+                    text = "سطوح دسترسی مجاز در سامانه",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF64748B),
+                    color = Color(0xFF5D687D),
                 )
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    RolePreviewPill("مدیر سیستم", LoginGold)
-                    RolePreviewPill("نصاب و راه‌انداز", LoginCyan)
-                    RolePreviewPill("تکنسین سرویس", Color(0xFF34D399))
-                    RolePreviewPill("اپراتور", Color(0xFF94A3B8))
-                    RolePreviewPill("مهمان (دمو)", Color(0xFF94A3B8))
+                    RoleBadgeChip("مدیر سیستم", AuthGold)
+                    RoleBadgeChip("نصاب و راه‌انداز", Color(0xFF38BDF8))
+                    RoleBadgeChip("تکنسین سرویس", Color(0xFF34D399))
+                    RoleBadgeChip("اپراتور", Color(0xFF93A0B5))
+                    RoleBadgeChip("مهمان (دمو)", Color(0xFF93A0B5))
                 }
             }
 
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(4.dp))
 
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 Text(
-                    text = "DGP BPC02 • Samin ES 487 Gateway • Offline Secure Auth",
-                    style = MonoStyle.copy(fontSize = 10.sp),
-                    color = Color(0xFF475569),
+                    text = "DGP BPC02  •  SAMIN ES 487  •  FC01 / FC03 / FC05 / FC06",
+                    style = MonoStyle.copy(fontSize = 9.5.sp, letterSpacing = 0.8.sp),
+                    color = Color(0xFF475266),
                     textAlign = TextAlign.Center,
                 )
             }
@@ -481,16 +478,16 @@ fun LoginScreen(
 }
 
 @Composable
-private fun RolePreviewPill(label: String, accent: Color) {
+private fun RoleBadgeChip(label: String, accent: Color) {
     Surface(
-        color = Color(0xFF0D1424),
+        color = Color(0xFF0E121B),
         shape = RoundedCornerShape(999.dp),
-        modifier = Modifier.border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(999.dp)),
+        border = BorderStroke(0.8.dp, accent.copy(alpha = 0.28f)),
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = accent,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
+            color = accent.copy(alpha = 0.92f),
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
         )
     }

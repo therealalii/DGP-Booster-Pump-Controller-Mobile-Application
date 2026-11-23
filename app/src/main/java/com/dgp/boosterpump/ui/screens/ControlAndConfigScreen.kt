@@ -1,10 +1,15 @@
 package com.dgp.boosterpump.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -34,12 +39,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
@@ -57,6 +60,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -68,6 +72,7 @@ import com.dgp.boosterpump.session.ConnectionState
 import com.dgp.boosterpump.session.WriteResult
 import com.dgp.boosterpump.ui.PersianLabels
 import com.dgp.boosterpump.ui.components.BadgeTone
+import com.dgp.boosterpump.ui.components.DgpSegmentedControl
 import com.dgp.boosterpump.ui.components.LtrText
 import com.dgp.boosterpump.ui.components.NoticeBox
 import com.dgp.boosterpump.ui.components.ScadaPanel
@@ -85,14 +90,9 @@ private sealed interface PendingEdit {
 }
 
 /**
- * Persian Industrial Control & Hardware Parameters screen.
- *
- * - Hardware configuration parameters verified on physical BPC02 hardware (FC05 on coils
- *   4096-4101 & 4106-4110; FC06 on words 4175 & 4177-4186) support safe editing with
- *   explicit Persian confirmation dialogs, range validation, and immediate read-back verification.
- * - Protected registers (4173 Control Status, 4195 ModBus Address) remain strictly read-only.
- * - Manual Mode (Addr 99, Coils 50-59, Words 50-51) remains LOCKED because physical bench testing
- *   returned Modbus Exception 0x02/0x03 (awaiting DGP technical clarification).
+ * Flagship Persian Hardware Parameters & Safe Control screen.
+ * Preserves all FC05/FC06 safety guardrails, 2-step confirmation, read-back confirmation,
+ * protected read-only registers (4173, 4195), and locked Manual Mode.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -111,7 +111,6 @@ fun ControlAndConfigScreen(
 
     var pendingEdit by remember { mutableStateOf<PendingEdit?>(null) }
 
-    // Render confirmation/edit dialog when user initiates a verified FC05/FC06 change
     when (val edit = pendingEdit) {
         is PendingEdit.CoilConfirm -> CoilWriteConfirmDialog(
             def = edit.def,
@@ -146,62 +145,83 @@ fun ControlAndConfigScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        // 1. Verified Hardware Configuration Read & Edit Panel
+        // 1. Hardware Configuration Read & Verified Edit Panel
         item {
             ScadaPanel(
                 title = if (canWriteConfig) {
-                    "تنظیمات سخت‌افزار کنترلر (FC05 / FC06 تاییدشده)"
+                    "تنظیمات سخت‌افزار کنترلر"
                 } else {
-                    "تنظیمات سخت‌افزار کنترلر (مشاهده فقط‌خواندنی)"
+                    "تنظیمات سخت‌افزار (فقط خواندنی)"
                 },
                 subtitle = if (canWriteConfig) {
-                    "خواندن درخواستی و ویرایش ایمن ۲۲ پارامتر سخت‌افزاری با تایید دومرحله‌ای و بازخوانی فوری"
+                    "۲۲ پارامتر تاییدشده FC05 / FC06 با تایید دومرحله‌ای و بازخوانی فوری"
                 } else {
-                    "سطح دسترسی فعلی فقط مجاز به خواندن تنظیمات است — ویرایش مخصوص مدیر سیستم و نصاب است"
+                    "سطح دسترسی فعلی فقط مجاز به مشاهده تنظیمات است"
                 },
                 icon = Icons.Outlined.Tune,
-                accentColor = if (canWriteConfig) p.cyan else p.gold,
+                accentColor = p.gold,
                 trailing = {
-                    Button(
+                    val canRefresh = isConnected && !cfgSnap.loading && !isWriting
+                    Surface(
                         onClick = onReadHardwareConfig,
-                        enabled = isConnected && !cfgSnap.loading && !isWriting,
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        enabled = canRefresh,
+                        color = if (canRefresh) p.goldSoft else p.panelElevated,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(0.9.dp, if (canRefresh) p.gold.copy(alpha = 0.5f) else p.panelBorder),
                     ) {
-                        if (cfgSnap.loading) {
-                            CircularProgressIndicator(modifier = Modifier.size(15.dp), strokeWidth = 2.dp)
-                            Spacer(Modifier.width(6.dp))
-                        } else {
-                            Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(5.dp))
+                        Row(
+                            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        ) {
+                            if (cfgSnap.loading) {
+                                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = p.gold)
+                            } else {
+                                Icon(
+                                    Icons.Outlined.Refresh,
+                                    contentDescription = null,
+                                    tint = if (canRefresh) p.gold else p.textMuted,
+                                    modifier = Modifier.size(15.dp),
+                                )
+                            }
+                            Text(
+                                text = if (cfgSnap.readings.isEmpty()) "خواندن" else "بروزرسانی",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = if (canRefresh) p.gold else p.textMuted,
+                            )
                         }
-                        Text(if (cfgSnap.readings.isEmpty()) "خواندن تنظیمات" else "بروزرسانی")
                     }
                 },
             ) {
                 if (!canWriteConfig) {
                     NoticeBox(
-                        text = "حساب کاربری فعلی دارای دسترسی فقط‌خواندنی است. برای ویرایش پارامترهای سخت‌افزاری (FC05 / FC06) با حساب «مدیر سیستم» یا «نصاب» وارد شوید.",
+                        text = "حساب کاربری فعلی فقط‌خواندنی است. برای ویرایش پارامترهای سخت‌افزاری (FC05 / FC06) با حساب «مدیر سیستم» یا «نصاب» وارد شوید.",
                         tone = BadgeTone.WARNING,
                     )
                 } else {
                     NoticeBox(
-                        text = "توابع نوشتن تکی FC05 (کویل) و FC06 (ورد) روی کنترلر BPC02 تست و تایید شده‌اند. " +
-                            "هر تغییر پس از تایید شما ارسال شده و بلافاصله برای اطمینان از ذخیره شدن در کنترلر مجدداً خوانده می‌شود.",
-                        tone = BadgeTone.INFO,
+                        text = "توابع نوشتن تکی FC05 (کویل) و FC06 (ورد) روی سخت‌افزار BPC02 تایید شده‌اند. هر تغییر پس از تایید شما ارسال و بلافاصله بازخوانی می‌شود.",
+                        tone = BadgeTone.GOLD,
                     )
                 }
 
-                cfgSnap.lastWrite?.let { result ->
-                    WriteResultBanner(result = result, onDismiss = onDismissWriteNotice)
+                AnimatedVisibility(
+                    visible = cfgSnap.lastWrite != null,
+                    enter = fadeIn() + slideInVertically { -it / 3 },
+                    exit = fadeOut(),
+                ) {
+                    cfgSnap.lastWrite?.let { result ->
+                        WriteResultBanner(result = result, onDismiss = onDismissWriteNotice)
+                    }
                 }
 
                 if (cfgSnap.timestampMillis != null) {
                     Text(
-                        "آخرین همگام‌سازی تنظیمات: ساعت ${formatTime(cfgSnap.timestampMillis)}",
-                        style = MaterialTheme.typography.bodySmall,
+                        "آخرین همگام‌سازی: ساعت ${formatTime(cfgSnap.timestampMillis)}",
+                        style = MaterialTheme.typography.labelSmall,
                         color = p.cyan,
                     )
                 }
@@ -213,15 +233,24 @@ fun ControlAndConfigScreen(
                 }
 
                 if (cfgSnap.readings.isEmpty()) {
-                    Text(
-                        if (isConnected) {
-                            "برای دریافت و بررسی فعال‌سازی پمپ‌ها، Sleep Gap، اتو سرویس و تنظیمات MFI/MFO دکمه «خواندن تنظیمات» را بزنید."
-                        } else {
-                            "ابتدا به کنترلر (مبدل سمین ES 487) یا حالت شبیه‌سازی متصل شوید تا امکان خواندن تنظیمات فعال شود."
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = p.textSecondary,
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(p.panelElevated)
+                            .border(0.8.dp, p.panelBorder, RoundedCornerShape(14.dp))
+                            .padding(14.dp),
+                    ) {
+                        Text(
+                            if (isConnected) {
+                                "برای دریافت و بررسی فعال‌سازی پمپ‌ها، Sleep Gap، اتو سرویس و تنظیمات MFI/MFO دکمه «خواندن» را بزنید."
+                            } else {
+                                "ابتدا به کنترلر (مبدل سمین ES 487) یا حالت شبیه‌سازی متصل شوید تا امکان خواندن تنظیمات فعال شود."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = p.textSecondary,
+                        )
+                    }
                 } else {
                     val pumpActivations = cfgSnap.readings.filter { it.definition.documentedAddress in 4096..4101 }
                     val controlBits = cfgSnap.readings.filter { it.definition.documentedAddress in 4106..4110 }
@@ -231,22 +260,11 @@ fun ControlAndConfigScreen(
                     val mfxWords = cfgSnap.readings.filter { it.definition.documentedAddress in 4180..4186 }
                     val protectedRegs = cfgSnap.readings.filter { it.definition.access == AccessPolicy.READ }
 
-                    // Section 1: Pump Activations (4096..4101, FC05)
                     if (pumpActivations.isNotEmpty()) {
-                        ConfigSectionHeader(
-                            title = "فعال‌سازی پمپ‌ها در مدار",
-                            tag = "کویل ۴۰۹۶–۴۱۰۱ • FC05",
-                        )
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(p.panelElevated)
-                                .border(1.dp, p.panelBorder, RoundedCornerShape(12.dp))
-                                .padding(horizontal = 12.dp, vertical = 4.dp),
-                        ) {
+                        ConfigSectionHeader("فعال‌سازی پمپ‌ها در مدار", "کویل ۴۰۹۶–۴۱۰۱ • FC05")
+                        ConfigGroupBox {
                             pumpActivations.forEachIndexed { idx, reading ->
-                                if (idx > 0) HorizontalDivider(color = p.panelBorder)
+                                if (idx > 0) HorizontalDivider(color = p.hairline)
                                 CoilSwitchRow(
                                     reading = reading,
                                     enabled = canEditNow,
@@ -259,22 +277,11 @@ fun ControlAndConfigScreen(
                         }
                     }
 
-                    // Section 2: Control & Reserve Auto Coils (4106..4110, FC05)
                     if (controlBits.isNotEmpty()) {
-                        ConfigSectionHeader(
-                            title = "حفاظت، نوبت‌دهی و رزرو خودکار",
-                            tag = "کویل ۴۱۰۶–۴۱۱۰ • FC05",
-                        )
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(p.panelElevated)
-                                .border(1.dp, p.panelBorder, RoundedCornerShape(12.dp))
-                                .padding(horizontal = 12.dp, vertical = 4.dp),
-                        ) {
+                        ConfigSectionHeader("حفاظت، نوبت‌دهی و رزرو خودکار", "کویل ۴۱۰۶–۴۱۱۰ • FC05")
+                        ConfigGroupBox {
                             controlBits.forEachIndexed { idx, reading ->
-                                if (idx > 0) HorizontalDivider(color = p.panelBorder)
+                                if (idx > 0) HorizontalDivider(color = p.hairline)
                                 if (reading.definition.documentedAddress == 4110) {
                                     ReserveTypeRow(
                                         reading = reading,
@@ -298,22 +305,11 @@ fun ControlAndConfigScreen(
                         }
                     }
 
-                    // Section 3: Sleep Gap & Auto-Service Parameters (4175, 4177..4179, FC06)
                     if (serviceWords.isNotEmpty()) {
-                        ConfigSectionHeader(
-                            title = "پارامترهای خواب و اتو سرویس",
-                            tag = "ورد ۴۱۷۵، ۴۱۷۷–۴۱۷۹ • FC06",
-                        )
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(p.panelElevated)
-                                .border(1.dp, p.panelBorder, RoundedCornerShape(12.dp))
-                                .padding(horizontal = 12.dp, vertical = 4.dp),
-                        ) {
+                        ConfigSectionHeader("پارامترهای خواب و اتو سرویس", "ورد ۴۱۷۵، ۴۱۷۷–۴۱۷۹ • FC06")
+                        ConfigGroupBox {
                             serviceWords.forEachIndexed { idx, reading ->
-                                if (idx > 0) HorizontalDivider(color = p.panelBorder)
+                                if (idx > 0) HorizontalDivider(color = p.hairline)
                                 WordActionRow(
                                     reading = reading,
                                     actionLabel = "ویرایش",
@@ -327,22 +323,11 @@ fun ControlAndConfigScreen(
                         }
                     }
 
-                    // Section 4: Multi-Function Inputs & Outputs MFI/MFO (4180..4186, FC06)
                     if (mfxWords.isNotEmpty()) {
-                        ConfigSectionHeader(
-                            title = "ورودی و خروجی چندمنظوره (MFI / MFO)",
-                            tag = "ورد ۴۱۸۰–۴۱۸۶ • FC06",
-                        )
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(p.panelElevated)
-                                .border(1.dp, p.panelBorder, RoundedCornerShape(12.dp))
-                                .padding(horizontal = 12.dp, vertical = 4.dp),
-                        ) {
+                        ConfigSectionHeader("ورودی و خروجی چندمنظوره (MFI / MFO)", "ورد ۴۱۸۰–۴۱۸۶ • FC06")
+                        ConfigGroupBox {
                             mfxWords.forEachIndexed { idx, reading ->
-                                if (idx > 0) HorizontalDivider(color = p.panelBorder)
+                                if (idx > 0) HorizontalDivider(color = p.hairline)
                                 WordActionRow(
                                     reading = reading,
                                     actionLabel = "انتخاب",
@@ -356,22 +341,11 @@ fun ControlAndConfigScreen(
                         }
                     }
 
-                    // Section 5: Protected Read-Only Registers (4173, 4195)
                     if (protectedRegs.isNotEmpty()) {
-                        ConfigSectionHeader(
-                            title = "رجیسترهای محافظت‌شده (فقط خواندنی)",
-                            tag = "قفل ایمنی در اپلیکیشن",
-                        )
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(p.panelElevated)
-                                .border(1.dp, p.warning.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
-                                .padding(horizontal = 12.dp, vertical = 4.dp),
-                        ) {
+                        ConfigSectionHeader("رجیسترهای محافظت‌شده (فقط خواندنی)", "قفل ایمنی اپلیکیشن")
+                        ConfigGroupBox(borderColor = p.warning.copy(alpha = 0.28f)) {
                             protectedRegs.forEachIndexed { idx, reading ->
-                                if (idx > 0) HorizontalDivider(color = p.panelBorder)
+                                if (idx > 0) HorizontalDivider(color = p.hairline)
                                 ProtectedRegisterRow(reading)
                             }
                         }
@@ -380,32 +354,29 @@ fun ControlAndConfigScreen(
             }
         }
 
-        // 2. Locked Manual Mode Panel (reflects physical bench test findings)
+        // 2. Locked Manual Mode Panel
         item {
             ScadaPanel(
-                title = "کنترل دستی و خروجی‌های مستقیم (قفل ایمنی)",
-                subtitle = "رجیستر ۹۹ (حالت دستی) • کویل ۵۰–۵۹ (رله‌های دستی) • ورد ۵۰–۵۱ (فرکانس آنالوگ)",
+                title = "کنترل دستی و خروجی‌های مستقیم",
+                subtitle = "رجیستر ۹۹ • کویل ۵۰–۵۹ (رله‌های دستی) • ورد ۵۰–۵۱ (آنالوگ)",
                 icon = Icons.Outlined.AdminPanelSettings,
                 accentColor = p.warning,
-                borderColor = p.warning.copy(alpha = 0.55f),
-                trailing = { StatusBadge("قفل (در انتظار DGP)", BadgeTone.WARNING) },
+                borderColor = p.warning.copy(alpha = 0.36f),
+                trailing = { StatusBadge("قفل ایمنی", BadgeTone.WARNING) },
             ) {
                 NoticeBox(
-                    text = "در تست سخت‌افزاری کنترلر BPC02، فرمان ورود به حالت دستی (FC06 آدرس ۹۹ = 1234) پاسخ Echo داد، " +
-                        "اما نوشتن روی خروجی دستی (کویل ۵۶ و ورد ۵۰) خطای Modbus 0x02 (آدرس غیرمجاز) و خروج با مقدار 0 خطای 0x03 برگرداند. " +
-                        "همچنین توابع FC15 و FC16 پشتیبانی نمی‌شوند. تا زمان تایید پروتکل حالت دستی توسط پشتیبانی DGP (۰۲۱-۷۷۷۹۷۰۰۶)، این بخش برای ایمنی کامل قفل می‌ماند.",
+                    text = "در تست سخت‌افزاری BPC02، فرمان آدرس ۹۹ = 1234 پاسخ Echo داد اما نوشتن روی کویل ۵۶ و ورد ۵۰ خطای Modbus 0x02 و خروج با 0 خطای 0x03 برگرداند (FC15/FC16 نیز پشتیبانی نمی‌شوند). تا زمان تایید پروتکل توسط DGP (۰۲۱-۷۷۷۹۷۰۰۶)، این بخش قفل می‌ماند.",
                     tone = BadgeTone.WARNING,
                 )
 
-                // Disabled Manual Mode preview panel
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .alpha(0.55f)
-                        .clip(RoundedCornerShape(12.dp))
+                        .alpha(0.52f)
+                        .clip(RoundedCornerShape(14.dp))
                         .background(p.panelElevated)
-                        .border(1.dp, p.panelBorder, RoundedCornerShape(12.dp))
-                        .padding(12.dp),
+                        .border(0.8.dp, p.panelBorder, RoundedCornerShape(14.dp))
+                        .padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Row(
@@ -418,11 +389,11 @@ fun ControlAndConfigScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(5.dp),
                             ) {
-                                Icon(Icons.Outlined.Lock, contentDescription = null, tint = p.warning, modifier = Modifier.size(15.dp))
+                                Icon(Icons.Outlined.Lock, contentDescription = null, tint = p.warning, modifier = Modifier.size(14.dp))
                                 Text("ورود به حالت دستی (Manual Mode)", style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
                             }
                             Text(
-                                "آدرس ۹۹ — در تست واقعی خروجی‌ها خطای Exception 0x02 / 0x03 برگرداندند",
+                                "آدرس ۹۹ — قفل‌شده به دلیل خطای سخت‌افزاری 0x02 / 0x03",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = p.textSecondary,
                             )
@@ -430,9 +401,9 @@ fun ControlAndConfigScreen(
                         Switch(checked = false, onCheckedChange = null, enabled = false)
                     }
 
-                    HorizontalDivider(color = p.panelBorder)
+                    HorizontalDivider(color = p.hairline)
 
-                    Text("خروجی‌های دستی رله (کویل ۵۰ تا ۵۹ — قفل‌شده)", style = MaterialTheme.typography.labelMedium, color = p.textSecondary)
+                    Text("خروجی‌های دستی رله (کویل ۵۰ تا ۵۹)", style = MaterialTheme.typography.labelMedium, color = p.textSecondary)
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -442,27 +413,27 @@ fun ControlAndConfigScreen(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(p.panel)
-                                    .border(1.dp, p.panelBorder, RoundedCornerShape(8.dp))
+                                    .border(0.8.dp, p.panelBorder, RoundedCornerShape(8.dp))
                                     .padding(horizontal = 8.dp, vertical = 5.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
-                                Icon(Icons.Outlined.Lock, contentDescription = null, tint = p.standby, modifier = Modifier.size(12.dp))
-                                LtrText("OUT $i", style = MonoStyle.copy(fontSize = 11.sp), color = p.textSecondary)
+                                Icon(Icons.Outlined.Lock, contentDescription = null, tint = p.standby, modifier = Modifier.size(11.dp))
+                                LtrText("OUT $i", style = MonoStyle.copy(fontSize = 10.5.sp), color = p.textSecondary)
                             }
                         }
                     }
 
-                    HorizontalDivider(color = p.panelBorder)
+                    HorizontalDivider(color = p.hairline)
 
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("سرعت آنالوگ درایو ۱ (ورد ۵۰ — ۰ تا ۵۰.۰ هرتز)", style = MaterialTheme.typography.labelMedium, color = p.textSecondary)
+                            Text("سرعت آنالوگ درایو ۱ (ورد ۵۰)", style = MaterialTheme.typography.labelMedium, color = p.textSecondary)
                             LtrText("0.0 Hz", style = MonoStyle, color = p.textSecondary)
                         }
                         Slider(value = 0f, onValueChange = {}, enabled = false)
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("سرعت آنالوگ درایو ۲ (ورد ۵۱ — ۰ تا ۵۰.۰ هرتز)", style = MaterialTheme.typography.labelMedium, color = p.textSecondary)
+                            Text("سرعت آنالوگ درایو ۲ (ورد ۵۱)", style = MaterialTheme.typography.labelMedium, color = p.textSecondary)
                             LtrText("0.0 Hz", style = MonoStyle, color = p.textSecondary)
                         }
                         Slider(value = 0f, onValueChange = {}, enabled = false)
@@ -474,25 +445,42 @@ fun ControlAndConfigScreen(
 }
 
 @Composable
+private fun ConfigGroupBox(
+    borderColor: Color? = null,
+    content: @Composable () -> Unit,
+) {
+    val p = LocalScadaPalette.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(p.panelElevated)
+            .border(0.8.dp, borderColor ?: p.panelBorder, RoundedCornerShape(14.dp))
+            .padding(horizontal = 14.dp, vertical = 4.dp),
+    ) {
+        content()
+    }
+}
+
+@Composable
 private fun ConfigSectionHeader(title: String, tag: String) {
     val p = LocalScadaPalette.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 4.dp),
+            .padding(top = 4.dp, bottom = 2.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
             color = p.textPrimary,
         )
         LtrText(
             text = tag,
-            style = MonoStyle.copy(fontSize = 10.5.sp),
-            color = p.cyan,
+            style = MonoStyle.copy(fontSize = 10.sp),
+            color = p.gold,
         )
     }
 }
@@ -508,22 +496,22 @@ private fun WriteResultBanner(result: WriteResult, onDismiss: () -> Unit) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, fg.copy(alpha = 0.45f), RoundedCornerShape(10.dp)),
+            .border(0.9.dp, fg.copy(alpha = 0.42f), RoundedCornerShape(12.dp)),
         color = bg,
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(12.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
         ) {
             Icon(
                 imageVector = if (result.success) Icons.Outlined.CheckCircleOutline else Icons.Outlined.ErrorOutline,
                 contentDescription = null,
                 tint = fg,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(19.dp),
             )
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
@@ -567,26 +555,25 @@ private fun CoilSwitchRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .padding(vertical = 9.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 text = PersianLabels.registerLabel(def),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                 color = p.textPrimary,
             )
             LtrText(
                 text = "FC05 • Coil ${def.documentedAddress} (0x%04X)".format(def.documentedAddress),
-                style = MonoStyle.copy(fontSize = 10.5.sp),
-                color = p.textSecondary,
+                style = MonoStyle.copy(fontSize = 10.sp),
+                color = p.textMuted,
             )
         }
         Spacer(Modifier.width(10.dp))
         if (isWritingThis) {
-            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = p.cyan)
+            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = p.gold)
         } else {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -617,45 +604,41 @@ private fun ReserveTypeRow(
     val p = LocalScadaPalette.current
     val def = reading.definition
 
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(vertical = 9.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                text = PersianLabels.registerLabel(def),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                color = p.textPrimary,
-            )
-            LtrText(
-                text = "FC05 • Coil ${def.documentedAddress} (0x%04X)".format(def.documentedAddress),
-                style = MonoStyle.copy(fontSize = 10.5.sp),
-                color = p.textSecondary,
-            )
-        }
-        Spacer(Modifier.width(8.dp))
-        if (isWritingThis) {
-            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = p.cyan)
-        } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                FilterChip(
-                    selected = reading.raw == 0,
-                    onClick = { if (reading.raw != 0) onSelectType(0) },
-                    enabled = enabled && reading.raw != null,
-                    label = { Text("باز (NO)", style = MaterialTheme.typography.labelSmall) },
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = PersianLabels.registerLabel(def),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                    color = p.textPrimary,
                 )
-                FilterChip(
-                    selected = reading.raw == 1,
-                    onClick = { if (reading.raw != 1) onSelectType(1) },
-                    enabled = enabled && reading.raw != null,
-                    label = { Text("بسته (NC)", style = MaterialTheme.typography.labelSmall) },
+                LtrText(
+                    text = "FC05 • Coil ${def.documentedAddress} (0x%04X)".format(def.documentedAddress),
+                    style = MonoStyle.copy(fontSize = 10.sp),
+                    color = p.textMuted,
                 )
             }
+            if (isWritingThis) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = p.gold)
+            }
         }
+        DgpSegmentedControl(
+            items = listOf(0, 1),
+            selected = reading.raw ?: 0,
+            label = { if (it == 0) "باز (NO)" else "بسته (NC)" },
+            onSelect = { target -> if (reading.raw != target) onSelectType(target) },
+            enabled = enabled && reading.raw != null && !isWritingThis,
+            height = 36.dp,
+        )
     }
 }
 
@@ -673,21 +656,20 @@ private fun WordActionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .padding(vertical = 9.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 text = PersianLabels.registerLabel(def),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                 color = p.textPrimary,
             )
             LtrText(
                 text = "FC06 • Word ${def.documentedAddress} (0x%04X)".format(def.documentedAddress),
-                style = MonoStyle.copy(fontSize = 10.5.sp),
-                color = p.textSecondary,
+                style = MonoStyle.copy(fontSize = 10.sp),
+                color = p.textMuted,
             )
             Text(
                 text = reading.raw?.let { PersianLabels.formatRegisterValue(def, it) } ?: "—",
@@ -697,17 +679,33 @@ private fun WordActionRow(
         }
         Spacer(Modifier.width(8.dp))
         if (isWritingThis) {
-            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = p.cyan)
+            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = p.gold)
         } else {
-            OutlinedButton(
+            val active = enabled && reading.raw != null
+            Surface(
                 onClick = onClickEdit,
-                enabled = enabled && reading.raw != null,
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                border = BorderStroke(1.dp, p.cyan.copy(alpha = 0.55f)),
+                enabled = active,
+                color = if (active) p.goldSoft else p.panel,
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(0.8.dp, if (active) p.gold.copy(alpha = 0.45f) else p.panelBorder),
             ) {
-                Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
-                Spacer(Modifier.width(4.dp))
-                Text(actionLabel, style = MaterialTheme.typography.labelMedium)
+                Row(
+                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Icon(
+                        Icons.Outlined.Edit,
+                        contentDescription = null,
+                        tint = if (active) p.gold else p.textMuted,
+                        modifier = Modifier.size(13.dp),
+                    )
+                    Text(
+                        actionLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (active) p.gold else p.textMuted,
+                    )
+                }
             }
         }
     }
@@ -726,7 +724,7 @@ private fun ProtectedRegisterRow(reading: RegisterReading) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .padding(vertical = 9.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -738,15 +736,14 @@ private fun ProtectedRegisterRow(reading: RegisterReading) {
                 Icon(Icons.Outlined.Shield, contentDescription = null, tint = p.warning, modifier = Modifier.size(14.dp))
                 Text(
                     text = PersianLabels.registerLabel(def),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                     color = p.textPrimary,
                 )
             }
             LtrText(
                 text = "Read-Only • Word ${def.documentedAddress} (0x%04X)".format(def.documentedAddress),
-                style = MonoStyle.copy(fontSize = 10.5.sp),
-                color = p.textSecondary,
+                style = MonoStyle.copy(fontSize = 10.sp),
+                color = p.textMuted,
             )
             Text(reason, style = MaterialTheme.typography.labelSmall, color = p.textSecondary)
         }
@@ -776,14 +773,15 @@ private fun CoilWriteConfirmDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Outlined.Tune, contentDescription = null, tint = p.warning) },
-        title = { Text("تایید تغییر تنظیم سخت‌افزاری", style = MaterialTheme.typography.titleMedium) },
+        containerColor = p.panel,
+        shape = RoundedCornerShape(22.dp),
+        icon = { Icon(Icons.Outlined.Tune, contentDescription = null, tint = p.gold) },
+        title = { Text("تایید تغییر تنظیم سخت‌افزاری", style = MaterialTheme.typography.titleMedium, color = p.textPrimary) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text(
                     PersianLabels.registerLabel(def),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                     color = p.textPrimary,
                 )
                 LtrText(
@@ -793,20 +791,20 @@ private fun CoilWriteConfirmDialog(
                 )
                 Surface(
                     color = p.panelElevated,
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, p.panelBorder),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(0.8.dp, p.panelBorder),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(
-                        modifier = Modifier.padding(10.dp),
+                        modifier = Modifier.padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text("مقدار فعلی: $currentText", style = MaterialTheme.typography.bodySmall, color = p.textSecondary)
-                        Text("مقدار جدید: $targetText", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = p.warning)
+                        Text("مقدار جدید: $targetText", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = p.gold)
                     }
                 }
                 Text(
-                    "آیا از اعمال این تغییر روی کنترلر بوستر پمپ اطمینان دارید؟ پس از ارسال، مقدار جدید بلافاصله بازخوانی و تایید می‌شود.",
+                    "پس از ارسال فرمان FC05، مقدار جدید بلافاصله مجدداً خوانده و راستی‌آزمایی می‌شود.",
                     style = MaterialTheme.typography.bodySmall,
                     color = p.textSecondary,
                 )
@@ -815,13 +813,14 @@ private fun CoilWriteConfirmDialog(
         confirmButton = {
             Button(
                 onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(containerColor = p.warning, contentColor = p.simBannerFg),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = p.gold, contentColor = Color(0xFF0E0A03)),
             ) {
-                Text("تایید و نوشتن (FC05)")
+                Text("تایید و نوشتن (FC05)", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("انصراف") }
+            TextButton(onClick = onDismiss) { Text("انصراف", color = p.textSecondary) }
         },
     )
 }
@@ -850,14 +849,15 @@ private fun WordNumberEditDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Outlined.Edit, contentDescription = null, tint = p.cyan) },
-        title = { Text("ویرایش پارامتر سخت‌افزاری", style = MaterialTheme.typography.titleMedium) },
+        containerColor = p.panel,
+        shape = RoundedCornerShape(22.dp),
+        icon = { Icon(Icons.Outlined.Edit, contentDescription = null, tint = p.gold) },
+        title = { Text("ویرایش پارامتر سخت‌افزاری", style = MaterialTheme.typography.titleMedium, color = p.textPrimary) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     PersianLabels.registerLabel(def),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                     color = p.textPrimary,
                 )
                 LtrText(
@@ -878,6 +878,7 @@ private fun WordNumberEditDialog(
                     onValueChange = { input -> text = input.filter { it.isDigit() } },
                     label = { Text("مقدار خام جدید ($min..$max)") },
                     singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
                     isError = text.isNotEmpty() && !inRange,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     supportingText = {
@@ -894,7 +895,7 @@ private fun WordNumberEditDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
-                    "توجه: تغییر نادرست پارامترهای سخت‌افزاری می‌تواند عملکرد بوستر پمپ را تحت تاثیر قرار دهد. پس از ارسال، مقدار مجدداً خوانده و تایید می‌شود.",
+                    "پس از ارسال فرمان FC06، مقدار ثبت‌شده بلافاصله از کنترلر بازخوانی و تایید می‌شود.",
                     style = MaterialTheme.typography.labelSmall,
                     color = p.warning,
                 )
@@ -904,12 +905,14 @@ private fun WordNumberEditDialog(
             Button(
                 onClick = { if (inRange) parsed?.let(onConfirm) },
                 enabled = inRange && changed,
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = p.gold, contentColor = Color(0xFF0E0A03)),
             ) {
-                Text("تایید و نوشتن (FC06)")
+                Text("تایید و نوشتن (FC06)", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("انصراف") }
+            TextButton(onClick = onDismiss) { Text("انصراف", color = p.textSecondary) }
         },
     )
 }
@@ -929,8 +932,10 @@ private fun WordEnumEditDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Outlined.Tune, contentDescription = null, tint = p.cyan) },
-        title = { Text("انتخاب عملکرد ${PersianLabels.registerLabel(def)}", style = MaterialTheme.typography.titleMedium) },
+        containerColor = p.panel,
+        shape = RoundedCornerShape(22.dp),
+        icon = { Icon(Icons.Outlined.Tune, contentDescription = null, tint = p.gold) },
+        title = { Text("انتخاب عملکرد ${PersianLabels.registerLabel(def)}", style = MaterialTheme.typography.titleMedium, color = p.textPrimary) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 LtrText(
@@ -940,26 +945,28 @@ private fun WordEnumEditDialog(
                 )
                 Spacer(Modifier.height(4.dp))
                 options.forEach { code ->
+                    val isSel = selected == code
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isSel) p.goldSoft else Color.Transparent)
                             .clickable { selected = code }
-                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                            .padding(horizontal = 6.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        RadioButton(selected = selected == code, onClick = { selected = code })
+                        RadioButton(selected = isSel, onClick = { selected = code })
                         Text(
                             text = "$code — ${PersianLabels.enumOptionLabel(def, code)}",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = if (selected == code) p.cyan else p.textPrimary,
+                            color = if (isSel) p.gold else p.textPrimary,
                         )
                     }
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "پس از تایید، فرمان FC06 ارسال شده و مقدار ثبت‌شده بلافاصله از کنترلر بازخوانی می‌شود.",
+                    "پس از تایید، فرمان FC06 ارسال شده و مقدار ثبت‌شده بلافاصله بازخوانی می‌شود.",
                     style = MaterialTheme.typography.labelSmall,
                     color = p.warning,
                 )
@@ -969,12 +976,14 @@ private fun WordEnumEditDialog(
             Button(
                 onClick = { onConfirm(selected) },
                 enabled = selected != currentValue,
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = p.gold, contentColor = Color(0xFF0E0A03)),
             ) {
-                Text("تایید و نوشتن (FC06)")
+                Text("تایید و نوشتن (FC06)", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("انصراف") }
+            TextButton(onClick = onDismiss) { Text("انصراف", color = p.textSecondary) }
         },
     )
 }

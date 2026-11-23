@@ -1,5 +1,6 @@
 package com.dgp.boosterpump.ui.screens
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -10,14 +11,19 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -61,185 +67,178 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
-private val ObsidianBlack = Color(0xFF03050A)
-private val ObsidianSurface = Color(0xFF0A0F1B)
-private val RoyalGold = Color(0xFFE8B84B)
-private val WarmGoldGlow = Color(0xFFFCE08B)
-private val CyberCyan = Color(0xFF22D3EE)
+private val StageObsidian = Color(0xFF06080D)
+private val StageGold = Color(0xFFE2B85E)
+private val StageGoldBright = Color(0xFFF6DA8E)
+private val StageSteel = Color(0xFF38BDF8)
 
 /**
- * Full-screen obsidian black animated industrial splash & boot sequence showcasing the
- * dark-themed DGP logo inside counter-rotating metallic gold chronometer & cyber-cyan
- * telemetry rings, sonar pulses, rising ambient particles, and Persian SCADA boot steps.
+ * Refined luxury obsidian boot screen featuring the custom beveled DGP medallion inside a
+ * precision watchmaker champagne-gold bezel, smooth boot-step transitions, and hairline loader.
  */
 @Composable
 fun SplashLoadingScreen(
     onFinished: () -> Unit,
 ) {
-    val logoScale = remember { Animatable(0.68f) }
+    val logoScale = remember { Animatable(0.84f) }
     val logoAlpha = remember { Animatable(0f) }
-    val textAlpha = remember { Animatable(0f) }
+    val contentAlpha = remember { Animatable(0f) }
     val bootProgress = remember { Animatable(0f) }
 
-    val infinite = rememberInfiniteTransition(label = "splash_kinetics")
-    val outerOrbit by infinite.animateFloat(
+    val infinite = rememberInfiniteTransition(label = "splash_luxury")
+    val bezelAngle by infinite.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(11_000, easing = LinearEasing)),
-        label = "outer_orbit",
+        animationSpec = infiniteRepeatable(tween(24_000, easing = LinearEasing)),
+        label = "bezel_angle",
     )
-    val innerOrbit by infinite.animateFloat(
-        initialValue = 360f,
-        targetValue = 0f,
-        animationSpec = infiniteRepeatable(tween(4_800, easing = LinearEasing)),
-        label = "inner_orbit",
-    )
-    val sonarPhase by infinite.animateFloat(
+    val tracerAngle by infinite.animateFloat(
         initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(2_400, easing = FastOutSlowInEasing)),
-        label = "sonar_phase",
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(3_600, easing = LinearEasing)),
+        label = "tracer_angle",
     )
-    val particlePhase by infinite.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(6_500, easing = LinearEasing)),
-        label = "particle_phase",
-    )
-    val breathGlow by infinite.animateFloat(
+    val breath by infinite.animateFloat(
         initialValue = 0.65f,
         targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(tween(1_500, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "breath_glow",
+        animationSpec = infiniteRepeatable(tween(2_200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "ambient_breath",
     )
-    val shimmerSweep by infinite.animateFloat(
-        initialValue = -0.4f,
-        targetValue = 1.4f,
-        animationSpec = infiniteRepeatable(tween(2_200, easing = FastOutSlowInEasing)),
-        label = "shimmer_sweep",
+    val shimmer by infinite.animateFloat(
+        initialValue = -0.6f,
+        targetValue = 1.8f,
+        animationSpec = infiniteRepeatable(tween(3_000, easing = FastOutSlowInEasing)),
+        label = "crest_shimmer",
     )
 
     LaunchedEffect(Unit) {
         launch {
-            logoAlpha.animateTo(1f, tween(650, easing = FastOutSlowInEasing))
+            logoAlpha.animateTo(1f, tween(700, easing = FastOutSlowInEasing))
         }
         launch {
             logoScale.animateTo(
                 targetValue = 1f,
                 animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    dampingRatio = Spring.DampingRatioLowBouncy,
                     stiffness = Spring.StiffnessLow,
                 ),
             )
         }
         launch {
-            delay(260)
-            textAlpha.animateTo(1f, tween(600))
+            delay(280)
+            contentAlpha.animateTo(1f, tween(650, easing = FastOutSlowInEasing))
         }
-        bootProgress.animateTo(1f, tween(durationMillis = 2_850, easing = FastOutSlowInEasing))
+        bootProgress.animateTo(1f, tween(durationMillis = 2_650, easing = FastOutSlowInEasing))
         delay(220)
         onFinished()
     }
 
     val pct = (bootProgress.value * 100).toInt().coerceIn(0, 100)
-    val bootMessage = when {
-        pct < 28 -> "بارگذاری هسته پروتکل مدباس BPC02 (FC01 / FC03 / FC05 / FC06)…"
-        pct < 56 -> "راه‌اندازی ماژول شبکه مبدل صنعتی سمین ES 487…"
-        pct < 84 -> "بررسی نقشه رجیسترها و لایه‌های قفل ایمنی سخت‌افزار…"
-        else -> "سامانه آماده است — انتقال به صفحه ورود اپراتور"
+    val stepIndex = when {
+        pct < 28 -> 0
+        pct < 58 -> 1
+        pct < 86 -> 2
+        else -> 3
+    }
+    val stepLabel = when (stepIndex) {
+        0 -> "بارگذاری هسته مدباس BPC02 (FC01 / FC03 / FC05 / FC06)"
+        1 -> "آماده‌سازی ارتباط مبدل صنعتی سمین ES 487"
+        2 -> "راستی‌آزمایی لایه‌های حفاظتی و نقشه رجیسترها"
+        else -> "سامانه آماده است — انتقال به صفحه ورود"
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(ObsidianBlack),
+            .background(StageObsidian),
     ) {
-        // Animated dark obsidian SCADA grid + ambient spotlight + rising gold/cyan micro-particles
-        ObsidianScadaBackdrop(
-            particlePhase = particlePhase,
-            breathGlow = breathGlow,
-            spotlightYFraction = 0.40f,
+        ObsidianBrandBackdrop(
+            breathGlow = breath,
+            spotlightYFraction = 0.42f,
         )
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .systemBarsPadding()
-                .padding(horizontal = 28.dp, vertical = 28.dp),
+                .padding(horizontal = 32.dp, vertical = 30.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            // Top subtle telemetry tag
+            // Quiet refined architectural edition pill
             Row(
                 modifier = Modifier
-                    .alpha(textAlpha.value)
+                    .alpha(contentAlpha.value)
                     .clip(RoundedCornerShape(999.dp))
-                    .background(ObsidianSurface.copy(alpha = 0.85f))
+                    .background(Color(0xFF0E121B).copy(alpha = 0.85f))
+                    .border(0.8.dp, StageGold.copy(alpha = 0.25f), RoundedCornerShape(999.dp))
                     .padding(horizontal = 14.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Box(
                     modifier = Modifier
-                        .size(7.dp)
+                        .size(6.dp)
                         .clip(CircleShape)
-                        .background(CyberCyan.copy(alpha = breathGlow)),
+                        .background(StageGold.copy(alpha = breath)),
                 )
                 LtrText(
-                    text = "DGP INDUSTRIAL SCADA  •  BPC02 v1.0",
-                    style = MonoStyle.copy(fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold),
-                    color = RoyalGold,
+                    text = "DGP BPC02  •  INDUSTRIAL SCADA",
+                    style = MonoStyle.copy(fontSize = 10.sp, letterSpacing = 1.2.sp),
+                    color = StageGold.copy(alpha = 0.92f),
                 )
             }
 
-            // Center hero medallion with dark DGP logo & kinetic machinery rings
+            // Centerpiece refined beveled DGP medallion
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(22.dp),
+                verticalArrangement = Arrangement.spacedBy(26.dp),
             ) {
                 Box(
                     modifier = Modifier
-                        .size(278.dp)
                         .scale(logoScale.value)
                         .alpha(logoAlpha.value),
                     contentAlignment = Alignment.Center,
                 ) {
                     DgpAnimatedCrest(
-                        size = 278.dp,
-                        logoSize = 196.dp,
-                        outerAngle = outerOrbit,
-                        innerAngle = innerOrbit,
-                        sonarPhase = sonarPhase,
-                        breathGlow = breathGlow,
-                        shimmerSweep = shimmerSweep,
-                        showSonar = true,
+                        size = 248.dp,
+                        logoSize = 204.dp,
+                        outerAngle = bezelAngle,
+                        innerAngle = tracerAngle,
+                        breathGlow = breath,
+                        shimmerSweep = shimmer,
+                        activeTracer = true,
                     )
                 }
 
                 Column(
-                    modifier = Modifier.alpha(textAlpha.value),
+                    modifier = Modifier.alpha(contentAlpha.value),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
-                        text = "سامانه هوشمند کنترل بوستر پمپ",
-                        style = MaterialTheme.typography.headlineSmall.copy(fontSize = 20.sp),
-                        color = Color(0xFFF8FAFC),
+                        text = "کنترل هوشمند بوستر پمپ",
+                        style = MaterialTheme.typography.headlineSmall.copy(
+                            fontSize = 21.sp,
+                            fontWeight = FontWeight.Bold,
+                        ),
+                        color = Color(0xFFF4F6FA),
                         textAlign = TextAlign.Center,
                     )
-                    LtrText(
-                        text = "DIGITAL GOSTAR PARSIAN  •  SAMIN ES 487",
-                        style = MonoStyle.copy(fontSize = 11.sp, letterSpacing = 1.1.sp),
-                        color = RoyalGold.copy(alpha = 0.88f),
+                    Text(
+                        text = "دیجیتال گستر پارسیان  •  مانیتورینگ و پیکربندی صنعتی",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF93A0B5),
+                        textAlign = TextAlign.Center,
                     )
                 }
             }
 
-            // Bottom animated boot progress console
+            // Minimal luxury hairline progress console
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .alpha(textAlpha.value),
+                    .alpha(contentAlpha.value),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Row(
@@ -247,68 +246,58 @@ fun SplashLoadingScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = bootMessage,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFFCBD5E1),
+                    AnimatedContent(
+                        targetState = stepLabel,
+                        transitionSpec = {
+                            (fadeIn(tween(260)) + slideInVertically { it / 3 }) togetherWith
+                                (fadeOut(tween(180)) + slideOutVertically { -it / 3 })
+                        },
                         modifier = Modifier.weight(1f),
-                    )
+                        label = "boot_step_text",
+                    ) { text ->
+                        Text(
+                            text = text,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp),
+                            color = Color(0xFFA6B2C5),
+                            maxLines = 1,
+                        )
+                    }
                     LtrText(
                         text = "$pct%",
-                        style = MonoStyle.copy(fontSize = 12.5.sp, fontWeight = FontWeight.Bold),
-                        color = RoyalGold,
+                        style = MonoStyle.copy(fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold),
+                        color = StageGold,
                     )
                 }
 
-                // Glowing gold-to-cyan kinetic progress bar
                 Canvas(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(8.dp),
+                        .height(3.dp),
                 ) {
-                    val corner = CornerRadius(6.dp.toPx())
+                    val corner = CornerRadius(3.dp.toPx())
                     drawRoundRect(
-                        color = Color(0xFF141D2E),
+                        color = Color(0x18FFFFFF),
                         cornerRadius = corner,
                     )
                     val fillW = (size.width * bootProgress.value).coerceAtLeast(0f)
-                    if (fillW > 2f) {
-                        // Soft outer glow
+                    if (fillW > 1f) {
                         drawRoundRect(
                             brush = Brush.horizontalGradient(
-                                listOf(RoyalGold.copy(alpha = 0.35f), CyberCyan.copy(alpha = 0.45f)),
-                                startX = 0f,
-                                endX = fillW,
-                            ),
-                            topLeft = Offset(0f, -2.dp.toPx()),
-                            size = Size(fillW, size.height + 4.dp.toPx()),
-                            cornerRadius = corner,
-                        )
-                        // Sharp inner bar
-                        drawRoundRect(
-                            brush = Brush.horizontalGradient(
-                                listOf(RoyalGold, WarmGoldGlow, CyberCyan),
+                                listOf(StageGold.copy(alpha = 0.75f), StageGoldBright),
                                 startX = 0f,
                                 endX = fillW,
                             ),
                             size = Size(fillW, size.height),
                             cornerRadius = corner,
                         )
-                        // Luminous head spark
-                        drawCircle(
-                            color = Color.White,
-                            radius = 4.dp.toPx(),
-                            center = Offset(fillW - 2.dp.toPx(), size.height / 2f),
-                        )
                     }
                 }
 
-                Text(
-                    text = "تایید سخت‌افزاری Modbus RTU / TCP  •  حفاظت صنعتی ۲۴/۷",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF64748B),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
+                LtrText(
+                    text = "SAMIN ES 487 GATEWAY READY  •  v1.0",
+                    style = MonoStyle.copy(fontSize = 9.5.sp, letterSpacing = 1.1.sp),
+                    color = Color(0xFF4F5B70),
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
                 )
             }
         }
@@ -316,9 +305,8 @@ fun SplashLoadingScreen(
 }
 
 /**
- * Reusable luxury dark DGP crest with counter-rotating metallic gold chronometer ring,
- * cyber-cyan scanning arc, breathing ambient glow, optional sonar pulses, and diagonal
- * shimmer sweep over `R.drawable.dgp_logo_dark`.
+ * Cohesive luxury DGP medallion framing the beveled brushed-gold `dgp_logo_dark` emblem inside a
+ * serene watchmaker champagne-gold dial with subtle ambient radial light and optional sweeping arc.
  */
 @Composable
 fun DgpAnimatedCrest(
@@ -326,10 +314,9 @@ fun DgpAnimatedCrest(
     logoSize: Dp,
     outerAngle: Float,
     innerAngle: Float,
-    sonarPhase: Float,
     breathGlow: Float,
     shimmerSweep: Float,
-    showSonar: Boolean,
+    activeTracer: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -340,27 +327,11 @@ fun DgpAnimatedCrest(
             val center = Offset(this.size.width / 2f, this.size.height / 2f)
             val maxR = this.size.minDimension / 2f
 
-            // Expanding sonar pressure waves
-            if (showSonar) {
-                for (wave in 0..1) {
-                    val phase = (sonarPhase + wave * 0.5f) % 1f
-                    val r = maxR * (0.64f + phase * 0.40f)
-                    val a = ((1f - phase) * 0.34f).coerceIn(0f, 1f)
-                    drawCircle(
-                        color = if (wave == 0) RoyalGold.copy(alpha = a) else CyberCyan.copy(alpha = a * 0.85f),
-                        radius = r,
-                        center = center,
-                        style = Stroke(width = 1.6.dp.toPx()),
-                    )
-                }
-            }
-
-            // Deep obsidian radial halo behind the crest
+            // Quiet warm champagne-gold ambient aura behind the medallion
             drawCircle(
                 brush = Brush.radialGradient(
-                    0.0f to RoyalGold.copy(alpha = 0.22f * breathGlow),
-                    0.55f to CyberCyan.copy(alpha = 0.11f * breathGlow),
-                    0.82f to Color(0xFF060A14).copy(alpha = 0.92f),
+                    0.0f to StageGold.copy(alpha = 0.16f * breathGlow),
+                    0.62f to StageGold.copy(alpha = 0.05f * breathGlow),
                     1.0f to Color.Transparent,
                     center = center,
                     radius = maxR,
@@ -369,107 +340,64 @@ fun DgpAnimatedCrest(
                 center = center,
             )
 
-            // Solid obsidian circular medallion base
-            val medallionR = maxR * 0.77f
+            // Precision hairline outer ring + delicate 60-tick luxury dial
+            val dialR = maxR * 0.94f
             drawCircle(
-                brush = Brush.radialGradient(
-                    0.0f to Color(0xFF101726),
-                    0.75f to Color(0xFF060911),
-                    1.0f to Color(0xFF030509),
-                    center = center,
-                    radius = medallionR,
-                ),
-                radius = medallionR,
+                color = Color(0x16FFFFFF),
+                radius = dialR,
                 center = center,
+                style = Stroke(width = 0.8.dp.toPx()),
             )
-
-            // Outer rotating luxury gold chronometer ticks
-            val tickR = maxR * 0.89f
             rotate(degrees = outerAngle, pivot = center) {
-                val ticks = 48
+                val ticks = 60
                 for (i in 0 until ticks) {
                     val deg = i * (360f / ticks)
                     val rad = deg * PI / 180.0
-                    val major = i % 6 == 0
-                    val rIn = tickR - (if (major) 7.dp.toPx() else 3.5.dp.toPx())
+                    val major = i % 5 == 0
+                    val rIn = dialR - (if (major) 5.dp.toPx() else 2.2.dp.toPx())
                     drawLine(
-                        color = RoyalGold.copy(alpha = if (major) 0.85f else 0.30f),
+                        color = StageGold.copy(alpha = if (major) 0.48f else 0.16f),
                         start = Offset(
                             center.x + (rIn * cos(rad)).toFloat(),
                             center.y + (rIn * sin(rad)).toFloat(),
                         ),
                         end = Offset(
-                            center.x + (tickR * cos(rad)).toFloat(),
-                            center.y + (tickR * sin(rad)).toFloat(),
+                            center.x + (dialR * cos(rad)).toFloat(),
+                            center.y + (dialR * sin(rad)).toFloat(),
                         ),
-                        strokeWidth = if (major) 2.dp.toPx() else 1.dp.toPx(),
+                        strokeWidth = if (major) 1.3.dp.toPx() else 0.8.dp.toPx(),
                         cap = StrokeCap.Round,
                     )
                 }
-                // Two luxury gold outer arcs
-                val arcR = maxR * 0.94f
-                val arcTopLeft = Offset(center.x - arcR, center.y - arcR)
-                val arcSize = Size(arcR * 2f, arcR * 2f)
-                drawArc(
-                    brush = Brush.sweepGradient(
-                        0f to Color.Transparent,
-                        0.25f to RoyalGold,
-                        0.42f to WarmGoldGlow,
-                        0.50f to Color.Transparent,
-                        1f to Color.Transparent,
-                        center = center,
-                    ),
-                    startAngle = 0f,
-                    sweepAngle = 175f,
-                    useCenter = false,
-                    topLeft = arcTopLeft,
-                    size = arcSize,
-                    style = Stroke(width = 2.4.dp.toPx(), cap = StrokeCap.Round),
-                )
             }
 
-            // Counter-rotating cyber-cyan precision arc + glowing node spark
-            val cyanR = maxR * 0.81f
-            rotate(degrees = innerAngle, pivot = center) {
-                val tl = Offset(center.x - cyanR, center.y - cyanR)
-                val sz = Size(cyanR * 2f, cyanR * 2f)
-                drawArc(
-                    brush = Brush.sweepGradient(
-                        0f to Color.Transparent,
-                        0.15f to CyberCyan.copy(alpha = 0.25f),
-                        0.32f to CyberCyan,
-                        0.36f to Color.White,
-                        0.38f to Color.Transparent,
-                        1f to Color.Transparent,
-                        center = center,
-                    ),
-                    startAngle = 0f,
-                    sweepAngle = 140f,
-                    useCenter = false,
-                    topLeft = tl,
-                    size = sz,
-                    style = Stroke(width = 2.6.dp.toPx(), cap = StrokeCap.Round),
-                )
-                // Glowing cyan orbital spark at head (~130 deg)
-                val headRad = 130.0 * PI / 180.0
-                val head = Offset(
-                    center.x + (cyanR * cos(headRad)).toFloat(),
-                    center.y + (cyanR * sin(headRad)).toFloat(),
-                )
-                drawCircle(color = CyberCyan.copy(alpha = 0.45f), radius = 6.dp.toPx(), center = head)
-                drawCircle(color = Color.White, radius = 2.6.dp.toPx(), center = head)
+            // Single refined sweeping champagne-gold tracer arc
+            if (activeTracer) {
+                val arcR = maxR * 0.88f
+                rotate(degrees = innerAngle, pivot = center) {
+                    val tl = Offset(center.x - arcR, center.y - arcR)
+                    val sz = Size(arcR * 2f, arcR * 2f)
+                    drawArc(
+                        brush = Brush.sweepGradient(
+                            0.0f to Color.Transparent,
+                            0.18f to StageGold.copy(alpha = 0.25f),
+                            0.34f to StageGoldBright.copy(alpha = 0.90f),
+                            0.37f to Color.Transparent,
+                            1.0f to Color.Transparent,
+                            center = center,
+                        ),
+                        startAngle = 0f,
+                        sweepAngle = 135f,
+                        useCenter = false,
+                        topLeft = tl,
+                        size = sz,
+                        style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round),
+                    )
+                }
             }
-
-            // Thin metallic gold medallion rim
-            drawCircle(
-                color = RoyalGold.copy(alpha = 0.52f),
-                radius = medallionR,
-                center = center,
-                style = Stroke(width = 1.4.dp.toPx()),
-            )
         }
 
-        // Crisp obsidian-themed DGP logo artwork
+        // Refined beveled DGP circular medallion asset
         Image(
             painter = painterResource(id = R.drawable.dgp_logo_dark),
             contentDescription = "لوگوی دیجیتال گستر پارسیان DGP",
@@ -479,7 +407,7 @@ fun DgpAnimatedCrest(
                 .clip(CircleShape),
         )
 
-        // Subtle diagonal metallic shimmer sweeping over the medallion
+        // Whisper-soft diagonal metallic sheen sweeping gently across the crest
         Canvas(
             modifier = Modifier
                 .size(logoSize)
@@ -490,12 +418,12 @@ fun DgpAnimatedCrest(
                 brush = Brush.linearGradient(
                     colors = listOf(
                         Color.Transparent,
-                        WarmGoldGlow.copy(alpha = 0.14f),
-                        Color.White.copy(alpha = 0.10f),
+                        StageGoldBright.copy(alpha = 0.09f),
+                        Color.White.copy(alpha = 0.06f),
                         Color.Transparent,
                     ),
-                    start = Offset(sweepX - 90f, 0f),
-                    end = Offset(sweepX + 90f, size.toPx()),
+                    start = Offset(sweepX - 75f, 0f),
+                    end = Offset(sweepX + 75f, size.toPx()),
                 ),
             )
         }
@@ -503,82 +431,54 @@ fun DgpAnimatedCrest(
 }
 
 /**
- * Shared dark obsidian SCADA blueprint grid + radial spotlight + floating gold/cyan particles
- * used across the Splash and Login screens.
+ * Refined architectural dark obsidian backdrop with soft warm top-center spotlight and whisper-faint
+ * precision dot-matrix texture (clean, calm, high-contrast — zero visual clutter).
  */
 @Composable
-fun ObsidianScadaBackdrop(
-    particlePhase: Float,
+fun ObsidianBrandBackdrop(
     breathGlow: Float,
-    spotlightYFraction: Float = 0.30f,
+    spotlightYFraction: Float = 0.25f,
 ) {
     Canvas(modifier = Modifier.fillMaxSize()) {
         val w = size.width
         val h = size.height
 
-        // Deep obsidian vertical background gradient
         drawRect(
             brush = Brush.verticalGradient(
-                0.0f to Color(0xFF04070E),
-                0.45f to Color(0xFF03050A),
-                1.0f to Color(0xFF060A14),
+                0.0f to Color(0xFF0A0D14),
+                0.45f to Color(0xFF06080D),
+                1.0f to Color(0xFF05070B),
             ),
         )
 
-        // Subtle precision engineering blueprint grid
-        val step = 34.dp.toPx()
-        var x = 0f
-        while (x <= w) {
-            drawLine(
-                color = Color(0xFF132038).copy(alpha = 0.28f),
-                start = Offset(x, 0f),
-                end = Offset(x, h),
-                strokeWidth = 0.7.dp.toPx(),
-            )
-            x += step
-        }
-        var y = 0f
-        while (y <= h) {
-            drawLine(
-                color = Color(0xFF132038).copy(alpha = 0.28f),
-                start = Offset(0f, y),
-                end = Offset(w, y),
-                strokeWidth = 0.7.dp.toPx(),
-            )
-            y += step
+        // Whisper-subtle architectural precision dot matrix
+        val spacing = 28.dp.toPx()
+        var y = spacing * 0.5f
+        while (y < h) {
+            var x = spacing * 0.5f
+            while (x < w) {
+                drawCircle(
+                    color = Color(0x0CFFFFFF),
+                    radius = 0.85.dp.toPx(),
+                    center = Offset(x, y),
+                )
+                x += spacing
+            }
+            y += spacing
         }
 
-        // Ambient radial golden-cyan spotlight behind the crest
+        // Subtle warm champagne-gold overhead ambient bloom
         val spotCenter = Offset(w * 0.5f, h * spotlightYFraction)
         drawCircle(
             brush = Brush.radialGradient(
-                0.0f to RoyalGold.copy(alpha = 0.13f * breathGlow),
-                0.42f to CyberCyan.copy(alpha = 0.07f * breathGlow),
+                0.0f to StageGold.copy(alpha = 0.11f * breathGlow),
+                0.48f to StageSteel.copy(alpha = 0.03f * breathGlow),
                 1.0f to Color.Transparent,
                 center = spotCenter,
-                radius = w * 0.75f,
+                radius = w * 0.82f,
             ),
-            radius = w * 0.75f,
+            radius = w * 0.82f,
             center = spotCenter,
         )
-
-        // 22 deterministic floating gold & cyan telemetry micro-particles
-        val count = 22
-        for (i in 0 until count) {
-            val seedX = ((i * 73 + 19) % 100) / 100f
-            val baseY = ((i * 41 + 7) % 100) / 100f
-            val speed = 0.55f + (i % 4) * 0.22f
-            val py = ((baseY - particlePhase * speed) % 1f + 1f) % 1f
-            val px = (seedX + sin(particlePhase * 2f * PI + i).toFloat() * 0.025f).coerceIn(0.03f, 0.97f)
-            val edgeFade = (sin(py * PI)).toFloat().coerceIn(0f, 1f)
-            val isGold = i % 2 == 0
-            val pColor = if (isGold) RoyalGold else CyberCyan
-            val r = (1.3f + (i % 3) * 0.75f).dp.toPx()
-            drawCircle(
-                color = pColor.copy(alpha = 0.42f * edgeFade),
-                radius = r,
-                center = Offset(w * px, h * py),
-            )
-        }
     }
 }

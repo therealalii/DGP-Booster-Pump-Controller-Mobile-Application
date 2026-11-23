@@ -7,6 +7,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dgp.boosterpump.ui.DgpApp
@@ -34,6 +35,24 @@ class MainActivity : ComponentActivity() {
         )
         setContent {
             val darkTheme by monitoringViewModel.darkTheme.collectAsStateWithLifecycle()
+            val splashCompleted by monitoringViewModel.splashCompleted.collectAsStateWithLifecycle()
+            val currentUser by monitoringViewModel.currentUser.collectAsStateWithLifecycle()
+            val useDarkBars = !splashCompleted || currentUser == null || darkTheme
+
+            LaunchedEffect(useDarkBars) {
+                if (useDarkBars) {
+                    enableEdgeToEdge(
+                        statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+                        navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+                    )
+                } else {
+                    enableEdgeToEdge(
+                        statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
+                        navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
+                    )
+                }
+            }
+
             DgpTheme(darkTheme = darkTheme) {
                 DgpApp(
                     monitoringViewModel = monitoringViewModel,

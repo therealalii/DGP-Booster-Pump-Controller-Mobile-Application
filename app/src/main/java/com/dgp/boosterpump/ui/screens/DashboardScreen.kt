@@ -7,6 +7,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -33,17 +35,18 @@ import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.SettingsEthernet
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.WaterDrop
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -57,6 +60,7 @@ import com.dgp.boosterpump.ui.PersianLabels
 import com.dgp.boosterpump.ui.components.AnimatedImpellerIcon
 import com.dgp.boosterpump.ui.components.BadgeTone
 import com.dgp.boosterpump.ui.components.BoosterHydraulicFlowDiagram
+import com.dgp.boosterpump.ui.components.DgpGoldButton
 import com.dgp.boosterpump.ui.components.LtrText
 import com.dgp.boosterpump.ui.components.NoticeBox
 import com.dgp.boosterpump.ui.components.PressureArcGauge
@@ -90,8 +94,8 @@ fun DashboardScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         if (conn is ConnectionState.Error) {
             item {
@@ -110,11 +114,12 @@ fun DashboardScreen(
         }
 
         item { HeroTelemetryPanel(snapshot) }
+
         item {
             val p = LocalScadaPalette.current
             ScadaPanel(
-                title = "شماتیک زنده جریان هیدرولیک بوستر",
-                subtitle = "انیمیشن لحظه‌ای مکش، پمپاژ و فشار کلکتور متناسب با تعداد پمپ‌های فعال",
+                title = "شماتیک هیدرولیک ایستگاه بوستر",
+                subtitle = "جریان زنده مکش، هسته پمپاژ و کلکتور تحت فشار",
                 icon = Icons.Outlined.Hub,
                 accentColor = if (snapshot.alarms.isNotEmpty()) p.fault else p.gold,
             ) {
@@ -126,17 +131,23 @@ fun DashboardScreen(
                 )
             }
         }
+
         item { AlarmsPanel(snapshot) }
+
         item {
+            val p = LocalScadaPalette.current
             ScadaPanel(
                 title = "روند لحظه‌ای فشار کلکتور",
-                subtitle = "نمودار تغییرات فشار در ۴۰ نمونه‌برداری اخیر",
+                subtitle = "نمودار تغییرات در ۴۰ نمونه‌برداری اخیر",
                 icon = Icons.AutoMirrored.Outlined.ShowChart,
+                accentColor = p.cyan,
             ) {
                 PressureTrendChart(samples = uiState.pressureHistory)
             }
         }
+
         item { BoosterStationPumpsPanel(snapshot.pumps, onOpenPumps) }
+
         item { ElectricalAnalyzerPanel(snapshot) }
     }
 }
@@ -145,20 +156,23 @@ fun DashboardScreen(
 private fun HeroTelemetryPanel(snapshot: ControllerSnapshot) {
     val p = LocalScadaPalette.current
     ScadaPanel(
-        title = "ایستگاه بوستر پمپ DGP BPC02",
-        subtitle = "فشار کلکتور (ورد ۲) • سطح مخزن (کویل ۳۲–۳۳) • درایو (ورد ۱۰)",
+        title = "وضعیت اصلی بوستر پمپ",
+        subtitle = "فشار کلکتور (ورد ۲) • سطح مخزن (کویل ۳۲–۳۳)",
         icon = Icons.Outlined.Speed,
+        accentColor = p.gold,
         trailing = {
             val (label, tone) = when (snapshot.driveFailed) {
                 true -> "خطای درایو" to BadgeTone.FAULT
                 false -> "درایو سالم" to BadgeTone.OK
                 null -> "درایو —" to BadgeTone.NEUTRAL
             }
-            StatusBadge(label, tone)
+            StatusBadge(label, tone, pulsing = snapshot.driveFailed == true)
         },
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 2.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -172,52 +186,66 @@ private fun HeroTelemetryPanel(snapshot: ControllerSnapshot) {
             )
         }
 
-        // Compact 3-tile KPI strip: Drive Frequency (raw), Mains Frequency, Active LCD Page
+        // Unified architectural 3-column KPI rail with crisp vertical hairline separators
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(p.panelElevated)
+                .border(0.8.dp, p.panelBorder, RoundedCornerShape(14.dp))
+                .padding(vertical = 11.dp, horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            KpiMetricBox(
-                title = "فرکانس درایو (خام)",
+            KpiRailCell(
+                title = "فرکانس درایو",
                 value = snapshot.driveFrequencyRaw?.toString() ?: "—",
-                caption = "محدوده ۰–۱۶۰۰ • مقیاس مبهم",
+                caption = "خام ۰–۱۶۰۰",
                 accent = p.warning,
                 modifier = Modifier.weight(1f),
             )
-            KpiMetricBox(
+            Box(
+                modifier = Modifier
+                    .width(0.8.dp)
+                    .height(40.dp)
+                    .background(p.hairline),
+            )
+            KpiRailCell(
                 title = "فرکانس شبکه",
                 value = snapshot.mainsFrequencyHz?.let { "%.2f Hz".format(it) } ?: "—",
-                caption = "دقت ۰.۰۱ هرتز (ورد ۹)",
+                caption = "دقت ۰.۰۱ هرتز",
                 accent = p.cyan,
                 modifier = Modifier.weight(1f),
             )
-            KpiMetricBox(
-                title = "پمپ‌های فعال",
-                value = "${snapshot.runningPumpCount} از ۶",
+            Box(
+                modifier = Modifier
+                    .width(0.8.dp)
+                    .height(40.dp)
+                    .background(p.hairline),
+            )
+            KpiRailCell(
+                title = "پمپ فعال",
+                value = "${snapshot.runningPumpCount} / 6",
                 caption = "صفحه LCD: ${snapshot.displayedPage ?: "—"}",
-                accent = if (snapshot.runningPumpCount > 0) p.ok else p.standby,
-                modifier = Modifier.weight(0.9f),
+                accent = if (snapshot.runningPumpCount > 0) p.ok else p.gold,
+                modifier = Modifier.weight(0.95f),
             )
         }
     }
 }
 
 @Composable
-private fun KpiMetricBox(
+private fun KpiRailCell(
     title: String,
     value: String,
     caption: String,
-    accent: androidx.compose.ui.graphics.Color,
+    accent: Color,
     modifier: Modifier = Modifier,
 ) {
     val p = LocalScadaPalette.current
     Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(p.panelElevated)
-            .border(1.dp, p.panelBorder, RoundedCornerShape(12.dp))
-            .padding(horizontal = 10.dp, vertical = 9.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp),
+        modifier = modifier.padding(horizontal = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text(title, style = MaterialTheme.typography.labelSmall, color = p.textSecondary, maxLines = 1)
         LtrText(
@@ -225,7 +253,7 @@ private fun KpiMetricBox(
             style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.Bold),
             color = accent,
         )
-        Text(caption, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), color = p.textSecondary, maxLines = 1)
+        Text(caption, style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp), color = p.textMuted, maxLines = 1)
     }
 }
 
@@ -235,11 +263,11 @@ private fun AlarmsPanel(snapshot: ControllerSnapshot) {
     val alarms = snapshot.alarms
     val hasAlarms = alarms.isNotEmpty()
     ScadaPanel(
-        title = "وضعیت کنترلر و آلارم‌ها",
-        subtitle = "رجیستر خطای سیستم (ورد ۸۰: ${snapshot.systemErrorWord?.let { "0x%04X".format(it) } ?: "—"}) و بیت‌های خطای ۲۵–۳۱",
+        title = "وضعیت حفاظت و آلارم‌ها",
+        subtitle = "کلمه خطا (ورد ۸۰: ${snapshot.systemErrorWord?.let { "0x%04X".format(it) } ?: "—"}) و بیت‌های ۲۵–۳۱",
         icon = if (hasAlarms) Icons.Outlined.NotificationsActive else Icons.Outlined.CheckCircleOutline,
         accentColor = if (hasAlarms) p.fault else p.ok,
-        borderColor = if (hasAlarms) p.fault.copy(alpha = 0.65f) else null,
+        borderColor = if (hasAlarms) p.fault.copy(alpha = 0.55f) else null,
         trailing = {
             if (hasAlarms) {
                 StatusBadge("${alarms.size} خطای فعال", BadgeTone.FAULT, pulsing = true)
@@ -252,15 +280,16 @@ private fun AlarmsPanel(snapshot: ControllerSnapshot) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .background(p.okBg)
+                    .border(0.8.dp, p.ok.copy(alpha = 0.22f), RoundedCornerShape(12.dp))
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
             ) {
-                Icon(Icons.Outlined.CheckCircleOutline, contentDescription = null, tint = p.ok, modifier = Modifier.size(20.dp))
+                Icon(Icons.Outlined.CheckCircleOutline, contentDescription = null, tint = p.ok, modifier = Modifier.size(19.dp))
                 Text(
-                    "تمام حفاظت‌های بوستر پمپ، کنترل فاز و درایو در وضعیت عادی قرار دارند.",
+                    "تمام حفاظت‌های بوستر پمپ، کنترل فاز و درایو در وضعیت پایدار هستند.",
                     style = MaterialTheme.typography.bodySmall,
                     color = p.ok,
                 )
@@ -286,15 +315,22 @@ private fun BoosterStationPumpsPanel(pumps: List<PumpState>, onOpenPumps: () -> 
     val failed = pumps.count { it.failed == true }
     ScadaPanel(
         title = "وضعیت پمپ‌ها ($running در حال کار)",
-        subtitle = if (failed > 0) "$failed پمپ دارای خطا است • کویل‌های ۱۹–۳۱" else "پروانه متحرک هنگام کارکرد پمپ • تایمرهای کارکرد (پمپ ۱–۴)",
+        subtitle = if (failed > 0) "$failed پمپ دارای خطا است • کویل‌های ۱۹–۳۱" else "چرخش زنده پروانه و تایمر کارکرد پمپ‌های ۱–۴",
         icon = Icons.Outlined.WaterDrop,
         accentColor = if (failed > 0) p.fault else p.ok,
         trailing = {
-            OutlinedButton(
+            Surface(
                 onClick = onOpenPumps,
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                color = p.panelElevated,
+                shape = RoundedCornerShape(999.dp),
+                border = BorderStroke(0.8.dp, p.panelBorder),
             ) {
-                Text("جزئیات کامل", style = MaterialTheme.typography.labelMedium)
+                Text(
+                    "جزئیات کامل",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = p.gold,
+                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp),
+                )
             }
         },
     ) {
@@ -315,16 +351,16 @@ private fun BoosterStationPumpsPanel(pumps: List<PumpState>, onOpenPumps: () -> 
 private fun PumpHmiTile(pump: PumpState, modifier: Modifier = Modifier) {
     val p = LocalScadaPalette.current
     val borderColor = when {
-        pump.failed == true -> p.fault.copy(alpha = 0.7f)
-        pump.running == true -> p.ok.copy(alpha = 0.55f)
+        pump.failed == true -> p.fault.copy(alpha = 0.55f)
+        pump.running == true -> p.ok.copy(alpha = 0.42f)
         else -> p.panelBorder
     }
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(p.panelElevated)
-            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
-            .padding(10.dp),
+            .border(0.9.dp, borderColor, RoundedCornerShape(14.dp))
+            .padding(11.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -347,7 +383,7 @@ private fun PumpHmiTile(pump: PumpState, modifier: Modifier = Modifier) {
                     pump.hasRunTimeRegisters -> "--:--:--"
                     else -> "بدون تایمر"
                 },
-                style = MonoStyle.copy(fontSize = 11.sp),
+                style = MonoStyle.copy(fontSize = 10.5.sp),
                 color = p.textSecondary,
             )
         }
@@ -386,38 +422,32 @@ private fun EmptyConnectionState(
     val outerOrbit by infinite.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(14_000, easing = LinearEasing)),
+        animationSpec = infiniteRepeatable(tween(24_000, easing = LinearEasing)),
         label = "empty_outer",
     )
     val innerOrbit by infinite.animateFloat(
-        initialValue = 360f,
-        targetValue = 0f,
-        animationSpec = infiniteRepeatable(tween(if (conn is ConnectionState.Connecting) 2_200 else 6_500, easing = LinearEasing)),
-        label = "empty_inner",
-    )
-    val sonarPhase by infinite.animateFloat(
         initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(2_200, easing = FastOutSlowInEasing)),
-        label = "empty_sonar",
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(if (conn is ConnectionState.Connecting) 2_200 else 6_000, easing = LinearEasing)),
+        label = "empty_inner",
     )
     val breath by infinite.animateFloat(
         initialValue = 0.65f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1_800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        animationSpec = infiniteRepeatable(tween(2_200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "empty_breath",
     )
     val shimmer by infinite.animateFloat(
-        initialValue = -0.4f,
-        targetValue = 1.5f,
-        animationSpec = infiniteRepeatable(tween(3_000, easing = FastOutSlowInEasing)),
+        initialValue = -0.6f,
+        targetValue = 1.8f,
+        animationSpec = infiniteRepeatable(tween(3_800, easing = FastOutSlowInEasing)),
         label = "empty_shimmer",
     )
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(22.dp),
+            .padding(24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -427,47 +457,46 @@ private fun EmptyConnectionState(
                     .size(92.dp)
                     .clip(RoundedCornerShape(26.dp))
                     .background(p.faultBg)
-                    .border(1.5.dp, p.fault.copy(alpha = 0.65f), RoundedCornerShape(26.dp)),
+                    .border(1.dp, p.fault.copy(alpha = 0.55f), RoundedCornerShape(26.dp)),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     Icons.Outlined.ErrorOutline,
                     contentDescription = null,
                     tint = p.fault,
-                    modifier = Modifier.size(46.dp),
+                    modifier = Modifier.size(44.dp),
                 )
             }
             else -> Box(contentAlignment = Alignment.Center) {
                 DgpAnimatedCrest(
-                    size = 186.dp,
-                    logoSize = 136.dp,
+                    size = 190.dp,
+                    logoSize = 156.dp,
                     outerAngle = outerOrbit,
                     innerAngle = innerOrbit,
-                    sonarPhase = sonarPhase,
                     breathGlow = breath,
                     shimmerSweep = shimmer,
-                    showSonar = conn is ConnectionState.Connecting,
+                    activeTracer = true,
                 )
                 if (conn is ConnectionState.Connecting) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(152.dp),
-                        color = p.cyan.copy(alpha = 0.65f),
+                        modifier = Modifier.size(164.dp),
+                        color = p.gold.copy(alpha = 0.72f),
                         strokeWidth = 2.dp,
                     )
                 }
             }
         }
 
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(22.dp))
 
         when (conn) {
             is ConnectionState.Connecting -> {
                 Text("در حال برقراری ارتباط…", style = MaterialTheme.typography.headlineSmall, color = p.textPrimary)
                 Spacer(Modifier.height(6.dp))
-                LtrText(conn.target, style = MonoStyle, color = p.cyan)
+                LtrText(conn.target, style = MonoStyle, color = p.gold)
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "ایجاد نشست مدباس ایمن با کنترلر DGP BPC02 (خواندن زنده + تنظیمات تاییدشده)",
+                    "ایجاد نشست مدباس ایمن با کنترلر DGP BPC02",
                     style = MaterialTheme.typography.bodySmall,
                     color = p.textSecondary,
                     textAlign = TextAlign.Center,
@@ -476,7 +505,7 @@ private fun EmptyConnectionState(
 
             is ConnectionState.Error -> {
                 Text("خطا در برقراری ارتباط", style = MaterialTheme.typography.headlineSmall, color = p.fault)
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(10.dp))
                 NoticeBox(text = conn.message, tone = BadgeTone.FAULT)
                 if (conn.retryInSeconds != null) {
                     Spacer(Modifier.height(8.dp))
@@ -486,17 +515,21 @@ private fun EmptyConnectionState(
                         color = p.textSecondary,
                     )
                 }
-                Spacer(Modifier.height(16.dp))
-                OutlinedButton(onClick = onOpenGatewaySettings) {
-                    Icon(Icons.Outlined.SettingsEthernet, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.height(18.dp))
+                OutlinedButton(
+                    onClick = onOpenGatewaySettings,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(0.9.dp, p.gold.copy(alpha = 0.55f)),
+                ) {
+                    Icon(Icons.Outlined.SettingsEthernet, contentDescription = null, tint = p.gold, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.size(6.dp))
-                    Text("بررسی تنظیمات مبدل ES 487")
+                    Text("بررسی تنظیمات مبدل ES 487", color = p.gold)
                 }
             }
 
             else -> {
                 Text(
-                    "مانیتورینگ صنعتی بوستر پمپ DGP",
+                    "کنترل و مانیتورینگ بوستر پمپ DGP",
                     style = MaterialTheme.typography.headlineSmall,
                     color = p.textPrimary,
                     textAlign = TextAlign.Center,
@@ -504,9 +537,9 @@ private fun EmptyConnectionState(
                 Spacer(Modifier.height(8.dp))
                 val desc = when (uiState.savedConfig.mode) {
                     DataSourceMode.SIMULATION ->
-                        "حالت شبیه‌سازی انتخاب شده است. برای مشاهده گیج فشار، نمودار زنده، پمپ‌ها و آلارم‌ها بدون نیاز به سخت‌افزار دکمه «شروع اتصال» را بزنید."
+                        "حالت شبیه‌سازی انتخاب شده است. برای مشاهده گیج فشار، شماتیک هیدرولیک، پمپ‌ها و آلارم‌ها دکمه «شروع اتصال» را بزنید."
                     DataSourceMode.LIVE -> if (uiState.savedConfig.host.isBlank()) {
-                        "حالت اتصال واقعی فعال است — ابتدا آدرس IP مبدل سمین ES 487 را در بخش «اتصال و مبدل» وارد کنید."
+                        "حالت اتصال واقعی فعال است — ابتدا آدرس IP مبدل سمین ES 487 را در تب «مبدل» وارد کنید."
                     } else {
                         "آماده اتصال به مبدل سمین ES 487 در آدرس ${uiState.savedConfig.host}:${uiState.savedConfig.port} (شناسه Slave: ${uiState.savedConfig.unitId})."
                     }
@@ -517,17 +550,26 @@ private fun EmptyConnectionState(
                     color = p.textSecondary,
                     textAlign = TextAlign.Center,
                 )
-                Spacer(Modifier.height(22.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(onClick = onConnect) {
-                        Icon(Icons.Outlined.Cable, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.height(24.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    DgpGoldButton(
+                        text = "شروع اتصال",
+                        icon = Icons.Outlined.Cable,
+                        onClick = onConnect,
+                        height = 46.dp,
+                    )
+                    OutlinedButton(
+                        onClick = onOpenGatewaySettings,
+                        shape = RoundedCornerShape(13.dp),
+                        border = BorderStroke(0.9.dp, p.panelHighlight),
+                        modifier = Modifier.height(46.dp),
+                    ) {
+                        Icon(Icons.Outlined.SettingsEthernet, contentDescription = null, tint = p.textPrimary, modifier = Modifier.size(17.dp))
                         Spacer(Modifier.size(6.dp))
-                        Text("شروع اتصال")
-                    }
-                    OutlinedButton(onClick = onOpenGatewaySettings) {
-                        Icon(Icons.Outlined.SettingsEthernet, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.size(6.dp))
-                        Text("تنظیمات مبدل")
+                        Text("تنظیمات مبدل", color = p.textPrimary)
                     }
                 }
             }

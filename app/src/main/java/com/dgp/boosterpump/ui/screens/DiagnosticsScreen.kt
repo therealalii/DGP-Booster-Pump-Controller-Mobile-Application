@@ -2,20 +2,22 @@ package com.dgp.boosterpump.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -25,12 +27,9 @@ import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Terminal
-import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -56,6 +55,9 @@ import com.dgp.boosterpump.modbus.TransactionRecord
 import com.dgp.boosterpump.session.ConnectionState
 import com.dgp.boosterpump.ui.PersianLabels
 import com.dgp.boosterpump.ui.components.BadgeTone
+import com.dgp.boosterpump.ui.components.DgpGoldButton
+import com.dgp.boosterpump.ui.components.DgpPillChip
+import com.dgp.boosterpump.ui.components.DgpSegmentedControl
 import com.dgp.boosterpump.ui.components.LtrText
 import com.dgp.boosterpump.ui.components.NoticeBox
 import com.dgp.boosterpump.ui.components.ScadaPanel
@@ -72,12 +74,11 @@ private enum class DiagTab(val label: String) {
 }
 
 /**
- * Persian Engineering Console with 3 views:
- *  1. Read-only Modbus probe (FC01/FC03 recommended; FC02/FC04 flagged unsupported on BPC02)
- *  2. Dark monospace TX/RX raw frame terminal log
- *  3. Searchable/filterable centralized BPC02 register map with live values
+ * Refined Persian Engineering Console with animated segmented tab control:
+ *  1. Direct read-only Modbus probe with horizontal preset pill rail
+ *  2. Color-accented dark monospace TX/RX frame inspector
+ *  3. Searchable BPC02 register directory with horizontal group filter pills
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DiagnosticsScreen(
     uiState: MonitoringUiState,
@@ -85,30 +86,23 @@ fun DiagnosticsScreen(
     onRunProbe: (ReadFunction, Int, Int) -> Unit,
     onClearLog: () -> Unit,
 ) {
-    val p = LocalScadaPalette.current
     var activeTab by remember { mutableStateOf(if (canRunProbe) DiagTab.PROBE else DiagTab.MAP) }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Sub-tab selector bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            DiagTab.entries.forEach { tab ->
-                val countSuffix = when (tab) {
-                    DiagTab.LOG -> " (${uiState.transactions.size})"
-                    DiagTab.MAP -> " (${Bpc02RegisterMap.all.size})"
-                    DiagTab.PROBE -> ""
-                }
-                FilterChip(
-                    selected = activeTab == tab,
-                    onClick = { activeTab = tab },
-                    label = { Text("${tab.label}$countSuffix", maxLines = 1) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
+        Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            DgpSegmentedControl(
+                items = DiagTab.entries,
+                selected = activeTab,
+                label = { tab ->
+                    when (tab) {
+                        DiagTab.LOG -> "${tab.label} (${uiState.transactions.size})"
+                        DiagTab.MAP -> "${tab.label} (${Bpc02RegisterMap.all.size})"
+                        DiagTab.PROBE -> tab.label
+                    }
+                },
+                onSelect = { activeTab = it },
+                height = 42.dp,
+            )
         }
 
         when (activeTab) {
@@ -119,7 +113,6 @@ fun DiagnosticsScreen(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ProbeTabContent(
     uiState: MonitoringUiState,
@@ -135,25 +128,28 @@ private fun ProbeTabContent(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
             ScadaPanel(
                 title = "تست خواندن مستقیم رجیستر (فقط خواندنی)",
-                subtitle = "ارسال یک درخواست تکی FC01 یا FC03 روی ارتباط فعال برای بررسی پاسخ خام کنترلر",
+                subtitle = "ارسال یک درخواست تکی روی ارتباط فعال برای بررسی پاسخ خام کنترلر",
                 icon = Icons.Outlined.BugReport,
-                accentColor = p.cyan,
+                accentColor = p.gold,
             ) {
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     ReadFunction.entries.forEach { fn ->
-                        FilterChip(
+                        DgpPillChip(
+                            label = PersianLabels.readFunctionShort(fn),
                             selected = fn == selectedFn,
                             onClick = { selectedFn = fn },
-                            label = { Text(PersianLabels.readFunctionShort(fn)) },
+                            accent = if (fn == ReadFunction.READ_DISCRETE_INPUTS || fn == ReadFunction.READ_INPUT_REGISTERS) p.warning else p.gold,
                         )
                     }
                 }
@@ -165,28 +161,32 @@ private fun ProbeTabContent(
                     )
                 }
 
-                Text("پیش‌تنظیم‌های سریع BPC02:", style = MaterialTheme.typography.labelMedium, color = p.textSecondary)
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    PresetChip("فشار و ولتاژ (W2..10)") {
-                        selectedFn = ReadFunction.READ_HOLDING_REGISTERS; addrText = "2"; qtyText = "9"
-                    }
-                    PresetChip("تایمر پمپ ۱–۴ (W34)") {
-                        selectedFn = ReadFunction.READ_HOLDING_REGISTERS; addrText = "34"; qtyText = "12"
-                    }
-                    PresetChip("وضعیت کل بیت‌ها (B0)") {
-                        selectedFn = ReadFunction.READ_COILS; addrText = "0"; qtyText = "34"
-                    }
-                    PresetChip("خطای سیستم (W80)") {
-                        selectedFn = ReadFunction.READ_HOLDING_REGISTERS; addrText = "80"; qtyText = "1"
-                    }
-                    PresetChip("حالت دستی (W99)") {
-                        selectedFn = ReadFunction.READ_HOLDING_REGISTERS; addrText = "99"; qtyText = "1"
-                    }
-                    PresetChip("شناسه مدباس (W4195)") {
-                        selectedFn = ReadFunction.READ_HOLDING_REGISTERS; addrText = "4195"; qtyText = "1"
+                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Text("پیش‌تنظیم‌های سریع BPC02", style = MaterialTheme.typography.labelMedium, color = p.textSecondary)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    ) {
+                        DgpPillChip("فشار و ولتاژ (W2..10)", selected = false, accent = p.cyan, onClick = {
+                            selectedFn = ReadFunction.READ_HOLDING_REGISTERS; addrText = "2"; qtyText = "9"
+                        })
+                        DgpPillChip("تایمر پمپ ۱–۴ (W34)", selected = false, accent = p.cyan, onClick = {
+                            selectedFn = ReadFunction.READ_HOLDING_REGISTERS; addrText = "34"; qtyText = "12"
+                        })
+                        DgpPillChip("کل بیت‌ها (B0..33)", selected = false, accent = p.cyan, onClick = {
+                            selectedFn = ReadFunction.READ_COILS; addrText = "0"; qtyText = "34"
+                        })
+                        DgpPillChip("خطای سیستم (W80)", selected = false, accent = p.cyan, onClick = {
+                            selectedFn = ReadFunction.READ_HOLDING_REGISTERS; addrText = "80"; qtyText = "1"
+                        })
+                        DgpPillChip("حالت دستی (W99)", selected = false, accent = p.cyan, onClick = {
+                            selectedFn = ReadFunction.READ_HOLDING_REGISTERS; addrText = "99"; qtyText = "1"
+                        })
+                        DgpPillChip("شناسه مدباس (W4195)", selected = false, accent = p.cyan, onClick = {
+                            selectedFn = ReadFunction.READ_HOLDING_REGISTERS; addrText = "4195"; qtyText = "1"
+                        })
                     }
                 }
 
@@ -196,6 +196,7 @@ private fun ProbeTabContent(
                         onValueChange = { addrText = it; inputError = null },
                         label = { Text("آدرس PDU (مبنای صفر)") },
                         singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(1f),
                     )
@@ -204,8 +205,9 @@ private fun ProbeTabContent(
                         onValueChange = { qtyText = it; inputError = null },
                         label = { Text("تعداد") },
                         singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(0.65f),
+                        modifier = Modifier.weight(0.62f),
                     )
                 }
 
@@ -220,7 +222,14 @@ private fun ProbeTabContent(
                     )
                 }
 
-                Button(
+                DgpGoldButton(
+                    text = when {
+                        !canRunProbe -> "مخصوص ادمین، نصاب و سرویس‌کار"
+                        isConnected -> "ارسال درخواست خواندن"
+                        else -> "ابتدا به مبدل یا شبیه‌ساز متصل شوید"
+                    },
+                    icon = Icons.AutoMirrored.Outlined.Send,
+                    enabled = isConnected && canRunProbe,
                     onClick = {
                         val addr = addrText.trim().toIntOrNull()
                         val qty = qtyText.trim().toIntOrNull()
@@ -235,22 +244,11 @@ private fun ProbeTabContent(
                             }
                         }
                     },
-                    enabled = isConnected && canRunProbe,
                     modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = null, modifier = Modifier.size(17.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        when {
-                            !canRunProbe -> "تست مستقیم مخصوص ادمین، نصاب و سرویس‌کار"
-                            isConnected -> "ارسال درخواست خواندن"
-                            else -> "ابتدا به مبدل یا شبیه‌ساز متصل شوید"
-                        },
-                    )
-                }
+                )
 
                 uiState.probeResult?.let { res ->
-                    HorizontalDivider(color = p.panelBorder)
+                    HorizontalDivider(color = p.hairline)
                     if (res.error != null) {
                         NoticeBox(
                             text = "خطا در FC%02X آدرس %d (تعداد %d): %s".format(res.function.code, res.pduAddress, res.quantity, res.error),
@@ -260,10 +258,10 @@ private fun ProbeTabContent(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
+                                .clip(RoundedCornerShape(12.dp))
                                 .background(p.terminalBg)
-                                .border(1.dp, p.ok.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
-                                .padding(10.dp),
+                                .border(0.9.dp, p.ok.copy(alpha = 0.42f), RoundedCornerShape(12.dp))
+                                .padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             Text(
@@ -288,16 +286,6 @@ private fun ProbeTabContent(
 }
 
 @Composable
-private fun PresetChip(label: String, onClick: () -> Unit) {
-    OutlinedButton(
-        onClick = onClick,
-        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-    ) {
-        Text(label, style = MaterialTheme.typography.labelSmall)
-    }
-}
-
-@Composable
 private fun TransactionLogTabContent(
     uiState: MonitoringUiState,
     onClearLog: () -> Unit,
@@ -305,13 +293,13 @@ private fun TransactionLogTabContent(
     val p = LocalScadaPalette.current
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
         item {
             ScadaPanel(
-                title = "ترمینال لاگ فریم‌های مدباس (${uiState.transactions.size})",
-                subtitle = "نمایش فریم خام ارسالی و دریافتی (جدیدترین در بالا)",
+                title = "ترمینال فریم‌های مدباس (${uiState.transactions.size})",
+                subtitle = "مشاهده زنده فریم‌های خام TX و RX (جدیدترین در بالا)",
                 icon = Icons.Outlined.Terminal,
                 accentColor = p.cyan,
                 trailing = {
@@ -342,62 +330,71 @@ private fun TransactionLogTabContent(
 private fun TerminalTxCard(tx: TransactionRecord) {
     val p = LocalScadaPalette.current
     val ok = tx.error == null
-    Column(
+    val gutterColor = when {
+        !ok -> p.fault
+        tx.isWrite -> p.gold
+        else -> p.cyan
+    }
+
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(13.dp))
             .background(p.terminalBg)
-            .border(
-                1.dp,
-                when {
-                    !ok -> p.fault.copy(alpha = 0.6f)
-                    tx.isWrite -> p.warning.copy(alpha = 0.55f)
-                    else -> p.panelBorder
-                },
-                RoundedCornerShape(12.dp),
-            )
-            .padding(11.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .border(0.8.dp, if (ok) p.panelBorder else p.fault.copy(alpha = 0.5f), RoundedCornerShape(13.dp)),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+        // Color-coded protocol edge gutter (gold = write, cyan = read, crimson = error)
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height(74.dp)
+                .background(gutterColor),
+        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            LtrText(
-                text = if (tx.isWrite) {
-                    "${formatTime(tx.timestampMillis)}  •  ID ${tx.unitId}  •  FC%02X @ %d".format(
-                        tx.functionCode,
-                        tx.pduAddress,
-                    )
-                } else {
-                    "${formatTime(tx.timestampMillis)}  •  ID ${tx.unitId}  •  FC%02X @ %d (×%d)".format(
-                        tx.functionCode,
-                        tx.pduAddress,
-                        tx.quantity,
-                    )
-                },
-                style = MonoStyle.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
-                color = p.textPrimary,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (tx.isWrite) {
-                    StatusBadge("نوشتن", BadgeTone.WARNING)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LtrText(
+                    text = if (tx.isWrite) {
+                        "${formatTime(tx.timestampMillis)}  •  ID ${tx.unitId}  •  FC%02X @ %d".format(
+                            tx.functionCode,
+                            tx.pduAddress,
+                        )
+                    } else {
+                        "${formatTime(tx.timestampMillis)}  •  ID ${tx.unitId}  •  FC%02X @ %d (×%d)".format(
+                            tx.functionCode,
+                            tx.pduAddress,
+                            tx.quantity,
+                        )
+                    },
+                    style = MonoStyle.copy(fontSize = 10.5.sp, fontWeight = FontWeight.Bold),
+                    color = p.textPrimary,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (tx.isWrite) {
+                        StatusBadge("نوشتن", BadgeTone.GOLD)
+                    }
+                    StatusBadge(if (ok) "${tx.durationMs} ms" else "خطا", if (ok) BadgeTone.OK else BadgeTone.FAULT)
                 }
-                StatusBadge(if (ok) "${tx.durationMs} ms" else "خطا", if (ok) BadgeTone.OK else BadgeTone.FAULT)
             }
-        }
-        LtrText("TX: ${tx.requestHex}", style = MonoStyle, color = if (tx.isWrite) p.warning else p.cyan)
-        tx.responseHex?.let { rx ->
-            LtrText("RX: $rx", style = MonoStyle, color = p.ok)
-        }
-        tx.error?.let { err ->
-            Text(err, style = MaterialTheme.typography.bodySmall, color = p.fault)
+            LtrText("TX: ${tx.requestHex}", style = MonoStyle.copy(fontSize = 11.sp), color = if (tx.isWrite) p.gold else p.cyan)
+            tx.responseHex?.let { rx ->
+                LtrText("RX: $rx", style = MonoStyle.copy(fontSize = 11.sp), color = p.ok)
+            }
+            tx.error?.let { err ->
+                Text(err, style = MaterialTheme.typography.bodySmall, color = p.fault)
+            }
         }
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RegisterMapTabContent(uiState: MonitoringUiState) {
     val p = LocalScadaPalette.current
@@ -425,32 +422,35 @@ private fun RegisterMapTabContent(uiState: MonitoringUiState) {
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 14.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
             ScadaPanel(
-                title = "نقشه متمرکز رجیسترهای DGP BPC02",
-                subtitle = "مجموع ${Bpc02RegisterMap.all.size} رجیستر (کویل FC01/FC05 و هولدینگ FC03/FC06، آفست 0)",
+                title = "نقشه متمرکز رجیسترهای BPC02",
+                subtitle = "${Bpc02RegisterMap.all.size} رجیستر (کویل FC01/FC05 و هولدینگ FC03/FC06، آفست 0)",
                 icon = Icons.AutoMirrored.Outlined.ListAlt,
-                accentColor = p.cyan,
+                accentColor = p.gold,
             ) {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    placeholder = { Text("جستجو بر اساس نام یا شماره آدرس (مثلاً 2، 80، فشار، پمپ)…") },
+                    placeholder = { Text("جستجو بر اساس نام یا آدرس (مثلاً 2، 80، فشار، پمپ)…") },
                     leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
                     singleLine = true,
+                    shape = RoundedCornerShape(13.dp),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
-                    FilterChip(
+                    DgpPillChip(
+                        label = "همه",
                         selected = selectedGroup == null,
                         onClick = { selectedGroup = null },
-                        label = { Text("همه") },
                     )
                     val groups = listOf(
                         RegisterGroup.MEASUREMENT to "اندازه‌گیری",
@@ -459,13 +459,13 @@ private fun RegisterMapTabContent(uiState: MonitoringUiState) {
                         RegisterGroup.ALARM to "آلارم",
                         RegisterGroup.DIGITAL_IO to "دیجیتال I/O",
                         RegisterGroup.CONFIGURATION to "سخت‌افزار",
-                        RegisterGroup.MANUAL_CONTROL to "کنترل قفل‌شده",
+                        RegisterGroup.MANUAL_CONTROL to "قفل‌شده",
                     )
                     groups.forEach { (g, title) ->
-                        FilterChip(
+                        DgpPillChip(
+                            label = title,
                             selected = selectedGroup == g,
                             onClick = { selectedGroup = if (selectedGroup == g) null else g },
-                            label = { Text(title) },
                         )
                     }
                 }
@@ -488,11 +488,11 @@ private fun RegisterDirectoryCard(reading: RegisterReading) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(p.panel)
-            .border(1.dp, if (locked) p.warning.copy(alpha = 0.4f) else p.panelBorder, RoundedCornerShape(12.dp))
-            .padding(11.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .border(0.8.dp, if (locked) p.warning.copy(alpha = 0.35f) else p.panelBorder, RoundedCornerShape(14.dp))
+            .padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -520,12 +520,12 @@ private fun RegisterDirectoryCard(reading: RegisterReading) {
             LtrText(
                 text = "${PersianLabels.tableLabel(def.table)}  •  Dec ${def.documentedAddress} (0x%04X)".format(def.documentedAddress) +
                     (reading.raw?.let { "  •  raw=$it" } ?: ""),
-                style = MonoStyle.copy(fontSize = 10.5.sp),
-                color = p.textSecondary,
+                style = MonoStyle.copy(fontSize = 10.sp),
+                color = p.textMuted,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (def.isWritable) {
-                    StatusBadge("قابل ویرایش", BadgeTone.INFO)
+                    StatusBadge("قابل ویرایش", BadgeTone.GOLD)
                 }
                 if (locked) {
                     StatusBadge("قفل نوشتن", BadgeTone.WARNING)

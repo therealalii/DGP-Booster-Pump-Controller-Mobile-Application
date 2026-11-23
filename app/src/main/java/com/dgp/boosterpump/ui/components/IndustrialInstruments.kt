@@ -615,7 +615,12 @@ private fun VoltageBarTile(
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalScadaPalette.current
-    val fraction = ((volts ?: 0).toFloat() / maxScale).coerceIn(0f, 1f)
+    val targetFraction = ((volts ?: 0).toFloat() / maxScale).coerceIn(0f, 1f)
+    val fraction by animateFloatAsState(
+        targetValue = targetFraction,
+        animationSpec = tween(durationMillis = 480, easing = FastOutSlowInEasing),
+        label = "volt_bar_fill",
+    )
     val nominalFraction = (nominal.toFloat() / maxScale).coerceIn(0f, 1f)
     val barColor = when {
         volts == null || volts == 0 -> palette.standby
@@ -626,11 +631,11 @@ private fun VoltageBarTile(
 
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(palette.panelElevated)
-            .border(1.dp, palette.panelBorder, RoundedCornerShape(10.dp))
-            .padding(horizontal = 9.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(5.dp),
+            .border(0.8.dp, palette.panelBorder, RoundedCornerShape(12.dp))
+            .padding(horizontal = 10.dp, vertical = 9.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             Row(
@@ -638,10 +643,10 @@ private fun VoltageBarTile(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(label, style = MonoStyle.copy(fontSize = 10.5.sp), color = palette.textSecondary)
+                Text(label, style = MonoStyle.copy(fontSize = 10.sp), color = palette.textSecondary)
                 Text(
                     volts?.let { "$it V" } ?: "—",
-                    style = MonoStyle.copy(fontSize = 13.sp, fontWeight = FontWeight.Bold),
+                    style = MonoStyle.copy(fontSize = 12.5.sp, fontWeight = FontWeight.Bold),
                     color = palette.textPrimary,
                 )
             }
@@ -649,25 +654,25 @@ private fun VoltageBarTile(
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(7.dp),
+                .height(6.dp),
         ) {
             drawRoundRect(
-                color = palette.panelBorder.copy(alpha = 0.7f),
+                color = palette.panelBorder,
                 cornerRadius = CornerRadius(4.dp.toPx()),
             )
             if (fraction > 0f) {
                 drawRoundRect(
-                    color = barColor,
+                    brush = Brush.horizontalGradient(listOf(barColor.copy(alpha = 0.72f), barColor)),
                     size = Size(size.width * fraction, size.height),
                     cornerRadius = CornerRadius(4.dp.toPx()),
                 )
             }
             val tickX = size.width * nominalFraction
             drawLine(
-                color = palette.textPrimary.copy(alpha = 0.6f),
+                color = palette.gold.copy(alpha = 0.75f),
                 start = Offset(tickX, 0f),
                 end = Offset(tickX, size.height),
-                strokeWidth = 1.5.dp.toPx(),
+                strokeWidth = 1.4.dp.toPx(),
             )
         }
     }
