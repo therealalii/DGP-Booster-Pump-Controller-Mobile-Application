@@ -40,7 +40,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.CheckCircleOutline
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.WarningAmber
@@ -404,7 +403,7 @@ fun DgpPillChip(
     }
 }
 
-/** Signature brushed champagne-gold primary CTA button with tactile press-scale feedback. */
+/** Signature brushed champagne-gold primary CTA button with rich metallic contrast and press-scale feedback. */
 @Composable
 fun DgpGoldButton(
     text: String,
@@ -423,7 +422,7 @@ fun DgpGoldButton(
         label = "gold_btn_scale",
     )
     val gradient = if (enabled) {
-        Brush.horizontalGradient(listOf(p.goldBright, p.gold, Color(0xFFC89635)))
+        Brush.horizontalGradient(listOf(Color(0xFFE4B44C), Color(0xFFCF9629), Color(0xFFB9801B)))
     } else {
         Brush.horizontalGradient(listOf(p.panelElevated, p.panelElevated))
     }
@@ -444,8 +443,8 @@ fun DgpGoldButton(
             .clip(RoundedCornerShape(13.dp))
             .background(gradient)
             .border(
-                0.8.dp,
-                if (enabled) p.goldBright.copy(alpha = 0.55f) else p.panelBorder,
+                0.9.dp,
+                if (enabled) Color(0xFFF3CF79).copy(alpha = 0.65f) else p.panelBorder,
                 RoundedCornerShape(13.dp),
             ),
     ) {
@@ -458,14 +457,108 @@ fun DgpGoldButton(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = if (enabled) Color(0xFF0E0A03) else p.textMuted,
+                    tint = if (enabled) Color(0xFF0A0702) else p.textMuted,
                     modifier = Modifier.size(18.dp),
                 )
             }
             Text(
                 text = text,
                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                color = if (enabled) Color(0xFF0E0A03) else p.textMuted,
+                color = if (enabled) Color(0xFF0A0702) else p.textMuted,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/**
+ * Tactile industrial ON/OFF power toggle button for booster pumps and variable-frequency drives.
+ * Communicates active (روشن) vs disabled/service-off (خاموش) state immediately with a glowing
+ * power-button medallion, clear label, and smooth press feedback.
+ */
+@Composable
+fun PumpPowerToggle(
+    isOn: Boolean?,
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    onLabel: String = "روشن",
+    offLabel: String = "خاموش (S)",
+) {
+    val p = LocalScadaPalette.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && enabled && isOn != null) 0.95f else 1f,
+        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        label = "pump_power_scale",
+    )
+
+    val active = isOn == true
+    val accent by animateColorAsState(
+        targetValue = when (isOn) {
+            true -> p.ok
+            false -> p.warning
+            null -> p.standby
+        },
+        animationSpec = tween(220),
+        label = "pump_power_accent",
+    )
+    val containerBg by animateColorAsState(
+        targetValue = when (isOn) {
+            true -> p.okBg
+            false -> p.warningBg
+            null -> p.panelElevated
+        },
+        animationSpec = tween(220),
+        label = "pump_power_bg",
+    )
+
+    Surface(
+        modifier = modifier
+            .scale(scale)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = enabled && isOn != null,
+                onClick = { if (isOn != null) onToggle(!isOn) },
+            ),
+        color = containerBg,
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (enabled) accent.copy(alpha = if (active) 0.62f else 0.50f) else p.panelBorder,
+        ),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(accent.copy(alpha = if (active) 0.24f else 0.16f))
+                    .border(1.dp, accent.copy(alpha = 0.68f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.PowerSettingsNew,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+            Text(
+                text = when (isOn) {
+                    true -> onLabel
+                    false -> offLabel
+                    null -> "نامشخص"
+                },
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = if (enabled || isOn != null) accent else p.textMuted,
                 maxLines = 1,
             )
         }
@@ -594,8 +687,8 @@ fun DgpBottomNavBar(
 }
 
 /**
- * Unmistakable yet refined simulation warning strip shown whenever Simulation mode is active
- * so simulated readings can never be mistaken for live controller telemetry.
+ * Unmistakable yet clean demo-mode strip shown whenever Demo / Simulation mode is active
+ * so test readings are never confused with live controller telemetry.
  */
 @Composable
 fun SimulationBanner(
@@ -625,7 +718,7 @@ fun SimulationBanner(
                     Icon(Icons.Outlined.Science, contentDescription = null, modifier = Modifier.size(16.dp))
                     Column {
                         Text(
-                            "حالت شبیه‌سازی — داده واقعی نیست",
+                            "حالت نمایشی (آزمایشی)",
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                             color = p.simBannerFg,
                         )
@@ -650,7 +743,7 @@ fun SimulationBanner(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
-                            Text("سناریو", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = p.simBannerFg)
+                            Text("تغییر حالت", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = p.simBannerFg)
                             Icon(Icons.Outlined.ArrowDropDown, contentDescription = null, modifier = Modifier.size(15.dp))
                         }
                     }
@@ -689,7 +782,7 @@ fun SimulationBanner(
     }
 }
 
-/** Compact, single-row industrial telemetry ribbon beneath the header. */
+/** Clean, single-row connection status ribbon beneath the top bar (zero developer clutter). */
 @Composable
 fun ConnectionHeaderStrip(
     state: ConnectionState,
@@ -719,41 +812,31 @@ fun ConnectionHeaderStrip(
                             is ConnectionState.Connecting -> "در حال اتصال…" to BadgeTone.WARNING
                             is ConnectionState.Connected -> {
                                 val t = if (state.partialError != null) BadgeTone.WARNING else BadgeTone.OK
-                                val l = if (state.isSimulated) "متصل (شبیه‌سازی)" else "آنلاین"
+                                val l = if (state.isSimulated) "متصل (نمایشی)" else "آنلاین"
                                 l to t
                             }
-                            is ConnectionState.Error -> "خطای لینک" to BadgeTone.FAULT
+                            is ConnectionState.Error -> "عدم اتصال" to BadgeTone.FAULT
                         }
                         StatusBadge(
                             text = label,
                             tone = tone,
                             pulsing = state is ConnectionState.Connected || state is ConnectionState.Connecting,
                         )
-                        Surface(
-                            color = p.panel,
-                            shape = RoundedCornerShape(999.dp),
-                            border = BorderStroke(0.8.dp, p.panelBorder),
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                Icon(Icons.Outlined.Lock, contentDescription = null, tint = p.gold, modifier = Modifier.size(11.dp))
-                                Text("کنترل دستی قفل", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), color = p.textSecondary)
-                            }
-                        }
                     }
                     val detail = when (state) {
-                        ConnectionState.Disconnected -> "آماده اتصال به کنترلر BPC02"
-                        is ConnectionState.Connecting -> state.target
+                        ConnectionState.Disconnected -> "آماده اتصال به کنترلر بوستر پمپ"
+                        is ConnectionState.Connecting -> if (state.isSimulated) {
+                            "در حال آماده‌سازی حالت نمایشی…"
+                        } else {
+                            "اتصال به ${state.target.substringBefore(" (")}"
+                        }
                         is ConnectionState.Connected -> {
                             val time = state.lastPollMillis?.let(::formatTime) ?: "—"
-                            "بروزرسانی: $time  •  فریم: ${state.pollCount}"
+                            "بروزرسانی: $time"
                         }
                         is ConnectionState.Error -> {
                             val retry = state.retryInSeconds?.let { " — تلاش مجدد تا $it ثانیه" }.orEmpty()
-                            "قطع ارتباط با گیت‌وی$retry"
+                            "قطع ارتباط با مبدل شبکه$retry"
                         }
                     }
                     Text(

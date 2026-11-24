@@ -231,16 +231,16 @@ fun PressureArcGauge(
                 )
             }
             Text(
-                text = if (setpointBar != null) "هدف: %.2f bar".format(setpointBar) else "bar",
+                text = if (setpointBar != null) "هدف: %.2f بار".format(setpointBar) else "بار",
                 style = MaterialTheme.typography.labelSmall,
                 color = if (setpointBar != null) palette.gold else activeColor,
                 fontWeight = FontWeight.Bold,
             )
             Spacer(Modifier.height(4.dp))
             val drText = when (drActive) {
-                true -> "DR: فعال"
-                false -> "DR: خاموش"
-                null -> "DR: —"
+                true -> "درایو: روشن"
+                false -> "درایو: خاموش"
+                null -> "درایو: —"
             }
             Text(
                 text = drText,
@@ -511,8 +511,9 @@ fun PressureTrendChart(
 }
 
 /**
- * Custom-drawn centrifugal booster-pump impeller icon that smoothly rotates while running
- * and highlights in fault crimson when failed.
+ * Custom-drawn industrial centrifugal booster-pump emblem featuring a recognizable volute casing,
+ * tangential top discharge flange, mounting pedestal, 5-blade curved turbine, and a clear state
+ * medallion distinguishing Running (emerald), Ready (cyan), Disabled/Off 'S' (amber), and Fault (crimson).
  */
 @Composable
 fun AnimatedImpellerIcon(
@@ -520,103 +521,234 @@ fun AnimatedImpellerIcon(
     failed: Boolean?,
     disabled: Boolean = false,
     ready: Boolean = false,
-    size: Dp = 36.dp,
+    size: Dp = 40.dp,
 ) {
     val palette = LocalScadaPalette.current
-    val infinite = rememberInfiniteTransition(label = "impeller")
+    val isRunning = running == true && failed != true && !disabled
+    val isFault = failed == true
+    val isDisabled = disabled && !isFault
+    val isReady = ready && !isRunning && !isDisabled && !isFault
+
+    val infinite = rememberInfiniteTransition(label = "pump_emblem")
     val angle by infinite.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(1100, easing = LinearEasing)),
-        label = "impeller_rot",
+        animationSpec = infiniteRepeatable(tween(950, easing = LinearEasing)),
+        label = "pump_rotor_rot",
     )
     val glowPulse by infinite.animateFloat(
-        initialValue = 0.14f,
-        targetValue = 0.36f,
-        animationSpec = infiniteRepeatable(tween(950, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "impeller_glow",
+        initialValue = 0.16f,
+        targetValue = 0.42f,
+        animationSpec = infiniteRepeatable(tween(1050, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "pump_glow_pulse",
     )
 
-    val ringColor = when {
-        failed == true -> palette.fault
-        disabled -> palette.warning
-        running == true -> palette.ok
-        ready -> palette.cyan.copy(alpha = 0.72f)
-        else -> palette.panelBorder
-    }
-    val bladeColor = when {
-        failed == true -> palette.fault
-        disabled -> palette.warning.copy(alpha = 0.55f)
-        running == true -> palette.cyan
-        ready -> palette.cyan.copy(alpha = 0.68f)
+    val casingColor = when {
+        isFault -> palette.fault
+        isDisabled -> palette.warning
+        isRunning -> palette.ok
+        isReady -> palette.cyan.copy(alpha = 0.80f)
         else -> palette.standby
     }
-    val rotation = if (running == true && failed != true && !disabled) angle else 0f
+    val rotorColor = when {
+        isFault -> palette.fault
+        isDisabled -> palette.warning.copy(alpha = 0.42f)
+        isRunning -> palette.cyan
+        isReady -> palette.cyan.copy(alpha = 0.72f)
+        else -> palette.standby.copy(alpha = 0.65f)
+    }
+    val rotation = if (isRunning) angle else 0f
 
     Canvas(modifier = Modifier.size(size)) {
-        val c = Offset(this.size.width / 2f, this.size.height / 2f)
-        val r = this.size.minDimension / 2f
+        val w = this.size.width
+        val h = this.size.height
+        val s = this.size.minDimension
 
-        // Animated breathing aura when running or faulted
-        if (running == true || failed == true) {
+        // Center volute slightly lower-left so discharge flange (top-right) & base foot (bottom) sit cleanly in frame
+        val voluteCenter = Offset(w * 0.47f, h * 0.54f)
+        val voluteR = s * 0.34f
+        val strokeThin = (s * 0.042f).coerceAtLeast(1.2.dp.toPx())
+        val strokeMed = (s * 0.056f).coerceAtLeast(1.6.dp.toPx())
+
+        // Ambient breathing halo for active pumping or fault
+        if (isRunning || isFault) {
             drawCircle(
                 brush = Brush.radialGradient(
-                    0f to ringColor.copy(alpha = glowPulse),
+                    0f to casingColor.copy(alpha = glowPulse),
                     1f to Color.Transparent,
-                    center = c,
-                    radius = r * 1.12f,
+                    center = voluteCenter,
+                    radius = voluteR * 1.48f,
                 ),
-                radius = r * 1.12f,
-                center = c,
+                radius = voluteR * 1.48f,
+                center = voluteCenter,
             )
         }
 
-        // Outer pump housing
-        drawCircle(
-            color = ringColor.copy(alpha = if (running == true || failed == true || disabled || ready) 0.14f else 0.10f),
-            radius = r,
-            center = c,
+        // 1. Industrial mounting base pedestal beneath volute
+        val footY = voluteCenter.y + voluteR * 0.88f
+        val footH = s * 0.12f
+        val footW = voluteR * 1.56f
+        val footLeft = voluteCenter.x - footW / 2f
+        drawRoundRect(
+            color = casingColor.copy(alpha = if (isDisabled) 0.28f else 0.40f),
+            topLeft = Offset(footLeft, footY),
+            size = Size(footW, footH),
+            cornerRadius = CornerRadius(s * 0.04f),
         )
-        drawCircle(
-            color = ringColor,
-            radius = r - 1.5.dp.toPx(),
-            center = c,
-            style = Stroke(width = 2.dp.toPx()),
+        drawRoundRect(
+            color = casingColor.copy(alpha = 0.85f),
+            topLeft = Offset(footLeft, footY),
+            size = Size(footW, footH),
+            cornerRadius = CornerRadius(s * 0.04f),
+            style = Stroke(width = strokeThin * 0.85f),
         )
 
-        // 4 curved impeller blades
-        rotate(degrees = rotation, pivot = c) {
-            for (i in 0 until 4) {
-                rotate(degrees = i * 90f, pivot = c) {
+        // 2. Tangential top-right discharge pipe & bolted flange
+        val pipeW = voluteR * 0.50f
+        val pipeLeft = voluteCenter.x + voluteR * 0.20f
+        val pipeTop = voluteCenter.y - voluteR * 1.24f
+        val pipeH = voluteR * 0.82f
+        drawRoundRect(
+            color = if (isRunning) palette.cyan.copy(alpha = 0.28f) else casingColor.copy(alpha = 0.16f),
+            topLeft = Offset(pipeLeft, pipeTop),
+            size = Size(pipeW, pipeH),
+            cornerRadius = CornerRadius(s * 0.04f),
+        )
+        drawRoundRect(
+            color = casingColor.copy(alpha = 0.90f),
+            topLeft = Offset(pipeLeft, pipeTop),
+            size = Size(pipeW, pipeH),
+            cornerRadius = CornerRadius(s * 0.04f),
+            style = Stroke(width = strokeThin),
+        )
+        // Top discharge flange lip
+        val flangeOver = s * 0.045f
+        drawLine(
+            color = if (isRunning) palette.cyan else casingColor,
+            start = Offset(pipeLeft - flangeOver, pipeTop),
+            end = Offset(pipeLeft + pipeW + flangeOver, pipeTop),
+            strokeWidth = strokeMed,
+            cap = StrokeCap.Round,
+        )
+
+        // 3. Circular volute pump body with metallic radial shading
+        drawCircle(
+            brush = Brush.radialGradient(
+                0f to palette.panel,
+                0.78f to palette.panelElevated,
+                1f to casingColor.copy(alpha = 0.24f),
+                center = voluteCenter,
+                radius = voluteR,
+            ),
+            radius = voluteR,
+            center = voluteCenter,
+        )
+        drawCircle(
+            color = casingColor,
+            radius = voluteR,
+            center = voluteCenter,
+            style = Stroke(width = strokeMed),
+        )
+
+        // 4. 5-blade swept centrifugal impeller
+        rotate(degrees = rotation, pivot = voluteCenter) {
+            for (i in 0 until 5) {
+                rotate(degrees = i * 72f, pivot = voluteCenter) {
                     val blade = Path().apply {
-                        moveTo(c.x, c.y)
+                        moveTo(voluteCenter.x, voluteCenter.y)
                         quadraticTo(
-                            c.x + r * 0.42f,
-                            c.y - r * 0.18f,
-                            c.x + r * 0.62f,
-                            c.y - r * 0.48f,
+                            voluteCenter.x + voluteR * 0.44f,
+                            voluteCenter.y - voluteR * 0.16f,
+                            voluteCenter.x + voluteR * 0.66f,
+                            voluteCenter.y - voluteR * 0.42f,
                         )
                     }
                     drawPath(
                         path = blade,
-                        color = bladeColor,
-                        style = Stroke(width = 2.4.dp.toPx(), cap = StrokeCap.Round),
+                        color = rotorColor,
+                        style = Stroke(width = strokeThin * 1.15f, cap = StrokeCap.Round),
                     )
                 }
             }
         }
-        drawCircle(color = bladeColor, radius = r * 0.18f, center = c)
+        // Central shaft hub
+        drawCircle(
+            color = if (isRunning) palette.gold else casingColor,
+            radius = voluteR * 0.20f,
+            center = voluteCenter,
+        )
+        drawCircle(
+            color = palette.panel,
+            radius = voluteR * 0.08f,
+            center = voluteCenter,
+        )
 
-        // Clean diagonal stop-bar when manually deactivated ('S' on controller LCD)
-        if (disabled && failed != true) {
-            val d = r * 0.62f
-            drawLine(
-                color = palette.warning,
-                start = Offset(c.x - d, c.y + d),
-                end = Offset(c.x + d, c.y - d),
-                strokeWidth = 2.2.dp.toPx(),
-                cap = StrokeCap.Round,
-            )
+        // 5. Clear state medallion badge (top-left) so ON / Ready / OFF(S) / Fault reads instantly
+        val badgeCenter = Offset(w * 0.20f, h * 0.20f)
+        val badgeR = s * 0.165f
+        when {
+            isFault -> {
+                drawCircle(color = palette.fault, radius = badgeR, center = badgeCenter)
+                // Crisp exclamation mark
+                drawLine(
+                    color = Color.White,
+                    start = Offset(badgeCenter.x, badgeCenter.y - badgeR * 0.46f),
+                    end = Offset(badgeCenter.x, badgeCenter.y + badgeR * 0.10f),
+                    strokeWidth = strokeThin,
+                    cap = StrokeCap.Round,
+                )
+                drawCircle(
+                    color = Color.White,
+                    radius = strokeThin * 0.55f,
+                    center = Offset(badgeCenter.x, badgeCenter.y + badgeR * 0.44f),
+                )
+            }
+            isDisabled -> {
+                // Clean diagonal stop bar across volute chamber
+                val d = voluteR * 0.62f
+                drawLine(
+                    color = palette.warning,
+                    start = Offset(voluteCenter.x - d, voluteCenter.y + d),
+                    end = Offset(voluteCenter.x + d, voluteCenter.y - d),
+                    strokeWidth = strokeMed,
+                    cap = StrokeCap.Round,
+                )
+                // Power-OFF amber medallion (universal open circle + top bar)
+                drawCircle(color = palette.panel, radius = badgeR, center = badgeCenter)
+                drawCircle(color = palette.warning, radius = badgeR, center = badgeCenter, style = Stroke(width = strokeThin))
+                val pwrR = badgeR * 0.46f
+                drawArc(
+                    color = palette.warning,
+                    startAngle = -55f,
+                    sweepAngle = 290f,
+                    useCenter = false,
+                    topLeft = Offset(badgeCenter.x - pwrR, badgeCenter.y - pwrR),
+                    size = Size(pwrR * 2f, pwrR * 2f),
+                    style = Stroke(width = strokeThin * 0.85f, cap = StrokeCap.Round),
+                )
+                drawLine(
+                    color = palette.warning,
+                    start = Offset(badgeCenter.x, badgeCenter.y - pwrR * 1.15f),
+                    end = Offset(badgeCenter.x, badgeCenter.y - pwrR * 0.10f),
+                    strokeWidth = strokeThin * 0.85f,
+                    cap = StrokeCap.Round,
+                )
+            }
+            isRunning -> {
+                drawCircle(color = palette.ok.copy(alpha = 0.28f), radius = badgeR * 1.25f, center = badgeCenter)
+                drawCircle(color = palette.ok, radius = badgeR * 0.78f, center = badgeCenter)
+                drawCircle(color = Color.White, radius = badgeR * 0.30f, center = badgeCenter)
+            }
+            isReady -> {
+                drawCircle(color = palette.panel, radius = badgeR * 0.82f, center = badgeCenter)
+                drawCircle(
+                    color = palette.cyan,
+                    radius = badgeR * 0.82f,
+                    center = badgeCenter,
+                    style = Stroke(width = strokeThin),
+                )
+                drawCircle(color = palette.cyan, radius = badgeR * 0.32f, center = badgeCenter)
+            }
         }
     }
 }
@@ -977,10 +1109,10 @@ fun BoosterHydraulicFlowDiagram(
         ) {
             Text("مخزن ورودی", style = MaterialTheme.typography.labelSmall, color = palette.textSecondary)
             val stateText = when {
-                hasFault -> "توقف حفاظتی (آلارم فعال)"
+                hasFault -> "توقف حفاظتی (خطای فعال)"
                 floaterLow == false -> "قطع جریان (کمبود آب)"
                 isFlowing -> "پمپاژ فعال ($runningPumpCount پمپ در مدار)"
-                else -> "حالت آماده‌باش (Standby)"
+                else -> "آماده‌به‌کار"
             }
             Text(
                 text = stateText,

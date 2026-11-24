@@ -1,6 +1,6 @@
 ================================================================================
   DGP BOOSTER PUMP CONTROLLER (BPC02) — APPLICATION USER ACCOUNTS
-  حساب‌های کاربری پیش‌فرض اپلیکیشن کنترلر بوستر پمپ DGP
+  حساب‌های کاربری اپلیکیشن کنترلر بوستر پمپ DGP
 ================================================================================
 
 NOTE:
@@ -9,75 +9,35 @@ NOTE:
 - Keep this file secure and share each account only with authorized personnel.
 
 --------------------------------------------------------------------------------
-1. ADMIN / مدیر کل سامانه (Full Access)
+1. FULL ACCESS — ADMINISTRATOR / مدیر سیستم (دسترسی کامل)
 --------------------------------------------------------------------------------
   Username : admin
   Password : Dgp@2026
   Role     : مدیر سیستم (ADMIN)
   Access   :
-    - Live SCADA Monitoring & Alarms
-    - Pumps, Relays & Digital I/O
-    - Hardware Configuration READ + VERIFIED WRITE (FC05 / FC06)
-    - Diagnostics (Direct Read Probe, TX/RX Terminal, Register Map)
-    - Samin ES 487 Gateway & Modbus Protocol Settings (Edit & Save)
+    - Live monitoring (pressure, setpoint, operating mode, drivers, tank, voltages)
+    - Pumps, run times, outputs & protective inputs
+    - Full controller menu & all editable settings (Control Phase, Floater,
+      Sensor, Control Pages 1–13, PID, Sleep/Wakeup, Auto Service, MFx)
+    - Converter network settings (IP, Port, Device ID, Demo mode)
+    - Technical connection diagnostics (Admin-only)
 
 --------------------------------------------------------------------------------
-2. INSTALLER / نصاب و راه‌انداز (Persian Username — Full Commissioning Access)
---------------------------------------------------------------------------------
-  Username : nasab
-  Password : Nasab@1405
-  Role     : نصاب و راه‌انداز (INSTALLER)
-  Access   :
-    - Live SCADA Monitoring & Alarms
-    - Pumps, Relays & Digital I/O
-    - Hardware Configuration READ + VERIFIED WRITE (FC05 / FC06)
-    - Diagnostics (Direct Read Probe, TX/RX Terminal, Register Map)
-    - Samin ES 487 Gateway & Modbus Protocol Settings (Edit & Save)
-
---------------------------------------------------------------------------------
-3. INSTALLER (English Alias) / نصاب فنی DGP (Full Commissioning Access)
---------------------------------------------------------------------------------
-  Username : installer
-  Password : Inst@487
-  Role     : نصاب و راه‌انداز (INSTALLER)
-  Access   : Same full commissioning & setup access as "nasab".
-
---------------------------------------------------------------------------------
-4. SERVICE TECHNICIAN / تکنسین سرویس و نگهداری (Diagnostics + Read-Only Config)
---------------------------------------------------------------------------------
-  Username : service
-  Password : Serv@2026
-  Role     : تکنسین سرویس (SERVICE)
-  Access   :
-    - Live SCADA Monitoring & Alarms
-    - Pumps, Relays & Digital I/O
-    - Hardware Configuration READ-ONLY (FC05/FC06 writes locked for safety)
-    - Diagnostics (Direct Read Probe, TX/RX Terminal, Register Map)
-    - Gateway Settings View-Only (cannot alter ES 487 IP/Port)
-
---------------------------------------------------------------------------------
-5. BUILDING / PLANT OPERATOR / اپراتور موتورخانه (Safe Monitoring Only)
+2. CLIENT ACCESS — OPERATOR / اپراتور بهره‌بردار (دسترسی کاربری)
 --------------------------------------------------------------------------------
   Username : operator
   Password : Pump@1234
-  Role     : اپراتور بهره‌بردار (OPERATOR)
+  Role     : اپراتور (OPERATOR)
   Access   :
-    - Live SCADA Monitoring, Pressure Gauge, Tank Level & Alarms
-    - Pumps, Run Times & Digital I/O Status
-    - Hardware Configuration READ-ONLY (no writes)
-    - Gateway Settings View-Only (cannot alter ES 487 IP/Port)
-    - Direct Modbus Probe restricted (Register Map & TX/RX view available)
-
---------------------------------------------------------------------------------
-6. GUEST / DEMO VIEWER / کاربر مهمان (دمو و نمایش به مشتری)
---------------------------------------------------------------------------------
-  Username : guest
-  Password : 1234
-  Role     : کاربر مهمان (GUEST)
-  Access   :
-    - Safe read-only live/simulation viewing for demonstrations
-    - Hardware Configuration READ-ONLY (no writes)
-    - Gateway Settings View-Only (Simulation mode & scenarios available)
+    - Live monitoring (pressure, setpoint, operating mode, drivers, tank, voltages)
+    - Pumps, run times & station status
+    - Daily operational controls only:
+        * Adjust target pressure (Setpoint)
+        * Enable / disable pumps for service (S)
+        * Reset active pump errors
+    - Read-only view of controller settings
+    - Restricted from advanced controller parameters, converter network
+      settings, and technical diagnostics
 
 ================================================================================
   Source Code Reference: app/src/main/java/com/dgp/boosterpump/auth/AppAuth.kt

@@ -50,6 +50,10 @@ class ControllerSessionTest {
             assertTrue(snap1.pressureBar!! in 3.5..5.0)
             assertEquals(4.50, snap1.pressureSetpointBar!!, 1e-6)
             assertEquals(1, snap1.controlStatus)
+            assertEquals(2, snap1.wiringMode)
+            assertEquals(4, snap1.configuredPumpCount)
+            assertEquals(1, snap1.variablePumpCount)
+            assertEquals(4, snap1.visiblePumps.size)
             assertTrue(snap1.alarms.isEmpty())
             assertTrue(session.transactions.value.isNotEmpty())
             assertTrue("Pressure history must record live samples", session.pressureHistory.value.isNotEmpty())
@@ -68,7 +72,7 @@ class ControllerSessionTest {
             assertEquals(null, probe.error)
             assertEquals(listOf(115), probe.values)
 
-            // On-demand hardware configuration read covers all 84 configuration registers
+            // On-demand hardware configuration read covers all configuration registers
             session.readHardwareConfiguration()
             val cfgState = withTimeout(4000) { session.configSnapshot.first { it.readings.isNotEmpty() && !it.loading } }
             assertEquals(Bpc02RegisterMap.configuration.size, cfgState.readings.size)
@@ -78,8 +82,14 @@ class ControllerSessionTest {
             val errState = withTimeout(4000) { session.connectionState.first { it is ConnectionState.Error } }
             assertTrue((errState as ConnectionState.Error).isSimulated)
 
+            // Disconnect / logout MUST wipe all session telemetry & config so zero stale data lingers
             session.disconnect()
             assertEquals(ConnectionState.Disconnected, session.connectionState.value)
+            assertEquals(null, session.snapshot.value)
+            assertEquals(null, session.activeConfig.value)
+            assertEquals(null, session.probeResult.value)
+            assertTrue(session.pressureHistory.value.isEmpty())
+            assertTrue(session.configSnapshot.value.readings.isEmpty())
         } finally {
             session.disconnect()
             scope.cancel()
@@ -120,7 +130,7 @@ class ControllerSessionTest {
             assertEquals(45, afterWordWrite.readings.first { it.definition.key == "sleep_gap" }.raw)
             assertTrue(session.transactions.value.any { it.isWrite && it.functionCode == 0x06 && it.pduAddress == 4175 })
 
-            // 2. FC05 write to Pump 1 Activation (4097 = 0 -> Disabled 'S') immediately patches live snapshot
+            // 2. FC05 write to Pump 1 Activation (4097 = 0 -> Disabled 'S') immediately patches live snapshot & running count
             val pump1 = Bpc02RegisterMap.byKey("pump_1_activation")
             session.writeHardwareParameter(pump1, 0)
             val afterCoilWrite = withTimeout(3000) {
@@ -129,6 +139,8 @@ class ControllerSessionTest {
             assertTrue(afterCoilWrite.lastWrite!!.success)
             assertEquals(0, afterCoilWrite.lastWrite!!.readBackValue)
             assertEquals(false, session.snapshot.value!!.pumps[0].enabled)
+            assertEquals(false, session.snapshot.value!!.pumps[0].running)
+            assertEquals(0, session.snapshot.value!!.runningPumpCount)
             assertTrue(session.transactions.value.any { it.isWrite && it.functionCode == 0x05 && it.pduAddress == 4097 })
 
             // 3. FC06 Reset Pump Error command (Word 99 = 25) succeeds and clears active simulated faults

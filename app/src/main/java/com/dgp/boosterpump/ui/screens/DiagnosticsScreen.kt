@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.automirrored.outlined.ListAlt
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.BugReport
@@ -31,6 +32,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -74,10 +76,8 @@ private enum class DiagTab(val label: String) {
 }
 
 /**
- * Refined Persian Engineering Console with animated segmented tab control:
- *  1. Direct read-only Modbus probe with horizontal preset pill rail
- *  2. Color-accented dark monospace TX/RX frame inspector
- *  3. Searchable BPC02 register directory with horizontal group filter pills
+ * Admin-only Engineering Console with segmented tabs for read-only Modbus probe,
+ * live TX/RX frame log, and searchable BPC02 register directory.
  */
 @Composable
 fun DiagnosticsScreen(
@@ -85,10 +85,47 @@ fun DiagnosticsScreen(
     canRunProbe: Boolean,
     onRunProbe: (ReadFunction, Int, Int) -> Unit,
     onClearLog: () -> Unit,
+    onBack: (() -> Unit)? = null,
 ) {
+    val p = LocalScadaPalette.current
     var activeTab by remember { mutableStateOf(if (canRunProbe) DiagTab.PROBE else DiagTab.MAP) }
 
     Column(modifier = Modifier.fillMaxSize()) {
+        if (onBack != null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, top = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Surface(
+                    onClick = onBack,
+                    color = p.panel,
+                    shape = RoundedCornerShape(10.dp),
+                    border = androidx.compose.foundation.BorderStroke(0.8.dp, p.panelBorder),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
+                            contentDescription = "بازگشت",
+                            tint = p.gold,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Text(
+                            text = "بازگشت به اتصال",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = p.textPrimary,
+                        )
+                    }
+                }
+                StatusBadge("ابزار فنی مدیر", BadgeTone.GOLD)
+            }
+        }
         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             DgpSegmentedControl(
                 items = DiagTab.entries,

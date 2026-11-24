@@ -119,14 +119,25 @@ class MonitoringViewModel(
     fun writeHardwareParameter(
         definition: com.dgp.boosterpump.controller.register.RegisterDefinition,
         newValue: Int,
-    ) = session.writeHardwareParameter(definition, newValue)
+    ) {
+        val role = _currentUser.value?.role ?: return
+        if (!role.canWriteRegister(definition)) return
+        session.writeHardwareParameter(definition, newValue)
+    }
 
-    fun resetPumpErrors() = session.resetPumpErrors()
+    fun resetPumpErrors() {
+        val role = _currentUser.value?.role ?: return
+        if (!role.canOperateBasicControls) return
+        session.resetPumpErrors()
+    }
 
     fun clearLastWriteNotice() = session.clearLastWriteNotice()
 
-    fun runReadProbe(function: ReadFunction, pduAddress: Int, quantity: Int) =
+    fun runReadProbe(function: ReadFunction, pduAddress: Int, quantity: Int) {
+        val role = _currentUser.value?.role ?: return
+        if (!role.canAccessDiagnostics) return
         session.runReadProbe(function, pduAddress, quantity)
+    }
 
     fun clearTransactionLog() = session.clearTransactionLog()
 

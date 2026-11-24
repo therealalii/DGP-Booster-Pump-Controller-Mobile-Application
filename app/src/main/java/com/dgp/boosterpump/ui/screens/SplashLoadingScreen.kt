@@ -141,10 +141,10 @@ fun SplashLoadingScreen(
         else -> 3
     }
     val stepLabel = when (stepIndex) {
-        0 -> "بارگذاری هسته مدباس BPC02 (FC01 / FC03 / FC05 / FC06)"
-        1 -> "آماده‌سازی ارتباط مبدل صنعتی سمین ES 487"
-        2 -> "راستی‌آزمایی لایه‌های حفاظتی و نقشه رجیسترها"
-        else -> "سامانه آماده است — انتقال به صفحه ورود"
+        0 -> "راه‌اندازی سامانه کنترل بوستر پمپ DGP"
+        1 -> "آماده‌سازی ارتباط با کنترلر و مبدل شبکه"
+        2 -> "بررسی پایش فشار، حفاظت‌ها و وضعیت پمپ‌ها"
+        else -> "آماده بهره‌برداری — انتقال به صفحه ورود"
     }
 
     Box(
@@ -183,7 +183,7 @@ fun SplashLoadingScreen(
                         .background(StageGold.copy(alpha = breath)),
                 )
                 LtrText(
-                    text = "DGP BPC02  •  INDUSTRIAL SCADA",
+                    text = "DIGITAL GOSTAR PARSIAN  •  BPC02",
                     style = MonoStyle.copy(fontSize = 10.sp, letterSpacing = 1.2.sp),
                     color = StageGold.copy(alpha = 0.92f),
                 )
@@ -226,7 +226,7 @@ fun SplashLoadingScreen(
                         textAlign = TextAlign.Center,
                     )
                     Text(
-                        text = "دیجیتال گستر پارسیان  •  مانیتورینگ و پیکربندی صنعتی",
+                        text = "دیجیتال گستر پارسیان  •  پایش و کنترل ایستگاه پمپاژ",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color(0xFF93A0B5),
                         textAlign = TextAlign.Center,
@@ -294,7 +294,7 @@ fun SplashLoadingScreen(
                 }
 
                 LtrText(
-                    text = "SAMIN ES 487 GATEWAY READY  •  v1.0",
+                    text = "DGP BOOSTER PUMP CONTROLLER  •  v2.0",
                     style = MonoStyle.copy(fontSize = 9.5.sp, letterSpacing = 1.1.sp),
                     color = Color(0xFF4F5B70),
                     modifier = Modifier.align(Alignment.CenterHorizontally),

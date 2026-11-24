@@ -104,6 +104,9 @@ object Bpc02Profile : ControllerProfile {
             pressureBar = scaled(Bpc02RegisterMap.SYSTEM_PRESSURE),
             pressureSetpointBar = scaled(Bpc02RegisterMap.SYSTEM_PRESSURE_SETPOINT),
             controlStatus = raw(Bpc02RegisterMap.CONTROL_STATUS),
+            wiringMode = raw(Bpc02RegisterMap.wiringModeDef),
+            configuredPumpCount = raw(Bpc02RegisterMap.numberOfPumpDef),
+            variablePumpCount = raw(Bpc02RegisterMap.numberOfVariablePumpDef),
             voltages = PhaseVoltages(
                 rn = raw(Bpc02RegisterMap.V_RN),
                 sn = raw(Bpc02RegisterMap.V_SN),

@@ -1,64 +1,84 @@
 package com.dgp.boosterpump.auth
 
+import com.dgp.boosterpump.controller.register.Bpc02RegisterMap
+import com.dgp.boosterpump.controller.register.RegisterDefinition
+
 /**
- * Operational access roles for the DGP Booster Pump Controller application.
+ * Two-tier access model for the DGP Booster Pump Controller application:
  *
- * - [ADMIN] & [INSTALLER] ("نصاب"): Full commissioning & verified FC05/FC06 hardware config writes + ES 487 gateway config.
- * - [SERVICE]: Diagnostics, live monitoring & read-only hardware config inspection.
- * - [OPERATOR] & [GUEST]: Safe live monitoring & read-only status inspection (no config writes or gateway changes).
+ * - [ADMIN] (Full Access): Complete access to monitoring, all controller settings, converter
+ *   connection setup, and technical diagnostics.
+ * - [OPERATOR] (Client Access): Safe daily operation (live monitoring, setpoint adjustment,
+ *   pump enable/disable for maintenance, and fault reset) without access to advanced hardware
+ *   parameters, converter network settings, or technical diagnostics.
  */
 enum class UserRole(
     val titleFa: String,
     val subtitleFa: String,
-    val canWriteConfig: Boolean,
-    val canEditGateway: Boolean,
-    val canRunDiagnostics: Boolean,
+    val canOperateBasicControls: Boolean,
+    val canEditAdvancedSettings: Boolean,
+    val canManageConnection: Boolean,
+    val canAccessDiagnostics: Boolean,
 ) {
     ADMIN(
         titleFa = "مدیر سیستم",
-        subtitleFa = "دسترسی کامل به مانیتورینگ، تنظیمات سخت‌افزار (FC05/06)، عیب‌یابی و مبدل ES 487",
-        canWriteConfig = true,
-        canEditGateway = true,
-        canRunDiagnostics = true,
-    ),
-    INSTALLER(
-        titleFa = "نصاب و راه‌انداز",
-        subtitleFa = "دسترسی کامل نصب، پیکربندی مبدل سمین ES 487 و ویرایش پارامترهای سخت‌افزاری BPC02",
-        canWriteConfig = true,
-        canEditGateway = true,
-        canRunDiagnostics = true,
-    ),
-    SERVICE(
-        titleFa = "تکنسین سرویس",
-        subtitleFa = "مانیتورینگ، ترمینال عیب‌یابی TX/RX، تست خواندن و مشاهده فقط‌خواندنی تنظیمات",
-        canWriteConfig = false,
-        canEditGateway = false,
-        canRunDiagnostics = true,
+        subtitleFa = "دسترسی کامل به مانیتورینگ، تمامی تنظیمات کنترلر، مبدل شبکه و عیب‌یابی",
+        canOperateBasicControls = true,
+        canEditAdvancedSettings = true,
+        canManageConnection = true,
+        canAccessDiagnostics = true,
     ),
     OPERATOR(
-        titleFa = "اپراتور بهره‌بردار",
-        subtitleFa = "مشاهده زنده فشار، مخزن، پمپ‌ها، آلارم‌ها و وضعیت تنظیمات (بدون امکان تغییر سخت‌افزار)",
-        canWriteConfig = false,
-        canEditGateway = false,
-        canRunDiagnostics = false,
+        titleFa = "اپراتور (کاربر)",
+        subtitleFa = "پایش وضعیت ایستگاه، تنظیم فشار، فعال/غیرفعال کردن پمپ‌ها و رفع خطا",
+        canOperateBasicControls = true,
+        canEditAdvancedSettings = false,
+        canManageConnection = false,
+        canAccessDiagnostics = false,
     ),
-    GUEST(
-        titleFa = "کاربر مهمان (دمو)",
-        subtitleFa = "دسترسی نمایشی ایمن برای بررسی مانیتورینگ و حالت شبیه‌سازی (فقط خواندنی)",
-        canWriteConfig = false,
-        canEditGateway = false,
-        canRunDiagnostics = true,
-    ),
+    ;
+
+    /** Legacy convenience alias reflecting full configuration write access. */
+    val canWriteConfig: Boolean get() = canEditAdvancedSettings
+
+    /** Legacy convenience alias reflecting converter/gateway configuration access. */
+    val canEditGateway: Boolean get() = canManageConnection
+
+    /** Legacy convenience alias reflecting technical diagnostics access. */
+    val canRunDiagnostics: Boolean get() = canAccessDiagnostics
+
+    /**
+     * Authoritative per-register write permission check enforced across both UI and ViewModel.
+     */
+    fun canWriteRegister(definition: RegisterDefinition): Boolean {
+        if (!definition.isWritable) return false
+        return when (this) {
+            ADMIN -> true
+            OPERATOR -> definition.key in OPERATOR_WRITABLE_KEYS
+        }
+    }
+
+    companion object {
+        /** Normal daily operational parameters permitted for Client Access (Operator). */
+        val OPERATOR_WRITABLE_KEYS: Set<String> = buildSet {
+            add(Bpc02RegisterMap.SYSTEM_PRESSURE_SETPOINT)
+            add(Bpc02RegisterMap.MULTI_FUNCTION_REGISTER)
+            add(Bpc02RegisterMap.DRIVE_ACTIVATION)
+            for (n in 1..Bpc02RegisterMap.STATUS_PUMP_COUNT) {
+                add(Bpc02RegisterMap.pumpActivationKey(n))
+            }
+        }
+    }
 }
 
-/** Authenticated operator session model. */
+/** Authenticated session user. */
 data class AppUser(
     val username: String,
     val displayNameFa: String,
     val role: UserRole,
 )
 
-/** Hardcoded account entry (documented in APP_USERS.txt). */
+/** Hardcoded offline account entry (documented in APP_USERS.txt). */
 internal data class AccountRecord(
     val username: String,
     val password: String,
@@ -76,38 +96,14 @@ object AuthRepository {
         AccountRecord(
             username = "admin",
             password = "Dgp@2026",
-            displayNameFa = "مدیر کل سامانه",
+            displayNameFa = "مدیر سیستم",
             role = UserRole.ADMIN,
-        ),
-        AccountRecord(
-            username = "nasab",
-            password = "Nasab@1405",
-            displayNameFa = "کارشناس نصب و راه‌اندازی",
-            role = UserRole.INSTALLER,
-        ),
-        AccountRecord(
-            username = "installer",
-            password = "Inst@487",
-            displayNameFa = "نصاب فنی DGP",
-            role = UserRole.INSTALLER,
-        ),
-        AccountRecord(
-            username = "service",
-            password = "Serv@2026",
-            displayNameFa = "تکنسین سرویس و نگهداری",
-            role = UserRole.SERVICE,
         ),
         AccountRecord(
             username = "operator",
             password = "Pump@1234",
-            displayNameFa = "اپراتور موتورخانه",
+            displayNameFa = "اپراتور بهره‌بردار",
             role = UserRole.OPERATOR,
-        ),
-        AccountRecord(
-            username = "guest",
-            password = "1234",
-            displayNameFa = "کاربر مهمان (دمو)",
-            role = UserRole.GUEST,
         ),
     )
 
@@ -128,6 +124,6 @@ object AuthRepository {
         )
     }
 
-    /** Returns count of configured built-in accounts (without exposing passwords). */
+    /** Number of built-in user accounts (Administrator & Operator). */
     val accountCount: Int get() = accounts.size
 }

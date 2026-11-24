@@ -99,11 +99,11 @@ private enum class Destination(
     val icon: ImageVector,
     val selectedIcon: ImageVector,
 ) {
-    DASHBOARD("dashboard", "مانیتورینگ", Icons.Outlined.Dashboard, Icons.Filled.Dashboard),
-    PUMPS("pumps", "پمپ و I/O", Icons.Outlined.WaterDrop, Icons.Filled.WaterDrop),
-    CONTROL("control", "کنترل", Icons.Outlined.AdminPanelSettings, Icons.Filled.AdminPanelSettings),
+    DASHBOARD("dashboard", "خانه", Icons.Outlined.Dashboard, Icons.Filled.Dashboard),
+    PUMPS("pumps", "پمپ‌ها", Icons.Outlined.WaterDrop, Icons.Filled.WaterDrop),
+    CONTROL("control", "تنظیمات", Icons.Outlined.AdminPanelSettings, Icons.Filled.AdminPanelSettings),
+    GATEWAY("gateway", "اتصال", Icons.Outlined.SettingsEthernet, Icons.Filled.SettingsEthernet),
     DIAGNOSTICS("diagnostics", "عیب‌یابی", Icons.Outlined.BugReport, Icons.Filled.BugReport),
-    GATEWAY("gateway", "مبدل", Icons.Outlined.SettingsEthernet, Icons.Filled.SettingsEthernet),
 }
 
 @Composable
@@ -184,8 +184,20 @@ private fun MainScadaShell(
         }
     }
 
-    val navEntries = remember {
-        Destination.entries.map { NavBarEntry(it.route, it.label, it.icon, it.selectedIcon) }
+    val navEntries = remember(user.role) {
+        buildList {
+            add(Destination.DASHBOARD)
+            add(Destination.PUMPS)
+            add(Destination.CONTROL)
+            if (user.role.canManageConnection) {
+                add(Destination.GATEWAY)
+            }
+        }.map { NavBarEntry(it.route, it.label, it.icon, it.selectedIcon) }
+    }
+    val activeBottomRoute = if (currentRoute == Destination.DIAGNOSTICS.route) {
+        Destination.GATEWAY.route
+    } else {
+        currentRoute
     }
 
     if (showLogoutDialog) {
@@ -219,7 +231,7 @@ private fun MainScadaShell(
                         }
                     }
                     Text(
-                        "با خروج از حساب، نشست فعال مدباس قطع شده و به صفحه ورود بازمی‌گردید.",
+                        "با خروج از حساب، اتصال فعلی قطع شده و به صفحه ورود بازمی‌گردید.",
                         style = MaterialTheme.typography.bodySmall,
                         color = p.textSecondary,
                     )
@@ -234,7 +246,7 @@ private fun MainScadaShell(
                     colors = ButtonDefaults.buttonColors(containerColor = p.fault, contentColor = Color.White),
                     shape = RoundedCornerShape(10.dp),
                 ) {
-                    Text("خروج از سامانه")
+                    Text("خروج از حساب")
                 }
             },
             dismissButton = {
@@ -266,38 +278,33 @@ private fun MainScadaShell(
                                     .size(38.dp)
                                     .clip(CircleShape),
                             )
-                            Column(modifier = Modifier.weight(1f, fill = false)) {
+                            Column(
+                                modifier = Modifier.weight(1f, fill = false),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
                                 Text(
                                     "کنترلر بوستر پمپ DGP",
                                     style = MaterialTheme.typography.titleMedium,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                val badgeAccent = if (user.role.canEditAdvancedSettings) p.gold else p.cyan
+                                val badgeBg = if (user.role.canEditAdvancedSettings) p.goldSoft else p.cyanSoft
+                                Surface(
+                                    color = badgeBg,
+                                    shape = RoundedCornerShape(999.dp),
+                                    border = BorderStroke(0.7.dp, badgeAccent.copy(alpha = 0.42f)),
                                 ) {
                                     Text(
-                                        "BPC02  •  ES 487",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = p.textSecondary,
+                                        text = user.role.titleFa,
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 9.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                        ),
+                                        color = badgeAccent,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 1.dp),
+                                        maxLines = 1,
                                     )
-                                    Surface(
-                                        color = p.goldSoft,
-                                        shape = RoundedCornerShape(999.dp),
-                                        border = BorderStroke(0.7.dp, p.gold.copy(alpha = 0.42f)),
-                                    ) {
-                                        Text(
-                                            text = user.role.titleFa,
-                                            style = MaterialTheme.typography.labelSmall.copy(
-                                                fontSize = 9.5.sp,
-                                                fontWeight = FontWeight.Bold,
-                                            ),
-                                            color = p.gold,
-                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 1.dp),
-                                            maxLines = 1,
-                                        )
-                                    }
                                 }
                             }
                         }
@@ -368,7 +375,7 @@ private fun MainScadaShell(
         bottomBar = {
             DgpBottomNavBar(
                 entries = navEntries,
-                currentRoute = currentRoute,
+                currentRoute = activeBottomRoute,
                 onSelect = ::navigateTo,
             )
         },
@@ -386,10 +393,13 @@ private fun MainScadaShell(
             composable(Destination.DASHBOARD.route) {
                 DashboardScreen(
                     uiState = uiState,
-                    canResetErrors = user.role.canWriteConfig,
+                    canResetErrors = user.role.canOperateBasicControls,
+                    canOpenGatewaySettings = user.role.canManageConnection,
                     onConnect = monitoringViewModel::connectWithSavedConfig,
                     onResetPumpErrors = monitoringViewModel::resetPumpErrors,
-                    onOpenGatewaySettings = { navigateTo(Destination.GATEWAY.route) },
+                    onOpenGatewaySettings = {
+                        if (user.role.canManageConnection) navigateTo(Destination.GATEWAY.route)
+                    },
                     onOpenPumps = { navigateTo(Destination.PUMPS.route) },
                 )
             }
@@ -399,28 +409,41 @@ private fun MainScadaShell(
             composable(Destination.CONTROL.route) {
                 ControlAndConfigScreen(
                     uiState = uiState,
-                    canWriteConfig = user.role.canWriteConfig,
+                    userRole = user.role,
                     onReadHardwareConfig = monitoringViewModel::readHardwareConfiguration,
                     onWriteParameter = monitoringViewModel::writeHardwareParameter,
                     onResetPumpErrors = monitoringViewModel::resetPumpErrors,
                     onDismissWriteNotice = monitoringViewModel::clearLastWriteNotice,
                 )
             }
-            composable(Destination.DIAGNOSTICS.route) {
-                DiagnosticsScreen(
-                    uiState = uiState,
-                    canRunProbe = user.role.canRunDiagnostics,
-                    onRunProbe = monitoringViewModel::runReadProbe,
-                    onClearLog = monitoringViewModel::clearTransactionLog,
-                )
-            }
             composable(Destination.GATEWAY.route) {
-                GatewaySettingsScreen(
-                    form = formState,
-                    viewModel = settingsViewModel,
-                    canEditGateway = user.role.canEditGateway,
-                    onSavedAndConnected = { navigateTo(Destination.DASHBOARD.route) },
-                )
+                if (user.role.canManageConnection) {
+                    GatewaySettingsScreen(
+                        form = formState,
+                        viewModel = settingsViewModel,
+                        canEditGateway = user.role.canManageConnection,
+                        canOpenDiagnostics = user.role.canAccessDiagnostics,
+                        onSavedAndConnected = { navigateTo(Destination.DASHBOARD.route) },
+                        onOpenDiagnostics = {
+                            if (user.role.canAccessDiagnostics) {
+                                navController.navigate(Destination.DIAGNOSTICS.route) {
+                                    launchSingleTop = true
+                                }
+                            }
+                        },
+                    )
+                }
+            }
+            composable(Destination.DIAGNOSTICS.route) {
+                if (user.role.canAccessDiagnostics) {
+                    DiagnosticsScreen(
+                        uiState = uiState,
+                        canRunProbe = user.role.canAccessDiagnostics,
+                        onRunProbe = monitoringViewModel::runReadProbe,
+                        onClearLog = monitoringViewModel::clearTransactionLog,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
             }
         }
     }

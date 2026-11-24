@@ -126,6 +126,8 @@ class ControllerSession(
     val probeResult: StateFlow<ProbeResult?> = _probeResult.asStateFlow()
 
     private val ioMutex = Mutex()
+    @Volatile
+    private var sessionGeneration = 0L
     private var pollJob: Job? = null
     private var transport: ModbusTransport? = null
     private var readClient: ModbusReadClient? = null
@@ -158,13 +160,8 @@ class ControllerSession(
         }
 
         disconnect()
+        val generation = ++sessionGeneration
         _activeConfig.value = config
-        _snapshot.value = null
-        _pressureHistory.value = emptyList()
-        _configSnapshot.value = ConfigSnapshotState()
-        _probeResult.value = null
-        cachedSlowBits = emptyMap()
-        cachedSlowWords = emptyMap()
 
         val profile = ControllerProfiles.forModel(config.controllerModel)
         val target = describeTarget(config)
@@ -175,7 +172,7 @@ class ControllerSession(
             var pollCount = 0
             var consecutiveLinkErrors = 0
 
-            while (isActive) {
+            while (isActive && generation == sessionGeneration) {
                 try {
                     val includeSlow = isSim || pollCount == 0 || (pollCount % LIVE_SLOW_POLL_EVERY_N == 0)
                     val blocksToRead = when {
@@ -187,6 +184,7 @@ class ControllerSession(
                     // Check/establish transport and read poll blocks atomically under ioMutex so a
                     // concurrent write cannot leave pollJob holding a stale/closed client reference.
                     val readRaw = ioMutex.withLock {
+                        if (generation != sessionGeneration) return@launch
                         val silentReopen = !isSim && pollCount > 0 && consecutiveLinkErrors == 1
                         ensureConnectedLocked(config, target, isSim, silent = silentReopen)
                         val activeReaderClient = readClient
@@ -194,6 +192,8 @@ class ControllerSession(
                         val reader = ControllerReader(activeReaderClient, config.mapping)
                         reader.readBlocks(blocksToRead, interBlockDelayMs = interBlockDelay)
                     }
+
+                    if (generation != sessionGeneration) return@launch
 
                     if (!isSim && includeSlow) {
                         val slowBitAddrs = profile.slowPollBlocks
@@ -222,6 +222,7 @@ class ControllerSession(
                     pollCount++
                     consecutiveLinkErrors = 0
 
+                    if (generation != sessionGeneration) return@launch
                     snap.pressureBar?.let { bar ->
                         _pressureHistory.update { prev ->
                             (prev + PressureSample(now, bar)).takeLast(MAX_HISTORY_POINTS)
@@ -243,10 +244,9 @@ class ControllerSession(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
+                    if (generation != sessionGeneration) return@launch
                     ioMutex.withLock { closeTransportLocked() }
                     consecutiveLinkErrors++
-                    // On a live RS485/Ethernet converter (Samin ES 487), a single transient dropped
-                    // frame or socket reset should recover quietly without flashing red for 3 seconds.
                     if (!isSim && pollCount > 0 && consecutiveLinkErrors == 1) {
                         delay(LIVE_SILENT_RECOVER_DELAY_MS)
                         continue
@@ -254,6 +254,7 @@ class ControllerSession(
                     val msg = e.message ?: e::class.java.simpleName
                     val retrySec = 3
                     for (rem in retrySec downTo 1) {
+                        if (generation != sessionGeneration) return@launch
                         _connectionState.value = ConnectionState.Error(target, isSim, msg, retryInSeconds = rem)
                         delay(1000)
                     }
@@ -262,10 +263,19 @@ class ControllerSession(
         }
     }
 
+    /** Stops polling, closes the transport, and clears all session state so no stale telemetry ever lingers. */
     fun disconnect() {
+        sessionGeneration++
         pollJob?.cancel()
         pollJob = null
         closeTransportLocked()
+        cachedSlowBits = emptyMap()
+        cachedSlowWords = emptyMap()
+        _activeConfig.value = null
+        _snapshot.value = null
+        _pressureHistory.value = emptyList()
+        _configSnapshot.value = ConfigSnapshotState()
+        _probeResult.value = null
         _connectionState.value = ConnectionState.Disconnected
     }
 
@@ -275,18 +285,22 @@ class ControllerSession(
      */
     fun readHardwareConfiguration() {
         val cfg = _activeConfig.value ?: return
+        val generation = sessionGeneration
         val profile = ControllerProfiles.forModel(cfg.controllerModel)
         val interBlockDelay = if (cfg.mode == DataSourceMode.SIMULATION) 0L else LIVE_INTER_BLOCK_DELAY_MS
 
         scope.launch(ioDispatcher) {
+            if (generation != sessionGeneration) return@launch
             _configSnapshot.update { it.copy(loading = true, errors = emptyList()) }
             try {
                 val raw = ioMutex.withLock {
+                    if (generation != sessionGeneration) return@launch
                     val activeReaderClient = readClient
                         ?: throw IllegalStateException("Not connected")
                     val reader = ControllerReader(activeReaderClient, cfg.mapping)
                     reader.readBlocks(profile.configurationBlocks, interBlockDelayMs = interBlockDelay)
                 }
+                if (generation != sessionGeneration) return@launch
                 val readings = profile.configuration.map { def ->
                     val value = when (def.table) {
                         VendorTable.BIT -> raw.bits[def.documentedAddress]?.let { if (it) 1 else 0 }
@@ -305,6 +319,7 @@ class ControllerSession(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                if (generation != sessionGeneration) return@launch
                 _configSnapshot.update {
                     it.copy(loading = false, errors = listOf(e.message ?: "Read failed"))
                 }
@@ -364,6 +379,7 @@ class ControllerSession(
         }
 
         val cfg = _activeConfig.value
+        val generation = sessionGeneration
         if (cfg == null || transport?.isOpen != true || writeClient == null || readClient == null) {
             _configSnapshot.update {
                 it.copy(
@@ -384,10 +400,12 @@ class ControllerSession(
         val isPulseCommand = definition.key == Bpc02RegisterMap.MULTI_FUNCTION_REGISTER
 
         scope.launch(ioDispatcher) {
+            if (generation != sessionGeneration) return@launch
             _configSnapshot.update { it.copy(writingKey = definition.key) }
             try {
                 val pduAddr = cfg.mapping.pduAddress(definition.documentedAddress)
                 val outcome: Pair<Int?, String?> = ioMutex.withLock {
+                    if (generation != sessionGeneration) return@launch
                     val activeWrite = writeClient
                         ?: throw IllegalStateException("Not connected")
                     val activeRead = readClient
@@ -413,6 +431,8 @@ class ControllerSession(
                         readBackWithRetry(cfg, activeRead, definition.table, pduAddr, isLive)
                     }
                 }
+
+                if (generation != sessionGeneration) return@launch
 
                 val (readBack, readBackWarn) = outcome
                 val matched = isPulseCommand || (readBack == newValue)
@@ -454,6 +474,7 @@ class ControllerSession(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                if (generation != sessionGeneration) return@launch
                 _configSnapshot.update {
                     it.copy(
                         writingKey = null,
@@ -526,8 +547,16 @@ class ControllerSession(
                 definition.key.startsWith("pump_") && definition.key.endsWith("_activation") -> {
                     val pumpNum = definition.key.removePrefix("pump_").removeSuffix("_activation").toIntOrNull()
                     if (pumpNum != null) {
+                        val isEnabled = value != 0
                         val updatedPumps = snap.pumps.map { pump ->
-                            if (pump.number == pumpNum) pump.copy(enabled = value != 0) else pump
+                            if (pump.number == pumpNum) {
+                                pump.copy(
+                                    enabled = isEnabled,
+                                    running = if (!isEnabled) false else pump.running,
+                                )
+                            } else {
+                                pump
+                            }
                         }
                         snap.copy(pumps = updatedPumps, readings = patchedReadings)
                     } else {
@@ -541,6 +570,7 @@ class ControllerSession(
 
     /** Executes a single read-only Modbus request (FC01-FC04) directly against the active link. */
     fun runReadProbe(function: ReadFunction, pduAddress: Int, quantity: Int) {
+        val generation = sessionGeneration
         if (readClient == null) {
             _probeResult.value = ProbeResult(
                 function, pduAddress, quantity, values = null,
@@ -552,6 +582,7 @@ class ControllerSession(
         scope.launch(ioDispatcher) {
             try {
                 val values = ioMutex.withLock {
+                    if (generation != sessionGeneration) return@launch
                     val activeRead = readClient ?: throw IllegalStateException("Not connected")
                     if (function.isBitAccess) {
                         activeRead.readBits(function, pduAddress, quantity).map { if (it) 1 else 0 }
@@ -559,10 +590,12 @@ class ControllerSession(
                         activeRead.readRegisters(function, pduAddress, quantity).toList()
                     }
                 }
+                if (generation != sessionGeneration) return@launch
                 _probeResult.value = ProbeResult(function, pduAddress, quantity, values, null, clock())
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                if (generation != sessionGeneration) return@launch
                 _probeResult.value = ProbeResult(
                     function, pduAddress, quantity, null,
                     e.message ?: e::class.java.simpleName, clock(),

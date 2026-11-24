@@ -28,7 +28,7 @@ class Bpc02RegisterMapAndProfileTest {
     }
 
     @Test
-    fun pollBlocksIncludePumpActivationsDriveFrequenciesErrorsSetpointAndControlMode() {
+    fun pollBlocksIncludePumpActivationsDriveFrequenciesErrorsSetpointOperatingModeAndControlMode() {
         val expected = listOf(
             ReadBlock(VendorTable.BIT, 0, 34), // 0..33 live status I/O & faults
             ReadBlock(VendorTable.BIT, 4096, 7), // 4096 Drive + 4097..4102 Pump 1..6 activation ('S')
@@ -38,6 +38,8 @@ class Bpc02RegisterMapAndProfileTest {
             ReadBlock(VendorTable.WORD, 34, 12), // 34..45 Pump 1..4 Work Time
             ReadBlock(VendorTable.WORD, 80, 2), // 80..81 System Error Word 1 & Word 2
             ReadBlock(VendorTable.WORD, 4096, 1), // System Pressure Setpoint
+            ReadBlock(VendorTable.WORD, 4133, 2), // Number Of Pump & Variable Pump (Drivers)
+            ReadBlock(VendorTable.WORD, 4170, 1), // Wiring / Operating Mode (1..3)
             ReadBlock(VendorTable.WORD, 4173, 1), // Control Status (0=Disable, 1=PID, 2=ON/OFF)
         )
         assertEquals(expected, Bpc02RegisterMap.pollBlocks)
@@ -138,11 +140,13 @@ class Bpc02RegisterMapAndProfileTest {
     }
 
     @Test
-    fun decodeMapsPumpDeactivatedStateDriveFrequenciesAndWord80Word81Errors() {
+    fun decodeMapsPumpDeactivatedStateOperatingModeDriversAndWord80Word81Errors() {
         val raw = RawReadings(
             bits = mapOf(
                 19 to true, // Pump 1 running
-                20 to false, // Pump 2 stopped
+                20 to true, // Stale/spurious Coil 20 = true while Pump 2 is disabled (S)!
+                23 to true, // Unconfigured ghost pump 5 bit = true
+                24 to true, // Unconfigured ghost pump 6 bit = true
                 25 to true, // Drive fail
                 27 to true, // Pump 2 fail
                 32 to false, // Floater L not connected
@@ -151,6 +155,7 @@ class Bpc02RegisterMapAndProfileTest {
                 4097 to true, // Pump 1 Enabled
                 4098 to false, // Pump 2 manually deactivated ('S' on LCD!)
                 4099 to true, // Pump 3 Enabled
+                4100 to true, // Pump 4 Enabled
             ),
             words = mapOf(
                 0 to 2,
@@ -167,6 +172,9 @@ class Bpc02RegisterMapAndProfileTest {
                 // Word 81: Bit 5 (EMG_STOPPED) + Bit 7 (BATTERY_VOLTAGE) + Bit 12 (undocumented)
                 81 to ((1 shl 5) or (1 shl 7) or (1 shl 12)),
                 4096 to 450, // Setpoint = 4.50 bar
+                4133 to 4, // 4 configured pumps
+                4134 to 1, // 1 connected driver (variable pump)
+                4170 to 2, // Wiring Mode 2
                 4173 to 1, // Control Status = PID
             ),
         )
@@ -176,6 +184,9 @@ class Bpc02RegisterMapAndProfileTest {
         assertEquals(4.35, snap.pressureBar!!, 1e-6)
         assertEquals(4.50, snap.pressureSetpointBar!!, 1e-6)
         assertEquals(1, snap.controlStatus)
+        assertEquals(2, snap.wiringMode)
+        assertEquals(4, snap.configuredPumpCount)
+        assertEquals(1, snap.variablePumpCount)
         assertEquals(50.02, snap.mainsFrequencyHz!!, 1e-6)
         assertEquals(38.50, snap.drive1FrequencyHz!!, 1e-6)
         assertEquals(24.00, snap.drive2FrequencyHz!!, 1e-6)
@@ -184,12 +195,18 @@ class Bpc02RegisterMapAndProfileTest {
 
         assertEquals(true, snap.driveEnabled)
         assertEquals(6, snap.pumps.size)
+        // Mode 2 with 4 configured pumps hides unconfigured ghost pumps 5-6
+        assertEquals(4, snap.visiblePumps.size)
+        // Pump 1 runs; Pump 2 is disabled ('S') so MUST NOT be counted; ghost pumps 5-6 are excluded
+        assertEquals(1, snap.runningPumpCount)
+        assertEquals(3, snap.enabledPumpCount)
+        assertEquals(1, snap.disabledPumpCount)
+
         assertEquals(true, snap.pumps[0].running)
         assertEquals(true, snap.pumps[0].enabled)
         assertEquals(RunTime(105, 42, 15), snap.pumps[0].runTime)
         assertEquals(false, snap.pumps[1].enabled) // Pump 2 deactivated ('S')
         assertEquals(true, snap.pumps[1].failed)
-        assertEquals(1, snap.disabledPumpCount)
         assertFalse(snap.pumps[4].hasRunTimeRegisters)
         assertNull(snap.pumps[4].runTime)
 

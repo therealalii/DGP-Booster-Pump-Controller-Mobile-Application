@@ -99,6 +99,9 @@ data class ControllerSnapshot(
     val pressureBar: Double?,
     val pressureSetpointBar: Double? = null,
     val controlStatus: Int? = null,
+    val wiringMode: Int? = null,
+    val configuredPumpCount: Int? = null,
+    val variablePumpCount: Int? = null,
     val voltages: PhaseVoltages,
     val mainsFrequencyHz: Double?,
     val drive1FrequencyHz: Double? = null,
@@ -138,10 +141,34 @@ data class ControllerSnapshot(
             (0 until 16).filter { (w ushr it) and 1 == 1 && (SystemErrorBit2.knownMask ushr it) and 1 == 0 }
         }.orEmpty()
 
-    val runningPumpCount: Int get() = pumps.count { it.running == true }
+    /**
+     * Pumps that belong to this station's configured architecture:
+     *  - Modes 2 & 3 physically support 1..4 pumps (Word 4133), hiding non-existent ghost pumps 5-6.
+     *  - Mode 1 supports up to 6 pumps (up to 2 variable + 4 fixed).
+     */
+    val visiblePumps: List<PumpState>
+        get() {
+            val count = when {
+                wiringMode in 2..3 && configuredPumpCount != null && configuredPumpCount in 1..4 -> configuredPumpCount
+                wiringMode == 1 && configuredPumpCount != null && configuredPumpCount in 1..4 -> {
+                    val total = (configuredPumpCount + (variablePumpCount ?: 0)).coerceIn(configuredPumpCount, pumps.size)
+                    // Never hide a pump if it is explicitly disabled (S) or faulted
+                    val highestActive = pumps.lastOrNull { it.enabled == false || it.failed == true }?.number ?: 0
+                    maxOf(total, highestActive).coerceIn(1, pumps.size)
+                }
+                else -> pumps.size
+            }
+            return pumps.take(count)
+        }
+
+    /** Count of genuinely running pumps (disabled 'S' pumps are never counted as running). */
+    val runningPumpCount: Int get() = visiblePumps.count { it.running == true && it.enabled != false }
+
+    /** Count of enabled (ready or running) pumps among configured pumps. */
+    val enabledPumpCount: Int get() = visiblePumps.count { it.enabled == true }
 
     /** Number of pumps manually deactivated ('S' on controller LCD, Coil 4097..4102 == 0). */
-    val disabledPumpCount: Int get() = pumps.count { it.enabled == false }
+    val disabledPumpCount: Int get() = visiblePumps.count { it.enabled == false }
 
     val alarms: List<Alarm>
         get() = buildList {
@@ -157,11 +184,10 @@ data class ControllerSnapshot(
             undocumentedErrorBits2.forEach {
                 add(Alarm("Undocumented error word2 bit $it", "Bit $it of Word 81 is set.", AlarmSeverity.WARNING))
             }
-            // Also surface coil-level Drive/Pump failure flags when not already reported by Word 80
             if (driveFailed == true && SystemErrorBit.DRIVE !in activeSystemErrors) {
                 add(Alarm("Drive fail", "Coil 25 reports drive failure.", AlarmSeverity.FAULT))
             }
-            pumps.filter { it.failed == true }.forEach { pump ->
+            visiblePumps.filter { it.failed == true }.forEach { pump ->
                 val wordBit = when (pump.number) {
                     1 -> SystemErrorBit.PUMP1
                     2 -> SystemErrorBit.PUMP2

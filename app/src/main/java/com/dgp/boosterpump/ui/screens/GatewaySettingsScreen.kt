@@ -1,5 +1,6 @@
 package com.dgp.boosterpump.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,53 +19,60 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
+import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.Memory
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material.icons.outlined.Save
-import androidx.compose.material.icons.outlined.SettingsEthernet
 import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.dgp.boosterpump.controller.ControllerModel
 import com.dgp.boosterpump.gateway.ConfigValidation
 import com.dgp.boosterpump.gateway.DataSourceMode
-import com.dgp.boosterpump.gateway.ProtocolMapping
-import com.dgp.boosterpump.modbus.Framing
-import com.dgp.boosterpump.modbus.ReadFunction
 import com.dgp.boosterpump.ui.PersianLabels
 import com.dgp.boosterpump.ui.components.BadgeTone
 import com.dgp.boosterpump.ui.components.DgpGoldButton
-import com.dgp.boosterpump.ui.components.DgpPillChip
 import com.dgp.boosterpump.ui.components.DgpSegmentedControl
-import com.dgp.boosterpump.ui.components.LtrText
 import com.dgp.boosterpump.ui.components.NoticeBox
 import com.dgp.boosterpump.ui.components.ScadaPanel
-import com.dgp.boosterpump.ui.components.StatusBadge
 import com.dgp.boosterpump.ui.theme.LocalScadaPalette
-import com.dgp.boosterpump.ui.theme.MonoStyle
 import com.dgp.boosterpump.viewmodel.GatewayFormState
 import com.dgp.boosterpump.viewmodel.GatewaySettingsViewModel
 
+/**
+ * Simplified, user-friendly Converter & Connection Settings screen designed for ordinary users:
+ * exposes only Connection Mode (Live / Demo), Converter IP, Port, Device Number, and a collapsed
+ * timing section while keeping verified Modbus protocol settings safely configured under the hood.
+ */
 @Composable
 fun GatewaySettingsScreen(
     form: GatewayFormState,
     viewModel: GatewaySettingsViewModel,
     canEditGateway: Boolean,
+    canOpenDiagnostics: Boolean,
     onSavedAndConnected: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
 ) {
     val p = LocalScadaPalette.current
+    var showAdvancedTiming by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -74,17 +82,18 @@ fun GatewaySettingsScreen(
         if (!canEditGateway) {
             item {
                 NoticeBox(
-                    text = "مشاهده فقط‌خواندنی: تغییر آدرس IP، پورت و پروتکل مبدل سمین ES 487 مخصوص «مدیر سیستم» و «نصاب» است.",
+                    text = "تنظیمات اتصال مبدل شبکه مخصوص «مدیر سیستم» است.",
                     tone = BadgeTone.WARNING,
                 )
             }
         }
 
+        // 1. Simple Connection Mode (Real Device vs Demo Mode)
         item {
             ScadaPanel(
-                title = "منبع داده و مدل کنترلر",
-                subtitle = "انتخاب بین اتصال واقعی به مبدل سمین ES 487 یا شبیه‌سازی کامل",
-                icon = Icons.Outlined.Memory,
+                title = "حالت اتصال",
+                subtitle = "انتخاب بین اتصال واقعی به کنترلر یا حالت نمایشی",
+                icon = Icons.Outlined.Wifi,
                 accentColor = p.gold,
             ) {
                 DgpSegmentedControl(
@@ -92,8 +101,8 @@ fun GatewaySettingsScreen(
                     selected = form.mode,
                     label = { mode ->
                         when (mode) {
-                            DataSourceMode.LIVE -> "اتصال واقعی (ES 487)"
-                            DataSourceMode.SIMULATION -> "حالت شبیه‌سازی"
+                            DataSourceMode.LIVE -> "دستگاه واقعی"
+                            DataSourceMode.SIMULATION -> "حالت نمایشی"
                         }
                     },
                     onSelect = viewModel::updateMode,
@@ -102,39 +111,23 @@ fun GatewaySettingsScreen(
 
                 if (form.mode == DataSourceMode.SIMULATION) {
                     NoticeBox(
-                        text = "در حالت شبیه‌سازی، داده‌های BPC02 درون حافظه تولید شده و از کل لایه رمزگشایی مدباس عبور می‌کنند.",
-                        tone = BadgeTone.WARNING,
+                        text = "در حالت نمایشی می‌توانید تمام امکانات برنامه را بدون نیاز به اتصال سخت‌افزاری آزمایش کنید.",
+                        tone = BadgeTone.INFO,
                     )
                 }
-
-                Text("مدل کنترلر بوستر پمپ", style = MaterialTheme.typography.labelMedium, color = p.textSecondary)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ControllerModel.entries.forEach { model ->
-                        DgpPillChip(
-                            label = PersianLabels.modelLabel(model),
-                            selected = form.controllerModel == model,
-                            onClick = { viewModel.updateModel(model) },
-                            enabled = model.isSupported && canEditGateway,
-                        )
-                    }
-                }
-                Text(
-                    PersianLabels.modelNote(form.controllerModel),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = p.textSecondary,
-                )
             }
         }
 
+        // 2. Clean Converter Network Details (IP, Port, Device ID only)
         if (form.mode == DataSourceMode.LIVE) {
             item {
                 ScadaPanel(
-                    title = "تنظیمات مبدل مدباس سمین ES 487",
-                    subtitle = "مبدل صنعتی RS485 به Modbus TCP/IP (تغذیه ۵ تا ۴۸ ولت DC)",
+                    title = "مشخصات مبدل شبکه",
+                    subtitle = "اطلاعات مورد نیاز برای ارتباط گوشی با کنترلر بوستر پمپ",
                     icon = Icons.Outlined.Router,
                     accentColor = p.cyan,
                 ) {
-                    // Clean visual architecture path pill
+                    // Clean, jargon-free connection path strip
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -146,18 +139,18 @@ fun GatewaySettingsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text("اپلیکیشن DGP", style = MaterialTheme.typography.labelSmall, color = p.gold, fontWeight = FontWeight.Bold)
-                        LtrText("TCP/IP", style = MonoStyle.copy(fontSize = 9.5.sp), color = p.cyan)
-                        Text("سمین ES 487", style = MaterialTheme.typography.labelSmall, color = p.textPrimary, fontWeight = FontWeight.Bold)
-                        LtrText("RS485 9600", style = MonoStyle.copy(fontSize = 9.5.sp), color = p.ok)
-                        Text("BPC02", style = MaterialTheme.typography.labelSmall, color = p.gold, fontWeight = FontWeight.Bold)
+                        Text("←  وای‌فای  →", style = MaterialTheme.typography.labelSmall, color = p.cyan)
+                        Text("مبدل شبکه", style = MaterialTheme.typography.labelSmall, color = p.textPrimary, fontWeight = FontWeight.Bold)
+                        Text("←  کابل  →", style = MaterialTheme.typography.labelSmall, color = p.ok)
+                        Text("کنترلر", style = MaterialTheme.typography.labelSmall, color = p.gold, fontWeight = FontWeight.Bold)
                     }
 
                     OutlinedTextField(
                         value = form.host,
                         onValueChange = viewModel::updateHost,
                         readOnly = !canEditGateway,
-                        label = { Text("آدرس IP یا نام میزبان مبدل ES 487") },
-                        placeholder = { Text("مثلاً 192.168.1.50 (از IP Finder سمین)") },
+                        label = { Text("آدرس IP مبدل") },
+                        placeholder = { Text("مثلاً 192.168.1.74") },
                         singleLine = true,
                         shape = RoundedCornerShape(12.dp),
                         isError = ConfigValidation.Field.HOST in form.errors,
@@ -172,12 +165,12 @@ fun GatewaySettingsScreen(
                             value = form.portText,
                             onValueChange = viewModel::updatePort,
                             readOnly = !canEditGateway,
-                            label = { Text("پورت TCP") },
+                            label = { Text("پورت شبکه") },
                             supportingText = {
                                 Text(
                                     form.errors[ConfigValidation.Field.PORT]?.let {
                                         PersianLabels.validationError(ConfigValidation.Field.PORT, it)
-                                    } ?: "پورت وب (معمولاً 502)",
+                                    } ?: "معمولاً 4001 یا 502",
                                 )
                             },
                             singleLine = true,
@@ -190,12 +183,12 @@ fun GatewaySettingsScreen(
                             value = form.unitIdText,
                             onValueChange = viewModel::updateUnitId,
                             readOnly = !canEditGateway,
-                            label = { Text("شناسه Slave ID") },
+                            label = { Text("شماره دستگاه") },
                             supportingText = {
                                 Text(
                                     form.errors[ConfigValidation.Field.UNIT_ID]?.let {
                                         PersianLabels.validationError(ConfigValidation.Field.UNIT_ID, it)
-                                    } ?: "منوی Network (تاییدشده: 1)",
+                                    } ?: "پیش‌فرض: 1",
                                 )
                             },
                             singleLine = true,
@@ -206,137 +199,98 @@ fun GatewaySettingsScreen(
                         )
                     }
 
-                    Text("حالت فریم‌بندی شبکه (مطابق تنظیمات وب مبدل)", style = MaterialTheme.typography.labelMedium, color = p.textSecondary)
-                    DgpSegmentedControl(
-                        items = Framing.entries,
-                        selected = form.framing,
-                        label = PersianLabels::framingLabel,
-                        onSelect = viewModel::updateFraming,
-                        enabled = canEditGateway,
-                    )
-                    Text(
-                        PersianLabels.framingDescription(form.framing),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = p.textSecondary,
-                    )
-
                     NoticeBox(
-                        text = "در صفحه تنظیمات وب مبدل سمین ES 487 مطمئن شوید: حالت کاری = Use server MODBUS TCP/IP، پورت RS485 روی 9600 8N1، و مقدار Waiting for slave reply(ms) حداقل 1000ms (برای پایداری نوشتن در EEPROM کنترلر) تنظیم شده باشد.",
+                        text = "برای اتصال، گوشی را به شبکه وای‌فای متصل به مبدل وصل کرده و آدرس IP و پورت مبدل را وارد کنید.",
                         tone = BadgeTone.INFO,
                     )
                 }
             }
         }
 
+        // 3. Collapsed Optional Timing Section (keeps screen clean for everyday users)
         item {
-            ScadaPanel(
-                title = "پروفایل پروتکل مدباس BPC02",
-                subtitle = "توابع تاییدشده روی کنترلر واقعی — قابل تغییر برای عیب‌یابی",
-                icon = Icons.Outlined.SettingsEthernet,
-                accentColor = p.ok,
-                trailing = { StatusBadge("تایید سخت‌افزاری", BadgeTone.OK) },
+            Surface(
+                onClick = { showAdvancedTiming = !showAdvancedTiming },
+                color = p.panel,
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(0.9.dp, p.panelBorder),
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                NoticeBox(
-                    text = "در تست سخت‌افزاری BPC02 تایید شد که فقط توابع FC01 (خواندن کویل)، FC03 (خواندن ورد)، FC05 (نوشتن تکی کویل) و FC06 (نوشتن تکی ورد) با آفست 0 پشتیبانی می‌شوند. مقادیر پیش‌فرض را حفظ کنید.",
-                    tone = BadgeTone.OK,
-                )
-
-                Text("تابع خواندن جدول Bit (آدرس‌های ۰–۳۳)", style = MaterialTheme.typography.labelMedium, color = p.textSecondary)
-                DgpSegmentedControl(
-                    items = listOf(ReadFunction.READ_COILS, ReadFunction.READ_DISCRETE_INPUTS),
-                    selected = form.bitReadFunction,
-                    label = PersianLabels::readFunctionShort,
-                    onSelect = viewModel::updateBitFunction,
-                    enabled = canEditGateway,
-                    height = 38.dp,
-                )
-
-                Text("تابع خواندن جدول Word (آدرس‌های ۰–۸۰)", style = MaterialTheme.typography.labelMedium, color = p.textSecondary)
-                DgpSegmentedControl(
-                    items = listOf(ReadFunction.READ_HOLDING_REGISTERS, ReadFunction.READ_INPUT_REGISTERS),
-                    selected = form.wordReadFunction,
-                    label = PersianLabels::readFunctionShort,
-                    onSelect = viewModel::updateWordFunction,
-                    enabled = canEditGateway,
-                    height = 38.dp,
-                )
-
-                Text("آفست آدرس PDU", style = MaterialTheme.typography.labelMedium, color = p.textSecondary)
-                DgpSegmentedControl(
-                    items = ProtocolMapping.ALLOWED_OFFSETS,
-                    selected = form.addressOffset,
-                    label = { offset ->
-                        when (offset) {
-                            0 -> "0 (تاییدشده)"
-                            -1 -> "-1 (مبنای ۱ به ۰)"
-                            else -> "+1"
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Icon(Icons.Outlined.Timer, contentDescription = null, tint = p.cyan, modifier = Modifier.size(19.dp))
+                            Column {
+                                Text(
+                                    "تنظیمات پیشرفته زمان‌بندی",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = p.textPrimary,
+                                )
+                                Text(
+                                    "بازه بروزرسانی اطلاعات و زمان انتظار پاسخ",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = p.textSecondary,
+                                )
+                            }
                         }
-                    },
-                    onSelect = viewModel::updateAddressOffset,
-                    enabled = canEditGateway,
-                    height = 38.dp,
-                )
-            }
-        }
-
-        item {
-            ScadaPanel(
-                title = "زمان‌بندی نمونه‌برداری و Timeout",
-                subtitle = "برای پایداری باس RS485 در نرخ ۹۶۰۰، بازه خوانش ≥ ۱۰۰۰ میلی‌ثانیه توصیه می‌شود",
-                icon = Icons.Outlined.Timer,
-                accentColor = p.cyan,
-            ) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
-                        value = form.pollIntervalText,
-                        onValueChange = viewModel::updatePollInterval,
-                        readOnly = !canEditGateway,
-                        label = { Text("بازه خوانش (ms)") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        isError = ConfigValidation.Field.POLL_INTERVAL in form.errors,
-                        supportingText = form.errors[ConfigValidation.Field.POLL_INTERVAL]?.let { e ->
-                            { Text(PersianLabels.validationError(ConfigValidation.Field.POLL_INTERVAL, e)) }
-                        },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (form.mode == DataSourceMode.LIVE) {
-                        OutlinedTextField(
-                            value = form.responseTimeoutText,
-                            onValueChange = viewModel::updateResponseTimeout,
-                            readOnly = !canEditGateway,
-                            label = { Text("مهلت پاسخ (ms)") },
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
-                            isError = ConfigValidation.Field.RESPONSE_TIMEOUT in form.errors,
-                            supportingText = form.errors[ConfigValidation.Field.RESPONSE_TIMEOUT]?.let { e ->
-                                { Text(PersianLabels.validationError(ConfigValidation.Field.RESPONSE_TIMEOUT, e)) }
-                            },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.weight(1f),
+                        Icon(
+                            imageVector = if (showAdvancedTiming) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                            contentDescription = null,
+                            tint = p.gold,
                         )
                     }
-                }
-                if (form.mode == DataSourceMode.LIVE) {
-                    OutlinedTextField(
-                        value = form.connectTimeoutText,
-                        onValueChange = viewModel::updateConnectTimeout,
-                        readOnly = !canEditGateway,
-                        label = { Text("مهلت اتصال سوکت TCP (میلی‌ثانیه)") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        isError = ConfigValidation.Field.CONNECT_TIMEOUT in form.errors,
-                        supportingText = form.errors[ConfigValidation.Field.CONNECT_TIMEOUT]?.let { e ->
-                            { Text(PersianLabels.validationError(ConfigValidation.Field.CONNECT_TIMEOUT, e)) }
-                        },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+
+                    AnimatedVisibility(visible = showAdvancedTiming) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                OutlinedTextField(
+                                    value = form.pollIntervalText,
+                                    onValueChange = viewModel::updatePollInterval,
+                                    readOnly = !canEditGateway,
+                                    label = { Text("بازه بروزرسانی (ms)") },
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp),
+                                    isError = ConfigValidation.Field.POLL_INTERVAL in form.errors,
+                                    supportingText = form.errors[ConfigValidation.Field.POLL_INTERVAL]?.let { e ->
+                                        { Text(PersianLabels.validationError(ConfigValidation.Field.POLL_INTERVAL, e)) }
+                                    },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    modifier = Modifier.weight(1f),
+                                )
+                                if (form.mode == DataSourceMode.LIVE) {
+                                    OutlinedTextField(
+                                        value = form.responseTimeoutText,
+                                        onValueChange = viewModel::updateResponseTimeout,
+                                        readOnly = !canEditGateway,
+                                        label = { Text("مهلت پاسخ (ms)") },
+                                        singleLine = true,
+                                        shape = RoundedCornerShape(12.dp),
+                                        isError = ConfigValidation.Field.RESPONSE_TIMEOUT in form.errors,
+                                        supportingText = form.errors[ConfigValidation.Field.RESPONSE_TIMEOUT]?.let { e ->
+                                            { Text(PersianLabels.validationError(ConfigValidation.Field.RESPONSE_TIMEOUT, e)) }
+                                        },
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
 
+        // 4. Save / Save & Connect Actions
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 form.statusMessage?.let { msg ->
@@ -368,6 +322,52 @@ fun GatewaySettingsScreen(
                         Icon(Icons.Outlined.Save, contentDescription = null, modifier = Modifier.size(17.dp))
                         Spacer(Modifier.width(5.dp))
                         Text("ذخیره")
+                    }
+                }
+            }
+        }
+
+        // 5. Admin-Only Technical Diagnostics Entry (kept cleanly out of everyday bottom nav)
+        if (canOpenDiagnostics) {
+            item {
+                Surface(
+                    onClick = onOpenDiagnostics,
+                    color = p.panel,
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(0.8.dp, p.panelBorder),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 13.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Icon(Icons.Outlined.Build, contentDescription = null, tint = p.gold, modifier = Modifier.size(18.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                                Text(
+                                    "ابزار عیب‌یابی فنی ارتباط",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = p.textPrimary,
+                                )
+                                Text(
+                                    "مخصوص مدیر سیستم و پشتیبان فنی",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = p.textSecondary,
+                                )
+                            }
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+                            contentDescription = null,
+                            tint = p.textSecondary,
+                        )
                     }
                 }
             }

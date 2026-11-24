@@ -177,6 +177,42 @@ object Bpc02RegisterMap {
         extra = "0: Disable (stops booster station), 1: PID, 2: ON/OFF.",
     )
 
+    val numberOfPumpDef: RegisterDefinition = cfgWord(
+        key = "number_of_pump",
+        label = "Number Of Pump",
+        address = 4133,
+        row = 54,
+        scale = 1.0,
+        minValue = 1,
+        maxValue = 4,
+        access = AccessPolicy.READ,
+        rangeNote = "Range 1–4.",
+    )
+
+    val numberOfVariablePumpDef: RegisterDefinition = cfgWord(
+        key = "number_of_variable_pump",
+        label = "Number Of Variable Pump",
+        address = 4134,
+        row = 55,
+        scale = 1.0,
+        minValue = 0,
+        maxValue = 2,
+        access = AccessPolicy.READ,
+        rangeNote = "Range 0–2.",
+    )
+
+    val wiringModeDef: RegisterDefinition = cfgWord(
+        key = "wiring_mode",
+        label = "Wiring Mode",
+        address = 4170,
+        row = 72,
+        scale = 1.0,
+        minValue = 1,
+        maxValue = 3,
+        access = AccessPolicy.READ,
+        rangeNote = "Wiring Mode 1–3.",
+    )
+
     // ------------------------------------------------------------------ polled bit table (FC01: 0..33 & 4096..4102)
 
     private val bitStatus: List<RegisterDefinition> = buildList {
@@ -263,8 +299,11 @@ object Bpc02RegisterMap {
                 notes = "Bits 0–7: Mode3 Main Pump (0), Mode3 Drive (1), Full Load (2), Reserve (3), System Stopped (4), EMG Stopped (5), Reserve (6), Battery Voltage (7).",
             ),
         )
-        // Live polled setpoint and control mode so Dashboard displays real target pressure & mode
+        // Live polled setpoint, operating mode, configured pump/driver counts, and control status
         add(pressureSetpointDef)
+        add(numberOfPumpDef)
+        add(numberOfVariablePumpDef)
+        add(wiringModeDef)
         add(controlStatusDef)
     }
 
@@ -320,8 +359,8 @@ object Bpc02RegisterMap {
         // ---- Words 4131..4138 (Floater/Sensor/Pumps R; Jockey & PID RW) ----
         add(cfgEnum("floater_type", "Floater Type", 4131, FLOATER_TYPE, row = 51, access = AccessPolicy.READ))
         add(cfgEnum("pressure_sensor_output_type", "Pressure Sensor Output Type", 4132, SENSOR_OUTPUT_TYPE, row = 53, access = AccessPolicy.READ))
-        add(cfgWord("number_of_pump", "Number Of Pump", 4133, row = 54, scale = 1.0, minValue = 1, maxValue = 4, access = AccessPolicy.READ, rangeNote = "Range 1–4."))
-        add(cfgWord("number_of_variable_pump", "Number Of Variable Pump", 4134, row = 55, scale = 1.0, minValue = 0, maxValue = 2, access = AccessPolicy.READ, rangeNote = "Range 0–2."))
+        add(numberOfPumpDef)
+        add(numberOfVariablePumpDef)
         add(cfgEnum("jockey_type", "Jockey Type", 4135, JOCKEY_TYPE, row = 56, access = AccessPolicy.READ_WRITE_VERIFIED))
         add(cfgWord("pid_p_value", "P Value", 4136, row = 57, scale = 1.0, minValue = 0, maxValue = 999, rangeNote = "PID Proportional gain (0–999)."))
         add(cfgWord("pid_i_value", "I Value", 4137, row = 58, scale = 1.0, minValue = 0, maxValue = 999, rangeNote = "PID Integral gain (0–999)."))
@@ -348,7 +387,7 @@ object Bpc02RegisterMap {
         add(cfgWord("constant_pump_percent", "Constant Pump Percent", 4166, row = 71, unit = "%", scale = 1.0, minValue = 0, maxValue = 100, rangeNote = "Range 0–100 %."))
 
         // ---- Word 4170 (Wiring Mode R), Word 4173 (Control Status RW), Word 4175 (Sleep Gap RW) ----
-        add(cfgWord("wiring_mode", "Wiring Mode", 4170, row = 72, scale = 1.0, minValue = 1, maxValue = 3, access = AccessPolicy.READ, rangeNote = "Wiring Mode 1–3."))
+        add(wiringModeDef)
         add(controlStatusDef)
         add(
             cfgWord(
@@ -506,6 +545,8 @@ object Bpc02RegisterMap {
         ReadBlock(VendorTable.WORD, 0, 1), // Displayed LCD Page
         ReadBlock(VendorTable.WORD, 34, 12), // Pump 1..4 Work Time
         ReadBlock(VendorTable.WORD, 4096, 1), // System Pressure Setpoint
+        ReadBlock(VendorTable.WORD, 4133, 2), // Number Of Pump (4133) & Number Of Variable Pump / Drivers (4134)
+        ReadBlock(VendorTable.WORD, 4170, 1), // Wiring / Operating Mode (1..3)
         ReadBlock(VendorTable.WORD, 4173, 1), // Control Status (0=Disable, 1=PID, 2=ON/OFF)
     )
 

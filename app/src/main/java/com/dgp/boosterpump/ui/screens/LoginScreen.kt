@@ -231,7 +231,7 @@ fun LoginScreen(
                     textAlign = TextAlign.Center,
                 )
                 LtrText(
-                    text = "DIGITAL GOSTAR PARSIAN  •  BPC02 SCADA",
+                    text = "DIGITAL GOSTAR PARSIAN  •  BPC02",
                     style = MonoStyle.copy(fontSize = 10.sp, letterSpacing = 1.1.sp),
                     color = AuthGold.copy(alpha = 0.88f),
                 )
@@ -300,12 +300,12 @@ fun LoginScreen(
                             }
                             Column {
                                 Text(
-                                    text = "احراز هویت اپراتور و نصاب",
+                                    text = "ورود به حساب کاربری",
                                     style = MaterialTheme.typography.titleMedium,
                                     color = Color(0xFFF4F6FA),
                                 )
                                 Text(
-                                    text = "ورود آفلاین امن بدون نیاز به اینترنت",
+                                    text = "ورود امن و آفلاین بدون نیاز به اینترنت",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color(0xFF8390A6),
                                 )
@@ -335,7 +335,7 @@ fun LoginScreen(
                             label = { Text("نام کاربری") },
                             placeholder = {
                                 LtrText(
-                                    "admin / nasab / service / operator",
+                                    "admin  /  operator",
                                     style = MonoStyle.copy(fontSize = 11.5.sp),
                                     color = Color(0xFF5A657A),
                                 )
@@ -362,7 +362,7 @@ fun LoginScreen(
                                 if (errorMessage != null) errorMessage = null
                             },
                             label = { Text("رمز عبور") },
-                            placeholder = { Text("رمز عبور اختصاصی را وارد کنید", color = Color(0xFF5A657A)) },
+                            placeholder = { Text("رمز عبور را وارد کنید", color = Color(0xFF5A657A)) },
                             leadingIcon = { Icon(Icons.Outlined.Lock, contentDescription = null, modifier = Modifier.size(19.dp)) },
                             trailingIcon = {
                                 IconButton(onClick = { passwordVisible = !passwordVisible }) {
@@ -428,7 +428,7 @@ fun LoginScreen(
                             }
                         } else {
                             DgpGoldButton(
-                                text = "ورود به سامانه SCADA",
+                                text = "ورود به سامانه",
                                 icon = Icons.AutoMirrored.Outlined.Login,
                                 onClick = ::submitLogin,
                                 height = 50.dp,
@@ -439,27 +439,24 @@ fun LoginScreen(
                 }
             }
 
-            // Quiet architectural role hierarchy pills (no credentials shown on screen)
+            // Two-tier access hierarchy pills (no credentials displayed on screen)
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
-                    text = "سطوح دسترسی مجاز در سامانه",
+                    text = "سطوح دسترسی سامانه",
                     style = MaterialTheme.typography.labelSmall,
                     color = Color(0xFF5D687D),
                 )
                 FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    RoleBadgeChip("مدیر سیستم", AuthGold)
-                    RoleBadgeChip("نصاب و راه‌انداز", Color(0xFF38BDF8))
-                    RoleBadgeChip("تکنسین سرویس", Color(0xFF34D399))
-                    RoleBadgeChip("اپراتور", Color(0xFF93A0B5))
-                    RoleBadgeChip("مهمان (دمو)", Color(0xFF93A0B5))
+                    RoleBadgeChip("مدیر سیستم (دسترسی کامل)", AuthGold)
+                    RoleBadgeChip("اپراتور (دسترسی کاربری)", Color(0xFF38BDF8))
                 }
             }
 
@@ -467,7 +464,7 @@ fun LoginScreen(
 
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 Text(
-                    text = "DGP BPC02  •  SAMIN ES 487  •  FC01 / FC03 / FC05 / FC06",
+                    text = "DIGITAL GOSTAR PARSIAN  •  BOOSTER PUMP CONTROL",
                     style = MonoStyle.copy(fontSize = 9.5.sp, letterSpacing = 0.8.sp),
                     color = Color(0xFF475266),
                     textAlign = TextAlign.Center,
