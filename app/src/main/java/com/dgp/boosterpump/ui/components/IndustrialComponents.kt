@@ -68,6 +68,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -472,9 +473,12 @@ fun DgpGoldButton(
 }
 
 /**
- * Tactile industrial ON/OFF power toggle button for booster pumps and variable-frequency drives.
- * Communicates active (روشن) vs disabled/service-off (خاموش) state immediately with a glowing
- * power-button medallion, clear label, and smooth press feedback.
+ * Precision industrial ON/OFF toggle switch for booster pumps and variable-frequency drives.
+ *
+ * - **ON state:** Vivid emerald track with subtle `I` indicator and solid white circular thumb
+ *   (housing the power icon) positioned on the ON side, paired with a bold active label.
+ * - **OFF state:** Remains 100% visible and recognizable in neutral inactive gray with subtle `O`
+ *   indicator and solid light-gray circular thumb glided smoothly to the opposite OFF side.
  */
 @Composable
 fun PumpPowerToggle(
@@ -483,84 +487,170 @@ fun PumpPowerToggle(
     onToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     onLabel: String = "روشن",
-    offLabel: String = "خاموش (S)",
+    offLabel: String = "خاموش",
 ) {
     val p = LocalScadaPalette.current
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (pressed && enabled && isOn != null) 0.95f else 1f,
+        targetValue = if (pressed && enabled && isOn != null) 0.96f else 1f,
         animationSpec = spring(stiffness = Spring.StiffnessMedium),
-        label = "pump_power_scale",
+        label = "pump_toggle_scale",
     )
 
-    val active = isOn == true
-    val accent by animateColorAsState(
+    val trackWidth = 60.dp
+    val trackHeight = 32.dp
+    val thumbSize = 24.dp
+    val trackInset = 4.dp
+    val travel = trackWidth - thumbSize - (trackInset * 2) // 28.dp
+
+    val thumbOffset by animateDpAsState(
         targetValue = when (isOn) {
-            true -> p.ok
-            false -> p.warning
-            null -> p.standby
+            true -> travel
+            false -> 0.dp
+            null -> travel / 2
         },
-        animationSpec = tween(220),
-        label = "pump_power_accent",
+        animationSpec = spring(
+            dampingRatio = 0.74f,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
+        label = "pump_toggle_thumb_offset",
     )
-    val containerBg by animateColorAsState(
+
+    val activeTrack = if (p.isDark) Color(0xFF159A55) else Color(0xFF16A34A)
+    val activeBorder = if (p.isDark) Color(0xFF4ADE80) else Color(0xFF15803D)
+    val inactiveTrack = if (p.isDark) Color(0xFF3E4758) else Color(0xFFCBD5E1)
+    val inactiveBorder = if (p.isDark) Color(0xFF7B879B) else Color(0xFF94A3B8)
+    val inactiveLabelColor = if (p.isDark) Color(0xFFB8C2D1) else Color(0xFF475569)
+
+    val trackColor by animateColorAsState(
         targetValue = when (isOn) {
-            true -> p.okBg
-            false -> p.warningBg
+            true -> activeTrack
+            false -> inactiveTrack
             null -> p.panelElevated
         },
         animationSpec = tween(220),
-        label = "pump_power_bg",
+        label = "pump_toggle_track_bg",
+    )
+    val trackBorderColor by animateColorAsState(
+        targetValue = when (isOn) {
+            true -> activeBorder
+            false -> inactiveBorder
+            null -> p.panelBorder
+        },
+        animationSpec = tween(220),
+        label = "pump_toggle_track_border",
+    )
+    val thumbColor by animateColorAsState(
+        targetValue = when (isOn) {
+            true -> Color(0xFFFFFFFF)
+            false -> if (p.isDark) Color(0xFFD8E0EA) else Color(0xFFFFFFFF)
+            null -> p.standby
+        },
+        animationSpec = tween(220),
+        label = "pump_toggle_thumb_bg",
+    )
+    val thumbIconTint by animateColorAsState(
+        targetValue = when (isOn) {
+            true -> Color(0xFF15803D)
+            false -> Color(0xFF334155)
+            null -> p.panel
+        },
+        animationSpec = tween(220),
+        label = "pump_toggle_icon_tint",
+    )
+    val labelColor by animateColorAsState(
+        targetValue = when (isOn) {
+            true -> p.ok
+            false -> inactiveLabelColor
+            null -> p.textMuted
+        },
+        animationSpec = tween(220),
+        label = "pump_toggle_label_color",
     )
 
-    Surface(
+    Row(
         modifier = modifier
             .scale(scale)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(999.dp))
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
                 enabled = enabled && isOn != null,
+                role = Role.Switch,
                 onClick = { if (isOn != null) onToggle(!isOn) },
-            ),
-        color = containerBg,
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(
-            width = 1.dp,
-            color = if (enabled) accent.copy(alpha = if (active) 0.62f else 0.50f) else p.panelBorder,
-        ),
+            )
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        Text(
+            text = when (isOn) {
+                true -> onLabel
+                false -> offLabel
+                null -> "—"
+            },
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+            color = labelColor,
+            maxLines = 1,
+        )
+
+        Box(
+            modifier = Modifier
+                .size(width = trackWidth, height = trackHeight)
+                .clip(RoundedCornerShape(999.dp))
+                .background(trackColor)
+                .border(1.2.dp, trackBorderColor, RoundedCornerShape(999.dp)),
         ) {
+            // Subtle IEC 'I' indicator exposed on the Start half when ON
+            if (isOn == true) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 15.dp)
+                        .size(width = 2.2.dp, height = 10.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(Color.White.copy(alpha = 0.85f)),
+                )
+            }
+            // Subtle IEC 'O' indicator exposed on the End half when OFF
+            if (isOn == false) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 12.dp)
+                        .size(8.dp)
+                        .border(
+                            width = 1.6.dp,
+                            color = if (p.isDark) Color(0xFFCBD5E1) else Color(0xFF64748B),
+                            shape = CircleShape,
+                        ),
+                )
+            }
+
+            // Sliding circular toggle indicator with persistent power emblem
             Box(
                 modifier = Modifier
-                    .size(24.dp)
+                    .align(Alignment.CenterStart)
+                    .padding(start = trackInset)
+                    .offset(x = thumbOffset)
+                    .size(thumbSize)
                     .clip(CircleShape)
-                    .background(accent.copy(alpha = if (active) 0.24f else 0.16f))
-                    .border(1.dp, accent.copy(alpha = 0.68f), CircleShape),
+                    .background(thumbColor)
+                    .border(
+                        width = 0.9.dp,
+                        color = if (isOn == true) Color(0xFFBBF7D0) else Color(0xFF94A3B8),
+                        shape = CircleShape,
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = Icons.Outlined.PowerSettingsNew,
-                    contentDescription = null,
-                    tint = accent,
+                    contentDescription = if (isOn == true) onLabel else offLabel,
+                    tint = thumbIconTint,
                     modifier = Modifier.size(14.dp),
                 )
             }
-            Text(
-                text = when (isOn) {
-                    true -> onLabel
-                    false -> offLabel
-                    null -> "نامشخص"
-                },
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                color = if (enabled || isOn != null) accent else p.textMuted,
-                maxLines = 1,
-            )
         }
     }
 }

@@ -543,19 +543,20 @@ fun AnimatedImpellerIcon(
         label = "pump_glow_pulse",
     )
 
+    val inactiveGray = if (palette.isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
     val casingColor = when {
         isFault -> palette.fault
-        isDisabled -> palette.warning
+        isDisabled -> inactiveGray
         isRunning -> palette.ok
-        isReady -> palette.cyan.copy(alpha = 0.80f)
+        isReady -> palette.cyan.copy(alpha = 0.85f)
         else -> palette.standby
     }
     val rotorColor = when {
         isFault -> palette.fault
-        isDisabled -> palette.warning.copy(alpha = 0.42f)
+        isDisabled -> inactiveGray
         isRunning -> palette.cyan
-        isReady -> palette.cyan.copy(alpha = 0.72f)
-        else -> palette.standby.copy(alpha = 0.65f)
+        isReady -> palette.cyan.copy(alpha = 0.78f)
+        else -> palette.standby.copy(alpha = 0.75f)
     }
     val rotation = if (isRunning) angle else 0f
 
@@ -590,13 +591,13 @@ fun AnimatedImpellerIcon(
         val footW = voluteR * 1.56f
         val footLeft = voluteCenter.x - footW / 2f
         drawRoundRect(
-            color = casingColor.copy(alpha = if (isDisabled) 0.28f else 0.40f),
+            color = casingColor.copy(alpha = 0.36f),
             topLeft = Offset(footLeft, footY),
             size = Size(footW, footH),
             cornerRadius = CornerRadius(s * 0.04f),
         )
         drawRoundRect(
-            color = casingColor.copy(alpha = 0.85f),
+            color = casingColor.copy(alpha = 0.90f),
             topLeft = Offset(footLeft, footY),
             size = Size(footW, footH),
             cornerRadius = CornerRadius(s * 0.04f),
@@ -609,13 +610,13 @@ fun AnimatedImpellerIcon(
         val pipeTop = voluteCenter.y - voluteR * 1.24f
         val pipeH = voluteR * 0.82f
         drawRoundRect(
-            color = if (isRunning) palette.cyan.copy(alpha = 0.28f) else casingColor.copy(alpha = 0.16f),
+            color = if (isRunning) palette.cyan.copy(alpha = 0.28f) else casingColor.copy(alpha = 0.20f),
             topLeft = Offset(pipeLeft, pipeTop),
             size = Size(pipeW, pipeH),
             cornerRadius = CornerRadius(s * 0.04f),
         )
         drawRoundRect(
-            color = casingColor.copy(alpha = 0.90f),
+            color = casingColor.copy(alpha = 0.92f),
             topLeft = Offset(pipeLeft, pipeTop),
             size = Size(pipeW, pipeH),
             cornerRadius = CornerRadius(s * 0.04f),
@@ -650,7 +651,7 @@ fun AnimatedImpellerIcon(
             style = Stroke(width = strokeMed),
         )
 
-        // 4. 5-blade swept centrifugal impeller
+        // 4. 5-blade swept centrifugal impeller (always clearly visible in both ON and OFF states)
         rotate(degrees = rotation, pivot = voluteCenter) {
             for (i in 0 until 5) {
                 rotate(degrees = i * 72f, pivot = voluteCenter) {
@@ -689,7 +690,6 @@ fun AnimatedImpellerIcon(
         when {
             isFault -> {
                 drawCircle(color = palette.fault, radius = badgeR, center = badgeCenter)
-                // Crisp exclamation mark
                 drawLine(
                     color = Color.White,
                     start = Offset(badgeCenter.x, badgeCenter.y - badgeR * 0.46f),
@@ -704,21 +704,12 @@ fun AnimatedImpellerIcon(
                 )
             }
             isDisabled -> {
-                // Clean diagonal stop bar across volute chamber
-                val d = voluteR * 0.62f
-                drawLine(
-                    color = palette.warning,
-                    start = Offset(voluteCenter.x - d, voluteCenter.y + d),
-                    end = Offset(voluteCenter.x + d, voluteCenter.y - d),
-                    strokeWidth = strokeMed,
-                    cap = StrokeCap.Round,
-                )
-                // Power-OFF amber medallion (universal open circle + top bar)
+                // Crisp neutral-gray Power-OFF medallion (keeps pump silhouette completely unobstructed)
                 drawCircle(color = palette.panel, radius = badgeR, center = badgeCenter)
-                drawCircle(color = palette.warning, radius = badgeR, center = badgeCenter, style = Stroke(width = strokeThin))
+                drawCircle(color = inactiveGray, radius = badgeR, center = badgeCenter, style = Stroke(width = strokeThin))
                 val pwrR = badgeR * 0.46f
                 drawArc(
-                    color = palette.warning,
+                    color = inactiveGray,
                     startAngle = -55f,
                     sweepAngle = 290f,
                     useCenter = false,
@@ -727,7 +718,7 @@ fun AnimatedImpellerIcon(
                     style = Stroke(width = strokeThin * 0.85f, cap = StrokeCap.Round),
                 )
                 drawLine(
-                    color = palette.warning,
+                    color = inactiveGray,
                     start = Offset(badgeCenter.x, badgeCenter.y - pwrR * 1.15f),
                     end = Offset(badgeCenter.x, badgeCenter.y - pwrR * 0.10f),
                     strokeWidth = strokeThin * 0.85f,
