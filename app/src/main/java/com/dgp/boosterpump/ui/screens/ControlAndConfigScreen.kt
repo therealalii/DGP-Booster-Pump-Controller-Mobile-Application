@@ -60,6 +60,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -71,9 +72,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dgp.boosterpump.auth.UserRole
@@ -745,65 +748,73 @@ fun ControlAndConfigScreen(
                     }
                 }
 
-                // Controller Page Navigator Bar (shown cleanly with Prev/Next + quick page numbers when > 1 page)
+                // Controller Page Navigator Bar (dedicated full-width page title + clean < قبلی | صفحه X از Y | بعدی >)
                 if (pages.size > 1) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(p.panelElevated)
-                                .border(0.8.dp, p.gold.copy(alpha = 0.28f), RoundedCornerShape(12.dp))
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            PageArrowButton(
-                                icon = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                                label = "قبلی",
-                                enabled = safePageIndex > 0,
-                                onClick = { pageIndex = (safePageIndex - 1).coerceAtLeast(0) },
-                            )
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(1.dp),
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(p.panelElevated)
+                            .border(0.8.dp, p.gold.copy(alpha = 0.28f), RoundedCornerShape(14.dp))
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        // Dedicated full-width page title so Persian titles NEVER truncate or collide with buttons
+                        Text(
+                            text = currentPage.title,
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            color = p.textPrimary,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+
+                        // Deterministic LTR control bar: [< قبلی]   صفحه ۳ از ۱۳   [بعدی >]
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
+                                PageArrowButton(
+                                    icon = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+                                    label = "قبلی",
+                                    iconBeforeLabel = true,
+                                    enabled = safePageIndex > 0,
+                                    onClick = { pageIndex = (safePageIndex - 1).coerceAtLeast(0) },
+                                )
                                 Text(
                                     text = "صفحه ${currentPage.number} از ${pages.size}",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                                     color = p.gold,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(horizontal = 8.dp),
                                 )
-                                Text(
-                                    text = currentPage.title,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = p.textPrimary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
+                                PageArrowButton(
+                                    icon = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                                    label = "بعدی",
+                                    iconBeforeLabel = false,
+                                    enabled = safePageIndex < pages.lastIndex,
+                                    onClick = { pageIndex = (safePageIndex + 1).coerceAtMost(pages.lastIndex) },
                                 )
                             }
-                            PageArrowButton(
-                                icon = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
-                                label = "بعدی",
-                                enabled = safePageIndex < pages.lastIndex,
-                                onClick = { pageIndex = (safePageIndex + 1).coerceAtMost(pages.lastIndex) },
-                            )
                         }
 
-                        // Quick page jump strip for multi-page menus (e.g., Control Pages 1..13)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            pages.forEachIndexed { idx, pg ->
-                                DgpPillChip(
-                                    label = "${pg.number}",
-                                    selected = idx == safePageIndex,
-                                    onClick = { pageIndex = idx },
-                                    accent = p.cyan,
-                                )
+                        // Quick page jump strip synchronized left-to-right (1..N) with < قبلی and بعدی >
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                pages.forEachIndexed { idx, pg ->
+                                    DgpPillChip(
+                                        label = "${pg.number}",
+                                        selected = idx == safePageIndex,
+                                        onClick = { pageIndex = idx },
+                                        accent = p.cyan,
+                                    )
+                                }
                             }
                         }
                     }
@@ -923,6 +934,7 @@ fun ControlAndConfigScreen(
 private fun PageArrowButton(
     icon: ImageVector,
     label: String,
+    iconBeforeLabel: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
@@ -931,25 +943,36 @@ private fun PageArrowButton(
         onClick = onClick,
         enabled = enabled,
         color = if (enabled) p.panel else Color.Transparent,
-        shape = RoundedCornerShape(9.dp),
-        border = if (enabled) BorderStroke(0.8.dp, p.panelBorder) else null,
+        shape = RoundedCornerShape(10.dp),
+        border = if (enabled) BorderStroke(0.8.dp, p.gold.copy(alpha = 0.35f)) else BorderStroke(0.8.dp, p.panelBorder.copy(alpha = 0.45f)),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = if (enabled) p.gold else p.textMuted.copy(alpha = 0.45f),
-                modifier = Modifier.size(18.dp),
-            )
+            if (iconBeforeLabel) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = if (enabled) p.gold else p.textMuted.copy(alpha = 0.45f),
+                    modifier = Modifier.size(18.dp),
+                )
+            }
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                 color = if (enabled) p.textPrimary else p.textMuted.copy(alpha = 0.45f),
+                softWrap = false,
             )
+            if (!iconBeforeLabel) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = if (enabled) p.gold else p.textMuted.copy(alpha = 0.45f),
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
     }
 }

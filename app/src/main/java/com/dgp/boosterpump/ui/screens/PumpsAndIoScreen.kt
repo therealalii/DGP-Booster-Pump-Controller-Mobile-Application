@@ -366,7 +366,11 @@ private fun PlcRackModuleCell(
                 style = MonoStyle.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
                 color = if (isActive) activeColor else p.textPrimary,
             )
-            Text(label, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), color = p.textSecondary, maxLines = 1)
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 14.sp),
+                color = p.textSecondary,
+            )
         }
         PlcLedBead(active = active, size = 9.dp, activeColor = activeColor)
     }

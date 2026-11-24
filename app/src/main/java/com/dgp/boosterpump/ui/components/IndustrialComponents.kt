@@ -22,13 +22,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -43,8 +43,6 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.WarningAmber
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -63,15 +61,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -129,8 +129,7 @@ fun StatusBadge(
                 text = text,
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                 color = fg,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                softWrap = false,
             )
         }
     }
@@ -167,7 +166,7 @@ fun LivePulseDot(
 
 /**
  * Flagship architectural surface card with top-edge specular glass-bevel border, quiet precision
- * hairline accent, generous breathing room, and structured title/subtitle/trailing header.
+ * hairline accent, generous breathing room, and non-truncating title/subtitle/badge header.
  */
 @Composable
 fun ScadaPanel(
@@ -177,6 +176,7 @@ fun ScadaPanel(
     icon: ImageVector? = null,
     accentColor: Color? = null,
     trailing: (@Composable () -> Unit)? = null,
+    headerBadges: (@Composable () -> Unit)? = null,
     borderColor: Color? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -197,7 +197,7 @@ fun ScadaPanel(
         elevation = CardDefaults.cardElevation(defaultElevation = if (p.isDark) 0.dp else 1.5.dp),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            // Subtle directional hairline accent across top edge (clean, non-distracting)
+            // Subtle directional hairline accent across top edge
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -207,7 +207,7 @@ fun ScadaPanel(
                             listOf(
                                 Color.Transparent,
                                 accent.copy(alpha = 0.55f),
-                                accent.copy(alpha = 0.12f),
+                                accent.copy(alpha = 0.14f),
                                 Color.Transparent,
                             ),
                         ),
@@ -217,44 +217,51 @@ fun ScadaPanel(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(11.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        if (icon != null) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(RoundedCornerShape(11.dp))
-                                    .background(accent.copy(alpha = if (p.isDark) 0.11f else 0.10f))
-                                    .border(0.8.dp, accent.copy(alpha = 0.25f), RoundedCornerShape(11.dp)),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(18.dp))
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(11.dp),
+                        ) {
+                            if (icon != null) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(11.dp))
+                                        .background(accent.copy(alpha = if (p.isDark) 0.12f else 0.10f))
+                                        .border(0.8.dp, accent.copy(alpha = 0.28f), RoundedCornerShape(11.dp)),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    text = title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = p.textPrimary,
+                                )
+                                if (subtitle != null) {
+                                    Text(
+                                        text = subtitle,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, lineHeight = 18.sp),
+                                        color = p.textSecondary,
+                                    )
+                                }
                             }
                         }
-                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                            Text(title, style = MaterialTheme.typography.titleMedium, color = p.textPrimary)
-                            if (subtitle != null) {
-                                Text(
-                                    subtitle,
-                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
-                                    color = p.textSecondary,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
+                        if (trailing != null) {
+                            Spacer(Modifier.width(10.dp))
+                            trailing()
                         }
                     }
-                    if (trailing != null) {
-                        Spacer(Modifier.width(8.dp))
-                        trailing()
+                    if (headerBadges != null) {
+                        headerBadges()
                     }
                 }
                 content()
@@ -264,8 +271,7 @@ fun ScadaPanel(
 }
 
 /**
- * Precision animated sliding-pill segmented control (replaces raw M3 FilterChip rows).
- * Works cleanly in RTL layouts by computing slot offset in physical coordinates.
+ * Precision animated sliding-pill segmented control (font-scale safe; zero text truncation).
  */
 @Composable
 fun <T> DgpSegmentedControl(
@@ -275,16 +281,18 @@ fun <T> DgpSegmentedControl(
     onSelect: (T) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    height: Dp = 40.dp,
+    height: Dp = 44.dp,
 ) {
     val p = LocalScadaPalette.current
+    val fontScale = LocalDensity.current.fontScale.coerceIn(1f, 1.4f)
+    val effectiveHeight = (height.value * fontScale).dp
     val selectedIndex = items.indexOf(selected).coerceAtLeast(0)
     val count = items.size.coerceAtLeast(1)
 
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(height)
+            .height(effectiveHeight)
             .clip(RoundedCornerShape(12.dp))
             .background(p.panelElevated)
             .border(0.8.dp, p.panelBorder, RoundedCornerShape(12.dp))
@@ -308,7 +316,7 @@ fun <T> DgpSegmentedControl(
                 .fillMaxHeight()
                 .clip(RoundedCornerShape(9.dp))
                 .background(if (p.isDark) p.goldSoft else p.panel)
-                .border(0.9.dp, p.gold.copy(alpha = 0.45f), RoundedCornerShape(9.dp)),
+                .border(0.9.dp, p.gold.copy(alpha = 0.50f), RoundedCornerShape(9.dp)),
         )
 
         Row(modifier = Modifier.fillMaxSize()) {
@@ -334,12 +342,12 @@ fun <T> DgpSegmentedControl(
                     Text(
                         text = label(item),
                         style = MaterialTheme.typography.labelMedium.copy(
+                            fontSize = if (count >= 3) 10.5.sp else 11.5.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                         ),
                         color = textColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(horizontal = 6.dp),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 4.dp),
                     )
                 }
             }
@@ -368,7 +376,7 @@ fun DgpPillChip(
     )
     val border by animateColorAsState(
         targetValue = when {
-            selected -> accent.copy(alpha = 0.55f)
+            selected -> accent.copy(alpha = 0.58f)
             else -> p.panelBorder
         },
         animationSpec = tween(180),
@@ -398,13 +406,16 @@ fun DgpPillChip(
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             ),
             color = fg,
-            maxLines = 1,
-            modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
+            softWrap = false,
+            modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
         )
     }
 }
 
-/** Signature brushed champagne-gold primary CTA button with rich metallic contrast and press-scale feedback. */
+/**
+ * Signature brushed champagne-gold primary CTA button built on a flexible container (`heightIn`)
+ * so text & icon ALWAYS render complete and centered at any screen width or system font scale.
+ */
 @Composable
 fun DgpGoldButton(
     text: String,
@@ -412,7 +423,7 @@ fun DgpGoldButton(
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
     enabled: Boolean = true,
-    height: Dp = 46.dp,
+    height: Dp = 48.dp,
 ) {
     val p = LocalScadaPalette.current
     val interactionSource = remember { MutableInteractionSource() }
@@ -423,36 +434,36 @@ fun DgpGoldButton(
         label = "gold_btn_scale",
     )
     val gradient = if (enabled) {
-        Brush.horizontalGradient(listOf(Color(0xFFE4B44C), Color(0xFFCF9629), Color(0xFFB9801B)))
+        Brush.horizontalGradient(listOf(Color(0xFFE7B952), Color(0xFFD2992A), Color(0xFFBA811B)))
     } else {
         Brush.horizontalGradient(listOf(p.panelElevated, p.panelElevated))
     }
+    val shape = RoundedCornerShape(14.dp)
 
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        interactionSource = interactionSource,
-        shape = RoundedCornerShape(13.dp),
-        contentPadding = PaddingValues(0.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = Color.Transparent,
-            disabledContainerColor = Color.Transparent,
-        ),
+    Box(
         modifier = modifier
-            .height(height)
+            .heightIn(min = height)
             .scale(scale)
-            .clip(RoundedCornerShape(13.dp))
+            .clip(shape)
             .background(gradient)
             .border(
-                0.9.dp,
-                if (enabled) Color(0xFFF3CF79).copy(alpha = 0.65f) else p.panelBorder,
-                RoundedCornerShape(13.dp),
-            ),
+                width = 0.9.dp,
+                color = if (enabled) Color(0xFFF5D585).copy(alpha = 0.68f) else p.panelBorder,
+                shape = shape,
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick,
+            )
+            .padding(horizontal = 18.dp, vertical = 11.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
-            modifier = Modifier.padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         ) {
             if (icon != null) {
                 Icon(
@@ -466,7 +477,79 @@ fun DgpGoldButton(
                 text = text,
                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                 color = if (enabled) Color(0xFF0A0702) else p.textMuted,
-                maxLines = 1,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+/**
+ * Matching obsidian secondary CTA button with flexible minimum height so labels never clip vertically.
+ */
+@Composable
+fun DgpOutlinedButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    enabled: Boolean = true,
+    accentColor: Color? = null,
+    height: Dp = 46.dp,
+) {
+    val p = LocalScadaPalette.current
+    val fg = when {
+        !enabled -> p.textMuted
+        accentColor != null -> accentColor
+        else -> p.textPrimary
+    }
+    val borderColor = when {
+        !enabled -> p.panelBorder
+        accentColor != null -> accentColor.copy(alpha = 0.55f)
+        else -> p.panelHighlight
+    }
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && enabled) 0.98f else 1f,
+        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        label = "outline_btn_scale",
+    )
+    val shape = RoundedCornerShape(14.dp)
+
+    Box(
+        modifier = modifier
+            .heightIn(min = height)
+            .scale(scale)
+            .clip(shape)
+            .background(if (p.isDark) p.panelElevated.copy(alpha = 0.85f) else p.panel)
+            .border(1.dp, borderColor, shape)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick,
+            )
+            .padding(horizontal = 16.dp, vertical = 11.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+        ) {
+            if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = fg,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = fg,
+                textAlign = TextAlign.Center,
             )
         }
     }
@@ -664,8 +747,8 @@ data class NavBarEntry(
 )
 
 /**
- * Custom docked obsidian-glass bottom navigation bar with smooth champagne-gold active pill
- * indicator and spring icon feedback (replaces stock M3 NavigationBar).
+ * Flagship floating obsidian-glass bottom navigation dock with a smoothly gliding brushed
+ * champagne-gold active capsule tailored to the DGP visual identity.
  */
 @Composable
 fun DgpBottomNavBar(
@@ -674,101 +757,140 @@ fun DgpBottomNavBar(
     onSelect: (String) -> Unit,
 ) {
     val p = LocalScadaPalette.current
-    Surface(
-        color = p.panel,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            // Subtle illuminated hairline along top edge of dock
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(0.8.dp)
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(
-                                p.panelBorder,
-                                p.gold.copy(alpha = 0.35f),
-                                p.panelBorder,
-                            ),
-                        ),
-                    ),
-            )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 6.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceAround,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                entries.forEach { entry ->
-                    val selected = entry.route == currentRoute
-                    val tint by animateColorAsState(
-                        targetValue = if (selected) p.gold else p.textSecondary,
-                        animationSpec = tween(200),
-                        label = "nav_tint",
-                    )
-                    val iconScale by animateFloatAsState(
-                        targetValue = if (selected) 1.08f else 1.0f,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessMedium,
-                        ),
-                        label = "nav_scale",
-                    )
-                    val indicatorWidth by animateDpAsState(
-                        targetValue = if (selected) 24.dp else 0.dp,
-                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                        label = "nav_bar_w",
-                    )
+    val fontScale = LocalDensity.current.fontScale.coerceIn(1f, 1.3f)
+    val dockHeight = (62f * fontScale).dp
+    val selectedIndex = entries.indexOfFirst { it.route == currentRoute }.coerceAtLeast(0)
+    val count = entries.size.coerceAtLeast(1)
 
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                onClick = { onSelect(entry.route) },
-                            )
-                            .padding(vertical = 4.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(3.dp),
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .height(2.5.dp)
-                                .width(indicatorWidth)
-                                .clip(RoundedCornerShape(999.dp))
-                                .background(p.gold),
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(p.canvas)
+            .navigationBarsPadding()
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    ) {
+        val dockShape = RoundedCornerShape(24.dp)
+        val dockBorder = Brush.verticalGradient(
+            listOf(
+                p.gold.copy(alpha = if (p.isDark) 0.42f else 0.35f),
+                p.panelBorder,
+            ),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(
+                    elevation = if (p.isDark) 14.dp else 8.dp,
+                    shape = dockShape,
+                    ambientColor = Color.Black.copy(alpha = 0.55f),
+                    spotColor = p.gold.copy(alpha = 0.18f),
+                )
+                .clip(dockShape)
+                .background(if (p.isDark) Color(0xFF0D111B) else p.panel)
+                .border(1.dp, dockBorder, dockShape)
+                .padding(5.dp),
+        ) {
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(dockHeight),
+            ) {
+                val slotWidth = maxWidth / count
+                val pillOffset by animateDpAsState(
+                    targetValue = slotWidth * selectedIndex,
+                    animationSpec = spring(
+                        dampingRatio = 0.78f,
+                        stiffness = Spring.StiffnessMediumLow,
+                    ),
+                    label = "floating_nav_pill_offset",
+                )
+
+                // Gliding champagne-gold illuminated active capsule
+                Box(
+                    modifier = Modifier
+                        .offset(x = pillOffset)
+                        .width(slotWidth)
+                        .fillMaxHeight()
+                        .padding(horizontal = 2.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(
+                            Brush.verticalGradient(
+                                if (p.isDark) {
+                                    listOf(Color(0xFF332711), Color(0xFF1F170A))
+                                } else {
+                                    listOf(Color(0xFFFDF3DD), Color(0xFFF7E5BE))
+                                },
+                            ),
                         )
-                        Box(
+                        .border(
+                            width = 1.dp,
+                            brush = Brush.verticalGradient(
+                                listOf(
+                                    p.goldBright.copy(alpha = if (p.isDark) 0.70f else 0.55f),
+                                    p.gold.copy(alpha = 0.32f),
+                                ),
+                            ),
+                            shape = RoundedCornerShape(18.dp),
+                        ),
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    entries.forEach { entry ->
+                        val selected = entry.route == currentRoute
+                        val tint by animateColorAsState(
+                            targetValue = when {
+                                selected && p.isDark -> p.goldBright
+                                selected -> p.gold
+                                else -> p.textSecondary
+                            },
+                            animationSpec = tween(200),
+                            label = "nav_tint",
+                        )
+                        val iconScale by animateFloatAsState(
+                            targetValue = if (selected) 1.07f else 1.0f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                stiffness = Spring.StiffnessMedium,
+                            ),
+                            label = "nav_icon_scale",
+                        )
+
+                        Column(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(if (selected) p.goldSoft else Color.Transparent)
-                                .padding(horizontal = 12.dp, vertical = 4.dp),
-                            contentAlignment = Alignment.Center,
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(18.dp))
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    role = Role.Tab,
+                                    onClick = { onSelect(entry.route) },
+                                ),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically),
                         ) {
                             Icon(
                                 imageVector = if (selected) entry.selectedIcon else entry.icon,
                                 contentDescription = entry.label,
                                 tint = tint,
                                 modifier = Modifier
-                                    .size(21.dp)
+                                    .size(22.dp)
                                     .scale(iconScale),
                             )
+                            Text(
+                                text = entry.label,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 10.5.sp,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                ),
+                                color = tint,
+                                softWrap = false,
+                                textAlign = TextAlign.Center,
+                            )
                         }
-                        Text(
-                            text = entry.label,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 10.sp,
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                            ),
-                            color = tint,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
                     }
                 }
             }
@@ -806,7 +928,7 @@ fun SimulationBanner(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Icon(Icons.Outlined.Science, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             "حالت نمایشی (آزمایشی)",
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
@@ -815,25 +937,24 @@ fun SimulationBanner(
                         Text(
                             PersianLabels.scenarioLabel(scenario),
                             style = MaterialTheme.typography.labelSmall,
-                            color = p.simBannerFg.copy(alpha = 0.85f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            color = p.simBannerFg.copy(alpha = 0.88f),
                         )
                     }
                 }
+                Spacer(Modifier.width(8.dp))
                 Box {
                     Surface(
                         onClick = { expanded = true },
                         color = p.simBannerFg.copy(alpha = 0.14f),
-                        border = BorderStroke(0.8.dp, p.simBannerFg.copy(alpha = 0.35f)),
+                        border = BorderStroke(0.8.dp, p.simBannerFg.copy(alpha = 0.38f)),
                         shape = RoundedCornerShape(999.dp),
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
-                            Text("تغییر حالت", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = p.simBannerFg)
+                            Text("تغییر حالت", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = p.simBannerFg, softWrap = false)
                             Icon(Icons.Outlined.ArrowDropDown, contentDescription = null, modifier = Modifier.size(15.dp))
                         }
                     }
@@ -872,7 +993,7 @@ fun SimulationBanner(
     }
 }
 
-/** Clean, single-row connection status ribbon beneath the top bar (zero developer clutter). */
+/** Clean, non-truncating connection status ribbon beneath the top bar. */
 @Composable
 fun ConnectionHeaderStrip(
     state: ConnectionState,
@@ -892,7 +1013,7 @@ fun ConnectionHeaderStrip(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -922,7 +1043,7 @@ fun ConnectionHeaderStrip(
                         }
                         is ConnectionState.Connected -> {
                             val time = state.lastPollMillis?.let(::formatTime) ?: "—"
-                            "بروزرسانی: $time"
+                            "آخرین بروزرسانی: $time"
                         }
                         is ConnectionState.Error -> {
                             val retry = state.retryInSeconds?.let { " — تلاش مجدد تا $it ثانیه" }.orEmpty()
@@ -933,10 +1054,10 @@ fun ConnectionHeaderStrip(
                         text = detail,
                         style = MaterialTheme.typography.labelSmall,
                         color = p.textSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
+
+                Spacer(Modifier.width(10.dp))
 
                 val isDisconnected = state is ConnectionState.Disconnected
                 val btnBg = if (isDisconnected) p.goldSoft else p.faultBg
@@ -944,11 +1065,11 @@ fun ConnectionHeaderStrip(
                 Surface(
                     onClick = if (isDisconnected) onConnectClick else onDisconnectClick,
                     color = btnBg,
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(0.9.dp, btnFg.copy(alpha = 0.42f)),
+                    shape = RoundedCornerShape(11.dp),
+                    border = BorderStroke(0.9.dp, btnFg.copy(alpha = 0.45f)),
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                        modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(5.dp),
                     ) {
@@ -962,6 +1083,7 @@ fun ConnectionHeaderStrip(
                             text = if (isDisconnected) "اتصال" else "قطع",
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                             color = btnFg,
+                            softWrap = false,
                         )
                     }
                 }

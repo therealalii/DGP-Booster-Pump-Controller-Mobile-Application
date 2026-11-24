@@ -259,7 +259,6 @@ fun SplashLoadingScreen(
                             text = text,
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp),
                             color = Color(0xFFA6B2C5),
-                            maxLines = 1,
                         )
                     }
                     LtrText(

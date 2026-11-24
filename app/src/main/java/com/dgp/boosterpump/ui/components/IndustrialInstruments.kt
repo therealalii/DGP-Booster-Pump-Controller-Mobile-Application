@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -99,7 +98,7 @@ fun PressureArcGauge(
     )
 
     Box(
-        modifier = modifier.size(188.dp),
+        modifier = modifier.size(176.dp),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -216,27 +215,27 @@ fun PressureArcGauge(
 
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+            verticalArrangement = Arrangement.spacedBy(1.dp, Alignment.CenterVertically),
+            modifier = Modifier.padding(horizontal = 24.dp),
         ) {
             Text(
                 text = "فشار سیستم",
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                 color = palette.textSecondary,
             )
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 Text(
                     text = pressureBar?.let { "%.2f".format(it) } ?: "—",
-                    style = MaterialTheme.typography.displaySmall.copy(fontSize = 31.sp),
+                    style = MaterialTheme.typography.displaySmall.copy(fontSize = 28.sp, lineHeight = 32.sp),
                     color = palette.textPrimary,
                 )
             }
             Text(
                 text = if (setpointBar != null) "هدف: %.2f بار".format(setpointBar) else "بار",
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                 color = if (setpointBar != null) palette.gold else activeColor,
                 fontWeight = FontWeight.Bold,
             )
-            Spacer(Modifier.height(4.dp))
             val drText = when (drActive) {
                 true -> "درایو: روشن"
                 false -> "درایو: خاموش"
@@ -244,7 +243,7 @@ fun PressureArcGauge(
             }
             Text(
                 text = drText,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                 color = if (drActive == true) palette.ok else palette.textSecondary,
             )
         }

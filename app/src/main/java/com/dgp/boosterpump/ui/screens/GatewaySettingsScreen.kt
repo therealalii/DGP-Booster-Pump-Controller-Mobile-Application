@@ -8,13 +8,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -30,7 +27,6 @@ import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -50,6 +46,7 @@ import com.dgp.boosterpump.gateway.DataSourceMode
 import com.dgp.boosterpump.ui.PersianLabels
 import com.dgp.boosterpump.ui.components.BadgeTone
 import com.dgp.boosterpump.ui.components.DgpGoldButton
+import com.dgp.boosterpump.ui.components.DgpOutlinedButton
 import com.dgp.boosterpump.ui.components.DgpSegmentedControl
 import com.dgp.boosterpump.ui.components.NoticeBox
 import com.dgp.boosterpump.ui.components.ScadaPanel
@@ -310,19 +307,14 @@ fun GatewaySettingsScreen(
                         height = 48.dp,
                         modifier = Modifier.weight(1.25f),
                     )
-                    OutlinedButton(
-                        onClick = { viewModel.save(andConnect = false) },
+                    DgpOutlinedButton(
+                        text = "ذخیره",
+                        icon = Icons.Outlined.Save,
                         enabled = canEditGateway,
-                        shape = RoundedCornerShape(13.dp),
-                        border = BorderStroke(0.9.dp, if (canEditGateway) p.panelHighlight else p.panelBorder),
-                        modifier = Modifier
-                            .weight(0.75f)
-                            .height(48.dp),
-                    ) {
-                        Icon(Icons.Outlined.Save, contentDescription = null, modifier = Modifier.size(17.dp))
-                        Spacer(Modifier.width(5.dp))
-                        Text("ذخیره")
-                    }
+                        onClick = { viewModel.save(andConnect = false) },
+                        height = 48.dp,
+                        modifier = Modifier.weight(0.75f),
+                    )
                 }
             }
         }

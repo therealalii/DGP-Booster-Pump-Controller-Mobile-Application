@@ -63,7 +63,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -284,9 +283,8 @@ private fun MainScadaShell(
                             ) {
                                 Text(
                                     "کنترلر بوستر پمپ DGP",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.5.sp),
+                                    softWrap = false,
                                 )
                                 val badgeAccent = if (user.role.canEditAdvancedSettings) p.gold else p.cyan
                                 val badgeBg = if (user.role.canEditAdvancedSettings) p.goldSoft else p.cyanSoft
