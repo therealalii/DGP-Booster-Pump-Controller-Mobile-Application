@@ -98,7 +98,7 @@ fun PressureArcGauge(
     )
 
     Box(
-        modifier = modifier.size(176.dp),
+        modifier = modifier.size(166.dp),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -282,9 +282,9 @@ fun WaterTankIndicator(
     )
 
     val (waterColor, statusLabel, statusTone) = when {
-        floaterLow == true && floaterHigh == true -> Triple(palette.cyan, "Full (Normal)", BadgeTone.OK)
+        floaterLow == true && floaterHigh == true -> Triple(palette.cyan, "Full", BadgeTone.OK)
         floaterLow == true && floaterHigh == false -> Triple(palette.warning, "Mid Level", BadgeTone.WARNING)
-        floaterLow == false && floaterHigh == false -> Triple(palette.fault, "Floater Error!", BadgeTone.FAULT)
+        floaterLow == false && floaterHigh == false -> Triple(palette.fault, "Low Water!", BadgeTone.FAULT)
         floaterLow == false && floaterHigh == true -> Triple(palette.fault, "Floater Fault", BadgeTone.FAULT)
         else -> Triple(palette.standby, "Unknown", BadgeTone.NEUTRAL)
     }

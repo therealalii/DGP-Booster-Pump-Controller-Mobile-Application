@@ -283,8 +283,8 @@ private fun MainScadaShell(
                             ) {
                                 Text(
                                     "کنترلر بوستر پمپ DGP",
-                                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.5.sp),
-                                    softWrap = false,
+                                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp, lineHeight = 18.sp),
+                                    maxLines = 2,
                                 )
                                 val badgeAccent = if (user.role.canEditAdvancedSettings) p.gold else p.cyan
                                 val badgeBg = if (user.role.canEditAdvancedSettings) p.goldSoft else p.cyanSoft

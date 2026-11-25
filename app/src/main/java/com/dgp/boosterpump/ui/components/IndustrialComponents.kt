@@ -113,17 +113,17 @@ fun StatusBadge(
         BadgeTone.NEUTRAL -> p.standby to p.standbyBg
     }
     Surface(
-        modifier = modifier.border(0.8.dp, fg.copy(alpha = 0.28f), RoundedCornerShape(999.dp)),
+        modifier = modifier.border(0.8.dp, fg.copy(alpha = 0.28f), RoundedCornerShape(14.dp)),
         color = bg,
-        shape = RoundedCornerShape(999.dp),
+        shape = RoundedCornerShape(14.dp),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally),
         ) {
             if (pulsing) {
-                LivePulseDot(color = fg)
+                LivePulseDot(color = fg, modifier = Modifier.size(8.dp))
             } else {
                 Box(
                     modifier = Modifier
@@ -134,9 +134,11 @@ fun StatusBadge(
             }
             Text(
                 text = text,
-                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    lineHeight = 14.sp,
+                ),
                 color = fg,
-                softWrap = false,
             )
         }
     }
@@ -413,8 +415,7 @@ fun DgpPillChip(
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             ),
             color = fg,
-            softWrap = false,
-            modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
         )
     }
 }

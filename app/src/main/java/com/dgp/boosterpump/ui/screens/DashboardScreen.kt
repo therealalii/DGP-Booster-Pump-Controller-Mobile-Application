@@ -647,46 +647,60 @@ private fun PumpHmiTile(pump: PumpState, modifier: Modifier = Modifier) {
         isReady -> p.cyan.copy(alpha = 0.38f)
         else -> p.panelBorder
     }
-    Row(
+    val (label, tone) = when {
+        pump.failed == true -> "Fault" to BadgeTone.FAULT
+        isDisabled -> "Service (S)" to BadgeTone.NEUTRAL
+        isRunning -> "Running" to BadgeTone.OK
+        isReady -> "Standby" to BadgeTone.INFO
+        pump.running == false -> "Standby" to BadgeTone.NEUTRAL
+        else -> "Unknown" to BadgeTone.NEUTRAL
+    }
+    Column(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
             .background(p.panelElevated)
             .border(0.9.dp, borderColor, RoundedCornerShape(14.dp))
-            .padding(11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        AnimatedImpellerIcon(
-            running = isRunning,
-            failed = pump.failed,
-            disabled = isDisabled,
-            ready = isReady,
-            size = 42.dp,
-        )
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
         ) {
-            LtrText("Pump ${pump.number}", style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
-            val (label, tone) = when {
-                pump.failed == true -> "Fault" to BadgeTone.FAULT
-                isDisabled -> "Service (S)" to BadgeTone.NEUTRAL
-                isRunning -> "Running" to BadgeTone.OK
-                isReady -> "Standby" to BadgeTone.INFO
-                pump.running == false -> "Standby" to BadgeTone.NEUTRAL
-                else -> "Unknown" to BadgeTone.NEUTRAL
-            }
-            StatusBadge(label, tone, pulsing = pump.failed == true || isRunning)
-            LtrText(
-                text = when {
-                    pump.runTime != null -> PersianLabels.formatRunTimeCompact(pump.runTime)
-                    pump.hasRunTimeRegisters -> "--:--:--"
-                    else -> "—"
-                },
-                style = MonoStyle.copy(fontSize = 10.5.sp),
-                color = p.textSecondary,
+            AnimatedImpellerIcon(
+                running = isRunning,
+                failed = pump.failed,
+                disabled = isDisabled,
+                ready = isReady,
+                size = 38.dp,
             )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                LtrText(
+                    "Pump ${pump.number}",
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                    color = p.textPrimary,
+                )
+                LtrText(
+                    text = when {
+                        pump.runTime != null -> PersianLabels.formatRunTimeCompact(pump.runTime)
+                        pump.hasRunTimeRegisters -> "--:--:--"
+                        else -> "—"
+                    },
+                    style = MonoStyle.copy(fontSize = 10.5.sp),
+                    color = p.textSecondary,
+                )
+            }
         }
+        StatusBadge(
+            text = label,
+            tone = tone,
+            pulsing = pump.failed == true || isRunning,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 

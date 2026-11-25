@@ -767,8 +767,8 @@ fun DynamicBoosterSystemSchematic(
                             textAlign = TextAlign.Center,
                         )
                         val floaterShort = when {
-                            snapshot.floaterLowConnected == true && snapshot.floaterHighConnected == true -> "H:ON L:ON"
-                            snapshot.floaterLowConnected == true && snapshot.floaterHighConnected == false -> "H:OFF L:ON"
+                            snapshot.floaterLowConnected == true && snapshot.floaterHighConnected == true -> "H:1 L:1"
+                            snapshot.floaterLowConnected == true && snapshot.floaterHighConnected == false -> "H:0 L:1"
                             snapshot.floaterLowConnected == false -> "LOW!"
                             else -> "H/L —"
                         }
@@ -782,7 +782,7 @@ fun DynamicBoosterSystemSchematic(
 
                     // Center: Dynamic Pump Tags (P1..PN) aligned directly under each pump column!
                     Row(
-                        modifier = Modifier.weight(0.52f),
+                        modifier = Modifier.weight(0.50f),
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.Top,
                     ) {
@@ -840,13 +840,13 @@ fun DynamicBoosterSystemSchematic(
 
                     // Right: Live System Pressure & Setpoint readout aligned under Pressure Gauge
                     Column(
-                        modifier = Modifier.weight(0.24f),
+                        modifier = Modifier.weight(0.26f),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         Text(
                             text = snapshot.pressureBar?.let { String.format(Locale.US, "%.2f Bar", it) } ?: "— Bar",
-                            style = MonoStyle.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
+                            style = MonoStyle.copy(fontSize = 9.5.sp, fontWeight = FontWeight.Bold),
                             color = p.gold,
                             textAlign = TextAlign.Center,
                         )
