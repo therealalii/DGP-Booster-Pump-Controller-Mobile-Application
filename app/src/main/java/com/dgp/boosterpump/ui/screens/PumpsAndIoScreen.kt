@@ -26,6 +26,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,11 +38,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dgp.boosterpump.controller.Bpc02Catalog
 import com.dgp.boosterpump.controller.PumpState
-import com.dgp.boosterpump.ui.PersianLabels
 import com.dgp.boosterpump.ui.components.AnimatedImpellerIcon
 import com.dgp.boosterpump.ui.components.BadgeTone
 import com.dgp.boosterpump.ui.components.LtrText
+import com.dgp.boosterpump.ui.components.ParameterHelpBottomSheet
+import com.dgp.boosterpump.ui.components.ParameterHelpIcon
 import com.dgp.boosterpump.ui.components.PlcLedBead
 import com.dgp.boosterpump.ui.components.ScadaPanel
 import com.dgp.boosterpump.ui.components.StatusBadge
@@ -50,6 +56,16 @@ import com.dgp.boosterpump.viewmodel.MonitoringUiState
 fun PumpsAndIoScreen(uiState: MonitoringUiState) {
     val p = LocalScadaPalette.current
     val snapshot = uiState.snapshot
+    var activeHelp by remember { mutableStateOf<Pair<Bpc02Catalog.ParameterHelp, String?>?>(null) }
+
+    activeHelp?.let { (help, currentVal) ->
+        ParameterHelpBottomSheet(
+            help = help,
+            currentValue = currentVal,
+            onDismiss = { activeHelp = null },
+        )
+    }
+
     if (snapshot == null) {
         Column(
             modifier = Modifier
@@ -104,28 +120,28 @@ fun PumpsAndIoScreen(uiState: MonitoringUiState) {
                     .padding(vertical = 12.dp, horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                StationStatCell("در حال کار", "$activePumps / ${pumps.size}", if (activePumps > 0) p.ok else p.textSecondary, Modifier.weight(1f))
+                StationStatCell("Running", "$activePumps / ${pumps.size}", if (activePumps > 0) p.ok else p.textSecondary, Modifier.weight(1f))
                 Box(modifier = Modifier.width(0.8.dp).height(34.dp).background(p.hairline))
-                StationStatCell("آماده در مدار", "$enabledPumps / ${pumps.size}", p.cyan, Modifier.weight(1f))
+                StationStatCell("Ready", "$enabledPumps / ${pumps.size}", p.cyan, Modifier.weight(1f))
                 Box(modifier = Modifier.width(0.8.dp).height(34.dp).background(p.hairline))
                 val healthLabel = when {
-                    failedPumps > 0 -> "$failedPumps خطا"
-                    disabledPumps > 0 -> "$disabledPumps خاموش (S)"
-                    else -> "سالم"
+                    failedPumps > 0 -> "$failedPumps Fault"
+                    disabledPumps > 0 -> "$disabledPumps Service (S)"
+                    else -> "Normal"
                 }
                 val healthColor = when {
                     failedPumps > 0 -> p.fault
                     disabledPumps > 0 -> p.warning
                     else -> p.gold
                 }
-                StationStatCell("وضعیت پمپ‌ها", healthLabel, healthColor, Modifier.weight(1f))
+                StationStatCell("Health", healthLabel, healthColor, Modifier.weight(1f))
             }
         }
 
         item {
             ScadaPanel(
-                title = "وضعیت پمپ‌ها و ساعات کارکرد",
-                subtitle = "پایش کارکرد، حالت آماده‌به‌کار و زمان فعالیت هر پمپ",
+                title = "Pumps & Work Time",
+                subtitle = "وضعیت کارکرد، حالت سرویس (S) و ساعات کارکرد هر پمپ",
                 icon = Icons.Outlined.WaterDrop,
                 accentColor = when {
                     failedPumps > 0 -> p.fault
@@ -144,11 +160,11 @@ fun PumpsAndIoScreen(uiState: MonitoringUiState) {
         // Symmetrical 2-column × 5-row Industrial Relay Output Rack
         item {
             ScadaPanel(
-                title = "رله‌های خروجی کنترلر",
-                subtitle = "وضعیت لحظه‌ای ۱۰ خروجی فرمان",
+                title = "Relay Outputs (OUT 0–9)",
+                subtitle = "وضعیت لحظه‌ای رله‌های خروجی کنترلر",
                 icon = Icons.Outlined.DeveloperBoard,
                 accentColor = p.gold,
-                trailing = { StatusBadge("$activeRelays روشن", if (activeRelays > 0) BadgeTone.OK else BadgeTone.NEUTRAL) },
+                trailing = { StatusBadge("$activeRelays ON", if (activeRelays > 0) BadgeTone.OK else BadgeTone.NEUTRAL) },
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     snapshot.outputs.chunked(2).forEachIndexed { rowIdx, pair ->
@@ -160,7 +176,7 @@ fun PumpsAndIoScreen(uiState: MonitoringUiState) {
                                 val outIndex = rowIdx * 2 + colIdx
                                 PlcRackModuleCell(
                                     code = "OUT $outIndex",
-                                    label = "رله خروجی $outIndex",
+                                    label = "Output $outIndex",
                                     active = state,
                                     activeColor = p.ok,
                                     modifier = Modifier.weight(1f),
@@ -175,17 +191,17 @@ fun PumpsAndIoScreen(uiState: MonitoringUiState) {
         // Symmetrical 2-column Digital Input Matrix (PR1–PR4 & MFI1–MFI4)
         item {
             ScadaPanel(
-                title = "ورودی‌های کنتاکتور و چندمنظوره",
-                subtitle = "فیدبک کنتاکتور پمپ‌ها و ورودی‌های کنترلی",
+                title = "Input Status (PR & MFI)",
+                subtitle = "وضعیت ورودی‌های فیدبک کنتاکتور و ورودی‌های چندمنظوره",
                 icon = Icons.AutoMirrored.Outlined.Input,
                 accentColor = p.cyan,
             ) {
                 val inputs = buildList {
                     snapshot.prInputs.forEachIndexed { i, st ->
-                        add(Triple("PR${i + 1}", "فیدبک پمپ ${i + 1}", st to p.cyan))
+                        add(Triple("PR${i + 1}", "Pump ${i + 1} Feedback", st to p.cyan))
                     }
                     snapshot.mfiInputs.forEachIndexed { i, st ->
-                        add(Triple("MFI${i + 1}", "ورودی چندمنظوره ${i + 1}", st to p.gold))
+                        add(Triple("MFI${i + 1}", "Multi-Function Input ${i + 1}", st to p.gold))
                     }
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -212,16 +228,31 @@ fun PumpsAndIoScreen(uiState: MonitoringUiState) {
 
         item {
             ScadaPanel(
-                title = "وضعیت درایو و فلوتر مخزن",
-                subtitle = "پایش اینورتر و سنسورهای سطح آب منبع ذخیره",
+                title = "Drive & Floater Status",
+                subtitle = "وضعیت درایو (اینورتر) و الکترودهای سطح مخزن",
                 icon = Icons.Outlined.Sensors,
                 accentColor = p.cyan,
             ) {
-                StatusLine("وضعیت سرویس درایو", snapshot.driveEnabled, "روشن", "خاموش (S)", BadgeTone.OK, BadgeTone.WARNING)
+                StatusLine(
+                    label = "Drive Service",
+                    value = snapshot.driveEnabled,
+                    trueText = "Enable",
+                    falseText = "Disable (S)",
+                    trueTone = BadgeTone.OK,
+                    falseTone = BadgeTone.WARNING,
+                    onHelpClick = {
+                        activeHelp = Bpc02Catalog.helpFor(com.dgp.boosterpump.controller.register.Bpc02RegisterMap.driveActivationDef) to
+                            when (snapshot.driveEnabled) {
+                                true -> "Enable"
+                                false -> "Disable"
+                                null -> null
+                            }
+                    },
+                )
                 HorizontalDivider(color = p.hairline)
-                StatusLine("خروجی فرمان درایو", snapshot.drStatus, "روشن", "خاموش", BadgeTone.OK, BadgeTone.NEUTRAL)
+                StatusLine("DR Status", snapshot.drStatus, "ON", "OFF", BadgeTone.OK, BadgeTone.NEUTRAL)
                 HorizontalDivider(color = p.hairline)
-                StatusLine("سلامت درایو (اینورتر)", snapshot.driveFailed, "دارای خطا", "سالم", BadgeTone.FAULT, BadgeTone.OK)
+                StatusLine("Drive Health", snapshot.driveFailed, "Fault", "Normal", BadgeTone.FAULT, BadgeTone.OK)
                 HorizontalDivider(color = p.hairline)
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
@@ -230,12 +261,12 @@ fun PumpsAndIoScreen(uiState: MonitoringUiState) {
                 ) {
                     val driverCount = snapshot.variablePumpCount
                     val freqLabel = when {
-                        driverCount == 0 -> "تعداد درایو"
-                        driverCount != null && driverCount >= 2 -> "فرکانس درایو ۱ / درایو ۲"
-                        else -> "فرکانس درایو"
+                        driverCount == 0 -> "Drives"
+                        driverCount != null && driverCount >= 2 -> "Drive 1 / Drive 2 FRQ"
+                        else -> "Drive FRQ"
                     }
                     val freqValue = when {
-                        driverCount == 0 -> "بدون درایو"
+                        driverCount == 0 -> "0 Drives (DOL)"
                         driverCount != null && driverCount >= 2 -> {
                             val d1 = snapshot.drive1FrequencyHz?.let { "%.2f".format(it) } ?: "—"
                             val d2 = snapshot.drive2FrequencyHz?.let { "%.2f".format(it) } ?: "—"
@@ -243,13 +274,44 @@ fun PumpsAndIoScreen(uiState: MonitoringUiState) {
                         }
                         else -> snapshot.drive1FrequencyHz?.let { "%.2f Hz".format(it) } ?: "—"
                     }
-                    Text(freqLabel, style = MaterialTheme.typography.bodyMedium, color = p.textPrimary, modifier = Modifier.weight(1f))
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        LtrText(freqLabel, style = MaterialTheme.typography.bodyMedium, color = p.textPrimary)
+                        ParameterHelpIcon(
+                            onClick = { activeHelp = Bpc02Catalog.conceptHelp("drive_frequency") to freqValue },
+                        )
+                    }
                     LtrText(freqValue, style = MonoStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold), color = p.cyan)
                 }
                 HorizontalDivider(color = p.hairline)
-                StatusLine("فلوتر سطح پایین مخزن", snapshot.floaterLowConnected, "متصل", "قطع (کم‌آبی)", BadgeTone.OK, BadgeTone.FAULT)
+                StatusLine(
+                    label = "Floater L Level",
+                    value = snapshot.floaterLowConnected,
+                    trueText = "Connected",
+                    falseText = "Open (Low!)",
+                    trueTone = BadgeTone.OK,
+                    falseTone = BadgeTone.FAULT,
+                    onHelpClick = {
+                        activeHelp = Bpc02Catalog.conceptHelp("floater_level") to
+                            if (snapshot.floaterLowConnected == true) "Connected" else "Open"
+                    },
+                )
                 HorizontalDivider(color = p.hairline)
-                StatusLine("فلوتر سطح بالا مخزن", snapshot.floaterHighConnected, "متصل", "قطع", BadgeTone.OK, BadgeTone.WARNING)
+                StatusLine(
+                    label = "Floater H Level",
+                    value = snapshot.floaterHighConnected,
+                    trueText = "Connected",
+                    falseText = "Open",
+                    trueTone = BadgeTone.OK,
+                    falseTone = BadgeTone.WARNING,
+                    onHelpClick = {
+                        activeHelp = Bpc02Catalog.conceptHelp("floater_level") to
+                            if (snapshot.floaterHighConnected == true) "Connected" else "Open"
+                    },
+                )
             }
         }
     }
@@ -263,8 +325,8 @@ private fun StationStatCell(label: String, value: String, accent: Color, modifie
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = p.textSecondary)
-        Text(value, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = accent)
+        LtrText(label, style = MaterialTheme.typography.labelSmall, color = p.textSecondary)
+        LtrText(value, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = accent)
     }
 }
 
@@ -290,7 +352,7 @@ private fun PumpDetailCardRow(pump: PumpState, prFeedback: Boolean?) {
         )
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("پمپ ${pump.number}", style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
+                LtrText("Pump ${pump.number}", style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
                 if (prFeedback != null) {
                     Row(
                         modifier = Modifier
@@ -307,20 +369,20 @@ private fun PumpDetailCardRow(pump: PumpState, prFeedback: Boolean?) {
                 }
             }
             val runTimeText = when {
-                pump.runTime != null -> "زمان کارکرد: ${PersianLabels.formatRunTime(pump.runTime)}"
-                pump.hasRunTimeRegisters -> "زمان کارکرد: در دسترس نیست"
-                else -> "تایمر برای این پمپ ثبت نشده است"
+                pump.runTime != null -> "Work Time: ${pump.runTime.format()}"
+                pump.hasRunTimeRegisters -> "Work Time: —"
+                else -> "No Work Time Register"
             }
-            Text(runTimeText, style = MaterialTheme.typography.bodySmall, color = p.textSecondary)
+            LtrText(runTimeText, style = MaterialTheme.typography.bodySmall, color = p.textSecondary)
             if (isDisabled) {
                 Text(
-                    "به‌صورت دستی خاموش شده است (نمایش S روی کنترلر)",
+                    "خاموش‌شده در حالت سرویس (نمایش S روی کنترلر)",
                     style = MaterialTheme.typography.labelSmall,
                     color = p.warning,
                 )
             } else if (isReady) {
                 Text(
-                    "روشن و آماده ورود به مدار",
+                    "آماده ورود به مدار",
                     style = MaterialTheme.typography.labelSmall,
                     color = p.cyan,
                 )
@@ -328,14 +390,14 @@ private fun PumpDetailCardRow(pump: PumpState, prFeedback: Boolean?) {
         }
         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             when {
-                isDisabled -> StatusBadge("خاموش (S)", BadgeTone.WARNING)
-                isRunning -> StatusBadge("در حال کار", BadgeTone.OK, pulsing = true)
-                isReady -> StatusBadge("آماده‌به‌کار", BadgeTone.INFO)
-                pump.running == false -> StatusBadge("آماده‌به‌کار", BadgeTone.NEUTRAL)
-                else -> StatusBadge("نامشخص", BadgeTone.NEUTRAL)
+                isDisabled -> StatusBadge("Service (S)", BadgeTone.WARNING)
+                isRunning -> StatusBadge("Running", BadgeTone.OK, pulsing = true)
+                isReady -> StatusBadge("Standby", BadgeTone.INFO)
+                pump.running == false -> StatusBadge("Standby", BadgeTone.NEUTRAL)
+                else -> StatusBadge("Unknown", BadgeTone.NEUTRAL)
             }
             if (pump.failed == true) {
-                StatusBadge("خطای پمپ", BadgeTone.FAULT, pulsing = true)
+                StatusBadge("Fault", BadgeTone.FAULT, pulsing = true)
             }
         }
     }
@@ -366,7 +428,7 @@ private fun PlcRackModuleCell(
                 style = MonoStyle.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
                 color = if (isActive) activeColor else p.textPrimary,
             )
-            Text(
+            LtrText(
                 text = label,
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 14.sp),
                 color = p.textSecondary,
@@ -384,6 +446,7 @@ private fun StatusLine(
     falseText: String,
     trueTone: BadgeTone,
     falseTone: BadgeTone,
+    onHelpClick: (() -> Unit)? = null,
 ) {
     val p = LocalScadaPalette.current
     Row(
@@ -393,11 +456,20 @@ private fun StatusLine(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = p.textPrimary, modifier = Modifier.weight(1f))
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            LtrText(label, style = MaterialTheme.typography.bodyMedium, color = p.textPrimary)
+            if (onHelpClick != null) {
+                ParameterHelpIcon(onClick = onHelpClick)
+            }
+        }
         val (text, tone) = when (value) {
             true -> trueText to trueTone
             false -> falseText to falseTone
-            null -> "نامشخص" to BadgeTone.NEUTRAL
+            null -> "Unknown" to BadgeTone.NEUTRAL
         }
         StatusBadge(text, tone, pulsing = tone == BadgeTone.FAULT)
     }

@@ -184,9 +184,9 @@ object Bpc02RegisterMap {
         row = 54,
         scale = 1.0,
         minValue = 1,
-        maxValue = 4,
+        maxValue = 6,
         access = AccessPolicy.READ,
-        rangeNote = "Range 1–4.",
+        rangeNote = "Range 1–6 (Mode 1) / 1–4 (Mode 2 & 3).",
     )
 
     val numberOfVariablePumpDef: RegisterDefinition = cfgWord(

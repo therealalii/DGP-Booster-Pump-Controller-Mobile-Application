@@ -14,6 +14,7 @@ import com.dgp.boosterpump.session.ConnectionState
 import com.dgp.boosterpump.session.ControllerSession
 import com.dgp.boosterpump.session.PressureSample
 import com.dgp.boosterpump.session.ProbeResult
+import com.dgp.boosterpump.simulation.SimulatedStationProfile
 import com.dgp.boosterpump.simulation.SimulationScenario
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -30,6 +31,7 @@ data class MonitoringUiState(
     val snapshot: ControllerSnapshot? = null,
     val pressureHistory: List<PressureSample> = emptyList(),
     val simulationScenario: SimulationScenario = SimulationScenario.NORMAL_DUTY,
+    val simulationProfile: SimulatedStationProfile = SimulatedStationProfile(),
     val transactions: List<TransactionRecord> = emptyList(),
     val configSnapshot: ConfigSnapshotState = ConfigSnapshotState(),
     val probeResult: ProbeResult? = null,
@@ -85,19 +87,26 @@ class MonitoringViewModel(
         )
     }
 
-    val uiState: StateFlow<MonitoringUiState> = combine(
+    private val telemetryFlow = combine(
         coreFlow,
+        session.simulationProfile,
         session.pressureHistory,
         session.transactions,
         session.configSnapshot,
-        session.probeResult,
-    ) { core, history, tx, cfgSnap, probe ->
+    ) { core, simProfile, history, tx, cfgSnap ->
         core.copy(
+            simulationProfile = simProfile,
             pressureHistory = history,
             transactions = tx,
             configSnapshot = cfgSnap,
-            probeResult = probe,
         )
+    }
+
+    val uiState: StateFlow<MonitoringUiState> = combine(
+        telemetryFlow,
+        session.probeResult,
+    ) { state, probe ->
+        state.copy(probeResult = probe)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -114,6 +123,8 @@ class MonitoringViewModel(
 
     fun setSimulationScenario(scenario: SimulationScenario) = session.setSimulationScenario(scenario)
 
+    fun setSimulationProfile(profile: SimulatedStationProfile) = session.setSimulationProfile(profile)
+
     fun readHardwareConfiguration() = session.readHardwareConfiguration()
 
     fun writeHardwareParameter(
@@ -124,6 +135,18 @@ class MonitoringViewModel(
         if (!role.canWriteRegister(definition)) return
         session.writeHardwareParameter(definition, newValue)
     }
+
+    fun applyImportedConfiguration(
+        entries: List<Pair<com.dgp.boosterpump.controller.register.RegisterDefinition, Int>>,
+    ) {
+        val role = _currentUser.value?.role ?: return
+        if (entries.isEmpty()) return
+        // Enforce role write permission across EVERY parameter before touching Modbus
+        if (entries.any { (def, _) -> !role.canWriteRegister(def) }) return
+        session.applyImportedConfiguration(entries)
+    }
+
+    fun clearImportProgress() = session.clearImportProgress()
 
     fun resetPumpErrors() {
         val role = _currentUser.value?.role ?: return

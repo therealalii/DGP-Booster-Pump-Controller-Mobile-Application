@@ -218,8 +218,8 @@ fun PressureArcGauge(
             verticalArrangement = Arrangement.spacedBy(1.dp, Alignment.CenterVertically),
             modifier = Modifier.padding(horizontal = 24.dp),
         ) {
-            Text(
-                text = "فشار سیستم",
+            LtrText(
+                text = "System Pressure",
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                 color = palette.textSecondary,
             )
@@ -230,18 +230,17 @@ fun PressureArcGauge(
                     color = palette.textPrimary,
                 )
             }
-            Text(
-                text = if (setpointBar != null) "هدف: %.2f بار".format(setpointBar) else "بار",
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+            LtrText(
+                text = if (setpointBar != null) "SP: %.2f Bar".format(setpointBar) else "Bar",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
                 color = if (setpointBar != null) palette.gold else activeColor,
-                fontWeight = FontWeight.Bold,
             )
             val drText = when (drActive) {
-                true -> "درایو: روشن"
-                false -> "درایو: خاموش"
-                null -> "درایو: —"
+                true -> "Drive: ON"
+                false -> "Drive: OFF"
+                null -> "Drive: —"
             }
-            Text(
+            LtrText(
                 text = drText,
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                 color = if (drActive == true) palette.ok else palette.textSecondary,
@@ -283,11 +282,11 @@ fun WaterTankIndicator(
     )
 
     val (waterColor, statusLabel, statusTone) = when {
-        floaterLow == true && floaterHigh == true -> Triple(palette.cyan, "پر (عادی)", BadgeTone.OK)
-        floaterLow == true && floaterHigh == false -> Triple(palette.warning, "سطح میانی", BadgeTone.WARNING)
-        floaterLow == false && floaterHigh == false -> Triple(palette.fault, "کمبود آب!", BadgeTone.FAULT)
-        floaterLow == false && floaterHigh == true -> Triple(palette.fault, "ناسازگاری فلوتر", BadgeTone.FAULT)
-        else -> Triple(palette.standby, "نامشخص", BadgeTone.NEUTRAL)
+        floaterLow == true && floaterHigh == true -> Triple(palette.cyan, "Full (Normal)", BadgeTone.OK)
+        floaterLow == true && floaterHigh == false -> Triple(palette.warning, "Mid Level", BadgeTone.WARNING)
+        floaterLow == false && floaterHigh == false -> Triple(palette.fault, "Floater Error!", BadgeTone.FAULT)
+        floaterLow == false && floaterHigh == true -> Triple(palette.fault, "Floater Fault", BadgeTone.FAULT)
+        else -> Triple(palette.standby, "Unknown", BadgeTone.NEUTRAL)
     }
 
     Column(
@@ -295,7 +294,7 @@ fun WaterTankIndicator(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Text("مخزن ذخیره", style = MaterialTheme.typography.labelMedium, color = palette.textSecondary)
+        LtrText("Water Tank", style = MaterialTheme.typography.labelMedium, color = palette.textSecondary)
 
         Box(
             modifier = Modifier
@@ -490,17 +489,17 @@ fun PressureTrendChart(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    "Min: %.2f bar".format(minVal),
+                    "Min: %.2f Bar".format(minVal),
                     style = MonoStyle.copy(fontSize = 11.sp),
                     color = palette.textSecondary,
                 )
                 Text(
-                    "${samples.size} نمونه زنده",
+                    "${samples.size} live samples",
                     style = MaterialTheme.typography.labelSmall,
                     color = palette.cyan,
                 )
                 Text(
-                    "Max: %.2f bar".format(maxVal),
+                    "Max: %.2f Bar".format(maxVal),
                     style = MonoStyle.copy(fontSize = 11.sp),
                     color = palette.textSecondary,
                 )
@@ -743,22 +742,22 @@ fun AnimatedImpellerIcon(
     }
 }
 
-/** Visual 3-phase voltage analyzer with nominal 230 V / 400 V reference lines. */
+/** Visual 3-phase Voltmeter analyzer with nominal 230 V / 400 V reference lines (BPC-02.pdf p.10). */
 @Composable
 fun ThreePhaseVoltageBars(voltages: PhaseVoltages) {
     val palette = LocalScadaPalette.current
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("فاز به نول (نامی ۲۳۰ ولت)", style = MaterialTheme.typography.labelMedium, color = palette.textSecondary)
+        LtrText("Phase–Neutral (230V Nominal)", style = MaterialTheme.typography.labelMedium, color = palette.textSecondary)
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            VoltageBarTile("R–N", voltages.rn, nominal = 230, maxScale = 280, modifier = Modifier.weight(1f))
-            VoltageBarTile("S–N", voltages.sn, nominal = 230, maxScale = 280, modifier = Modifier.weight(1f))
-            VoltageBarTile("T–N", voltages.tn, nominal = 230, maxScale = 280, modifier = Modifier.weight(1f))
+            VoltageBarTile("VRN", voltages.rn, nominal = 230, maxScale = 280, modifier = Modifier.weight(1f))
+            VoltageBarTile("VSN", voltages.sn, nominal = 230, maxScale = 280, modifier = Modifier.weight(1f))
+            VoltageBarTile("VTN", voltages.tn, nominal = 230, maxScale = 280, modifier = Modifier.weight(1f))
         }
-        Text("فاز به فاز (نامی ۴۰۰ ولت)", style = MaterialTheme.typography.labelMedium, color = palette.textSecondary)
+        LtrText("Phase–Phase (400V Nominal)", style = MaterialTheme.typography.labelMedium, color = palette.textSecondary)
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            VoltageBarTile("R–S", voltages.rs, nominal = 400, maxScale = 480, modifier = Modifier.weight(1f))
-            VoltageBarTile("S–T", voltages.st, nominal = 400, maxScale = 480, modifier = Modifier.weight(1f))
-            VoltageBarTile("T–R", voltages.tr, nominal = 400, maxScale = 480, modifier = Modifier.weight(1f))
+            VoltageBarTile("VRS", voltages.rs, nominal = 400, maxScale = 480, modifier = Modifier.weight(1f))
+            VoltageBarTile("VST", voltages.st, nominal = 400, maxScale = 480, modifier = Modifier.weight(1f))
+            VoltageBarTile("VTR", voltages.tr, nominal = 400, maxScale = 480, modifier = Modifier.weight(1f))
         }
     }
 }
@@ -858,264 +857,4 @@ fun PlcLedBead(
     )
 }
 
-/**
- * Animated SCADA hydraulic P&ID flow visualizer:
- *   Storage Tank  ──(suction pipe)──▶  Booster Turbine Core  ──(discharge collector)──▶  Building Supply
- * Flow particles speed up dynamically with [runningPumpCount], turn crimson during alarms/low water,
- * and idle smoothly when all pumps are stopped.
- */
-@Composable
-fun BoosterHydraulicFlowDiagram(
-    pressureBar: Double?,
-    runningPumpCount: Int,
-    floaterLow: Boolean?,
-    hasFault: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val palette = LocalScadaPalette.current
-    val isFlowing = runningPumpCount > 0 && floaterLow != false && !hasFault
-    val cycleDuration = when {
-        runningPumpCount >= 3 -> 950
-        runningPumpCount == 2 -> 1350
-        runningPumpCount == 1 -> 1850
-        else -> 3200
-    }
-
-    val infinite = rememberInfiniteTransition(label = "hydraulic_flow")
-    val flowPhase by infinite.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(cycleDuration, easing = LinearEasing)),
-        label = "flow_phase",
-    )
-    val turbineAngle by infinite.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(cycleDuration, easing = LinearEasing)),
-        label = "turbine_angle",
-    )
-    val pulse by infinite.animateFloat(
-        initialValue = 0.5f,
-        targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(tween(1100, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "station_pulse",
-    )
-
-    val streamColor = when {
-        hasFault || floaterLow == false -> palette.fault
-        isFlowing -> palette.cyan
-        else -> palette.standby
-    }
-    val hubColor = when {
-        hasFault -> palette.fault
-        isFlowing -> palette.ok
-        else -> palette.gold
-    }
-
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(92.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(palette.terminalBg)
-                .border(1.dp, streamColor.copy(alpha = if (isFlowing || hasFault) 0.45f else 0.25f), RoundedCornerShape(12.dp)),
-        ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val w = size.width
-                val h = size.height
-                val midY = h * 0.52f
-
-                // Left Tank Box
-                val tankW = 42.dp.toPx()
-                val tankH = 52.dp.toPx()
-                val tankLeft = 14.dp.toPx()
-                val tankTop = midY - tankH / 2f
-                drawRoundRect(
-                    color = palette.panelElevated,
-                    topLeft = Offset(tankLeft, tankTop),
-                    size = Size(tankW, tankH),
-                    cornerRadius = CornerRadius(8.dp.toPx()),
-                )
-                val fillRatio = if (floaterLow == false) 0.16f else 0.72f
-                val waterH = tankH * fillRatio
-                drawRoundRect(
-                    brush = Brush.verticalGradient(
-                        listOf(streamColor.copy(alpha = 0.75f), streamColor.copy(alpha = 0.25f)),
-                        startY = tankTop + tankH - waterH,
-                        endY = tankTop + tankH,
-                    ),
-                    topLeft = Offset(tankLeft + 2.dp.toPx(), tankTop + tankH - waterH),
-                    size = Size(tankW - 4.dp.toPx(), waterH - 2.dp.toPx()),
-                    cornerRadius = CornerRadius(6.dp.toPx()),
-                )
-                drawRoundRect(
-                    color = palette.panelBorder,
-                    topLeft = Offset(tankLeft, tankTop),
-                    size = Size(tankW, tankH),
-                    cornerRadius = CornerRadius(8.dp.toPx()),
-                    style = Stroke(width = 1.5.dp.toPx()),
-                )
-
-                // Center Booster Hub & Right Discharge Collector Manifold
-                val hubCenter = Offset(w * 0.50f, midY)
-                val hubR = 23.dp.toPx()
-                val outLeft = w - 58.dp.toPx()
-                val outW = 44.dp.toPx()
-                val outH = 44.dp.toPx()
-                val outTop = midY - outH / 2f
-
-                // Suction Pipe (Tank -> Hub) & Discharge Pipe (Hub -> Collector)
-                val pipeStart1 = tankLeft + tankW
-                val pipeEnd1 = hubCenter.x - hubR
-                val pipeStart2 = hubCenter.x + hubR
-                val pipeEnd2 = outLeft
-                val pipeThick = 10.dp.toPx()
-
-                fun drawPipe(x1: Float, x2: Float) {
-                    if (x2 <= x1) return
-                    drawLine(
-                        color = palette.panelElevated,
-                        start = Offset(x1, midY),
-                        end = Offset(x2, midY),
-                        strokeWidth = pipeThick,
-                        cap = StrokeCap.Butt,
-                    )
-                    drawLine(
-                        color = palette.panelBorder,
-                        start = Offset(x1, midY - pipeThick / 2f),
-                        end = Offset(x2, midY - pipeThick / 2f),
-                        strokeWidth = 1.dp.toPx(),
-                    )
-                    drawLine(
-                        color = palette.panelBorder,
-                        start = Offset(x1, midY + pipeThick / 2f),
-                        end = Offset(x2, midY + pipeThick / 2f),
-                        strokeWidth = 1.dp.toPx(),
-                    )
-                    if (isFlowing) {
-                        // Flowing glowing water/pressure energy slugs
-                        val count = 4
-                        val span = x2 - x1
-                        for (i in 0 until count) {
-                            val t = (flowPhase + i.toFloat() / count) % 1f
-                            val px = x1 + span * t
-                            val segLen = 14.dp.toPx()
-                            val fade = sin(t * PI).toFloat().coerceIn(0f, 1f)
-                            drawLine(
-                                brush = Brush.horizontalGradient(
-                                    listOf(Color.Transparent, streamColor.copy(alpha = 0.95f * fade), Color.White.copy(alpha = 0.85f * fade)),
-                                    startX = px - segLen,
-                                    endX = px + 4f,
-                                ),
-                                start = Offset((px - segLen).coerceAtLeast(x1), midY),
-                                end = Offset(px.coerceAtMost(x2), midY),
-                                strokeWidth = 4.2.dp.toPx(),
-                                cap = StrokeCap.Round,
-                            )
-                        }
-                    }
-                }
-                drawPipe(pipeStart1, pipeEnd1)
-                drawPipe(pipeStart2, pipeEnd2)
-
-                // Booster Turbine Hub with radial glow + spinning blades
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        0f to hubColor.copy(alpha = 0.34f * pulse),
-                        1f to Color.Transparent,
-                        center = hubCenter,
-                        radius = hubR * 1.45f,
-                    ),
-                    radius = hubR * 1.45f,
-                    center = hubCenter,
-                )
-                drawCircle(color = palette.panel, radius = hubR, center = hubCenter)
-                drawCircle(
-                    color = hubColor,
-                    radius = hubR,
-                    center = hubCenter,
-                    style = Stroke(width = 2.2.dp.toPx()),
-                )
-                val rot = if (isFlowing) turbineAngle else 0f
-                rotate(degrees = rot, pivot = hubCenter) {
-                    for (i in 0 until 4) {
-                        rotate(degrees = i * 90f, pivot = hubCenter) {
-                            val blade = Path().apply {
-                                moveTo(hubCenter.x, hubCenter.y)
-                                quadraticTo(
-                                    hubCenter.x + hubR * 0.45f,
-                                    hubCenter.y - hubR * 0.22f,
-                                    hubCenter.x + hubR * 0.65f,
-                                    hubCenter.y - hubR * 0.52f,
-                                )
-                            }
-                            drawPath(
-                                path = blade,
-                                color = if (isFlowing) palette.cyan else hubColor.copy(alpha = 0.7f),
-                                style = Stroke(width = 2.3.dp.toPx(), cap = StrokeCap.Round),
-                            )
-                        }
-                    }
-                }
-                drawCircle(color = palette.gold, radius = 4.dp.toPx(), center = hubCenter)
-
-                // Right Discharge Collector Pressure Vessel
-                drawRoundRect(
-                    color = palette.panelElevated,
-                    topLeft = Offset(outLeft, outTop),
-                    size = Size(outW, outH),
-                    cornerRadius = CornerRadius(10.dp.toPx()),
-                )
-                drawRoundRect(
-                    color = if (isFlowing) palette.gold.copy(alpha = 0.75f * pulse) else palette.panelBorder,
-                    topLeft = Offset(outLeft, outTop),
-                    size = Size(outW, outH),
-                    cornerRadius = CornerRadius(10.dp.toPx()),
-                    style = Stroke(width = 1.6.dp.toPx()),
-                )
-                // Mini pressure fill bar inside collector vessel
-                val pRatio = ((pressureBar ?: 0.0) / 10.0).toFloat().coerceIn(0f, 1f)
-                val barH = (outH - 12.dp.toPx()) * pRatio
-                if (barH > 1f) {
-                    drawRoundRect(
-                        brush = Brush.verticalGradient(listOf(palette.gold, palette.cyan)),
-                        topLeft = Offset(outLeft + outW / 2f - 6.dp.toPx(), outTop + outH - 6.dp.toPx() - barH),
-                        size = Size(12.dp.toPx(), barH),
-                        cornerRadius = CornerRadius(4.dp.toPx()),
-                    )
-                }
-            }
-        }
-
-        // Clean telemetry caption strip beneath schematic
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("مخزن ورودی", style = MaterialTheme.typography.labelSmall, color = palette.textSecondary)
-            val stateText = when {
-                hasFault -> "توقف حفاظتی (خطای فعال)"
-                floaterLow == false -> "قطع جریان (کمبود آب)"
-                isFlowing -> "پمپاژ فعال ($runningPumpCount پمپ در مدار)"
-                else -> "آماده‌به‌کار"
-            }
-            Text(
-                text = stateText,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                color = streamColor,
-            )
-            LtrText(
-                text = pressureBar?.let { "%.2f bar".format(it) } ?: "— bar",
-                style = MonoStyle.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
-                color = palette.gold,
-            )
-        }
-    }
-}
 

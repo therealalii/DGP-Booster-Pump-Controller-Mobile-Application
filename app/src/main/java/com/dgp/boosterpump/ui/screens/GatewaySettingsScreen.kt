@@ -146,8 +146,8 @@ fun GatewaySettingsScreen(
                         value = form.host,
                         onValueChange = viewModel::updateHost,
                         readOnly = !canEditGateway,
-                        label = { Text("آدرس IP مبدل") },
-                        placeholder = { Text("مثلاً 192.168.1.74") },
+                        label = { Text("IP Address") },
+                        placeholder = { Text("192.168.1.74") },
                         singleLine = true,
                         shape = RoundedCornerShape(12.dp),
                         isError = ConfigValidation.Field.HOST in form.errors,
@@ -162,12 +162,12 @@ fun GatewaySettingsScreen(
                             value = form.portText,
                             onValueChange = viewModel::updatePort,
                             readOnly = !canEditGateway,
-                            label = { Text("پورت شبکه") },
+                            label = { Text("Port") },
                             supportingText = {
                                 Text(
                                     form.errors[ConfigValidation.Field.PORT]?.let {
                                         PersianLabels.validationError(ConfigValidation.Field.PORT, it)
-                                    } ?: "معمولاً 4001 یا 502",
+                                    } ?: "Default: 4001 / 502",
                                 )
                             },
                             singleLine = true,
@@ -180,12 +180,12 @@ fun GatewaySettingsScreen(
                             value = form.unitIdText,
                             onValueChange = viewModel::updateUnitId,
                             readOnly = !canEditGateway,
-                            label = { Text("شماره دستگاه") },
+                            label = { Text("ModBus Address") },
                             supportingText = {
                                 Text(
                                     form.errors[ConfigValidation.Field.UNIT_ID]?.let {
                                         PersianLabels.validationError(ConfigValidation.Field.UNIT_ID, it)
-                                    } ?: "پیش‌فرض: 1",
+                                    } ?: "Default: 1",
                                 )
                             },
                             singleLine = true,
@@ -197,7 +197,7 @@ fun GatewaySettingsScreen(
                     }
 
                     NoticeBox(
-                        text = "برای اتصال، گوشی را به شبکه وای‌فای متصل به مبدل وصل کرده و آدرس IP و پورت مبدل را وارد کنید.",
+                        text = "برای اتصال، گوشی را به شبکه وای‌فای متصل به مبدل وصل کرده و آدرس IP و Port مبدل را وارد کنید.",
                         tone = BadgeTone.INFO,
                     )
                 }
@@ -229,7 +229,7 @@ fun GatewaySettingsScreen(
                             Icon(Icons.Outlined.Timer, contentDescription = null, tint = p.cyan, modifier = Modifier.size(19.dp))
                             Column {
                                 Text(
-                                    "تنظیمات پیشرفته زمان‌بندی",
+                                    "Timing Settings",
                                     style = MaterialTheme.typography.titleSmall,
                                     color = p.textPrimary,
                                 )
@@ -254,7 +254,7 @@ fun GatewaySettingsScreen(
                                     value = form.pollIntervalText,
                                     onValueChange = viewModel::updatePollInterval,
                                     readOnly = !canEditGateway,
-                                    label = { Text("بازه بروزرسانی (ms)") },
+                                    label = { Text("Poll Interval (ms)") },
                                     singleLine = true,
                                     shape = RoundedCornerShape(12.dp),
                                     isError = ConfigValidation.Field.POLL_INTERVAL in form.errors,
@@ -269,7 +269,7 @@ fun GatewaySettingsScreen(
                                         value = form.responseTimeoutText,
                                         onValueChange = viewModel::updateResponseTimeout,
                                         readOnly = !canEditGateway,
-                                        label = { Text("مهلت پاسخ (ms)") },
+                                        label = { Text("Response Timeout (ms)") },
                                         singleLine = true,
                                         shape = RoundedCornerShape(12.dp),
                                         isError = ConfigValidation.Field.RESPONSE_TIMEOUT in form.errors,

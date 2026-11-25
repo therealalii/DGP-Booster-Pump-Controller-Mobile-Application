@@ -360,7 +360,9 @@ private fun MainScadaShell(
                 if (showSimBanner) {
                     SimulationBanner(
                         scenario = uiState.simulationScenario,
+                        profile = uiState.simulationProfile,
                         onScenarioSelected = monitoringViewModel::setSimulationScenario,
+                        onProfileChanged = monitoringViewModel::setSimulationProfile,
                     )
                 }
                 ConnectionHeaderStrip(
@@ -410,6 +412,8 @@ private fun MainScadaShell(
                     userRole = user.role,
                     onReadHardwareConfig = monitoringViewModel::readHardwareConfiguration,
                     onWriteParameter = monitoringViewModel::writeHardwareParameter,
+                    onApplyImportedConfig = monitoringViewModel::applyImportedConfiguration,
+                    onDismissImportProgress = monitoringViewModel::clearImportProgress,
                     onResetPumpErrors = monitoringViewModel::resetPumpErrors,
                     onDismissWriteNotice = monitoringViewModel::clearLastWriteNotice,
                 )

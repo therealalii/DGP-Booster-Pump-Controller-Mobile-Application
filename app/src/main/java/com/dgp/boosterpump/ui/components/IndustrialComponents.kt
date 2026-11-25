@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -34,8 +36,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.CheckCircleOutline
@@ -43,14 +47,15 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -76,7 +81,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dgp.boosterpump.controller.Bpc02Catalog
 import com.dgp.boosterpump.session.ConnectionState
+import com.dgp.boosterpump.simulation.SimulatedStationProfile
 import com.dgp.boosterpump.simulation.SimulationScenario
 import com.dgp.boosterpump.ui.PersianLabels
 import com.dgp.boosterpump.ui.theme.LocalScadaPalette
@@ -899,16 +906,151 @@ fun DgpBottomNavBar(
 }
 
 /**
- * Unmistakable yet clean demo-mode strip shown whenever Demo / Simulation mode is active
- * so test readings are never confused with live controller telemetry.
+ * Demo/Simulation mode strip shown whenever Simulation mode is active so test readings are
+ * never confused with live hardware, while allowing live switching of Scenario, Wiring Mode,
+ * Main Pump count (1–6), and Drive count to verify dynamic UI & schematic adaptation.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SimulationBanner(
     scenario: SimulationScenario,
+    profile: SimulatedStationProfile,
     onScenarioSelected: (SimulationScenario) -> Unit,
+    onProfileChanged: (SimulatedStationProfile) -> Unit,
 ) {
     val p = LocalScadaPalette.current
-    var expanded by remember { mutableStateOf(false) }
+    var showDialog by remember { mutableStateOf(false) }
+
+    if (showDialog) {
+        val maxPumps = if (profile.wiringMode == 1) 6 else 4
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            containerColor = p.panel,
+            shape = RoundedCornerShape(22.dp),
+            icon = { Icon(Icons.Outlined.Science, contentDescription = null, tint = p.gold) },
+            title = { Text("Demo Station Configuration", style = MaterialTheme.typography.titleMedium, color = p.textPrimary) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    // 1. Wiring Mode selector (Mode 1 / Mode 2 / Mode 3)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        LtrText(
+                            text = "Wiring Mode (Word 4170)",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = p.gold,
+                        )
+                        DgpSegmentedControl(
+                            items = listOf(1, 2, 3),
+                            selected = profile.wiringMode,
+                            label = { m -> "Mode $m" },
+                            onSelect = { m -> onProfileChanged(profile.copy(wiringMode = m)) },
+                            height = 38.dp,
+                        )
+                    }
+
+                    // 2. Main Pump count (1..4 or 1..6 in Mode 1)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        LtrText(
+                            text = "Main Pumps (Word 4133)",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = p.cyan,
+                        )
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                                verticalArrangement = Arrangement.spacedBy(7.dp),
+                            ) {
+                                (1..maxPumps).forEach { count ->
+                                    DgpPillChip(
+                                        label = if (count == 1) "1 Pump" else "$count Pumps",
+                                        selected = profile.pumpCount == count,
+                                        onClick = { onProfileChanged(profile.copy(pumpCount = count)) },
+                                        accent = p.cyan,
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // 3. Drives (Mode 1 allows 0..min(2, pumps); Modes 2 & 3 use 1 shared drive)
+                    if (profile.wiringMode == 1) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            LtrText(
+                                text = "Drives (Word 4134)",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = p.gold,
+                            )
+                            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                                    verticalArrangement = Arrangement.spacedBy(7.dp),
+                                ) {
+                                    (0..minOf(2, profile.pumpCount)).forEach { drives ->
+                                        DgpPillChip(
+                                            label = Bpc02Catalog.driverCountLabel(drives),
+                                            selected = profile.driveCount == drives,
+                                            onClick = { onProfileChanged(profile.copy(driveCount = drives)) },
+                                            accent = p.gold,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = p.hairline)
+
+                    // 4. Simulation Scenario selector
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            "سناریوی آزمایشی",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = p.textPrimary,
+                        )
+                        SimulationScenario.entries.forEach { item ->
+                            val selected = item == scenario
+                            Surface(
+                                onClick = { onScenarioSelected(item) },
+                                color = if (selected) p.goldSoft else p.panelElevated,
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(0.8.dp, if (selected) p.gold.copy(alpha = 0.55f) else p.panelBorder),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    LtrText(
+                                        text = item.label,
+                                        style = MaterialTheme.typography.labelLarge.copy(
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                        ),
+                                        color = if (selected) p.gold else p.textPrimary,
+                                    )
+                                    Text(
+                                        text = PersianLabels.scenarioDescription(item),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = p.textSecondary,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDialog = false }) {
+                    Text("بستن", color = p.gold, fontWeight = FontWeight.Bold)
+                }
+            },
+        )
+    }
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = p.simBannerBg,
@@ -930,56 +1072,36 @@ fun SimulationBanner(
                     Icon(Icons.Outlined.Science, contentDescription = null, modifier = Modifier.size(16.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "حالت نمایشی (آزمایشی)",
+                            "حالت نمایشی (Demo)",
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                             color = p.simBannerFg,
                         )
-                        Text(
-                            PersianLabels.scenarioLabel(scenario),
+                        LtrText(
+                            text = "${Bpc02Catalog.wiringModeLabel(profile.wiringMode)} • ${profile.pumpCount}P • ${profile.driveCount}D • ${scenario.label}",
                             style = MaterialTheme.typography.labelSmall,
-                            color = p.simBannerFg.copy(alpha = 0.88f),
+                            color = p.simBannerFg.copy(alpha = 0.90f),
                         )
                     }
                 }
                 Spacer(Modifier.width(8.dp))
-                Box {
-                    Surface(
-                        onClick = { expanded = true },
-                        color = p.simBannerFg.copy(alpha = 0.14f),
-                        border = BorderStroke(0.8.dp, p.simBannerFg.copy(alpha = 0.38f)),
-                        shape = RoundedCornerShape(999.dp),
+                Surface(
+                    onClick = { showDialog = true },
+                    color = p.simBannerFg.copy(alpha = 0.14f),
+                    border = BorderStroke(0.8.dp, p.simBannerFg.copy(alpha = 0.38f)),
+                    shape = RoundedCornerShape(999.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp),
-                        ) {
-                            Text("تغییر حالت", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = p.simBannerFg, softWrap = false)
-                            Icon(Icons.Outlined.ArrowDropDown, contentDescription = null, modifier = Modifier.size(15.dp))
-                        }
-                    }
-                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        SimulationScenario.entries.forEach { item ->
-                            DropdownMenuItem(
-                                text = {
-                                    Column {
-                                        Text(
-                                            PersianLabels.scenarioLabel(item),
-                                            fontWeight = if (item == scenario) FontWeight.Bold else FontWeight.Normal,
-                                        )
-                                        Text(
-                                            PersianLabels.scenarioDescription(item),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                },
-                                onClick = {
-                                    expanded = false
-                                    onScenarioSelected(item)
-                                },
-                            )
-                        }
+                        Text(
+                            "تنظیم دمو",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = p.simBannerFg,
+                            softWrap = false,
+                        )
+                        Icon(Icons.Outlined.ArrowDropDown, contentDescription = null, modifier = Modifier.size(15.dp))
                     }
                 }
             }

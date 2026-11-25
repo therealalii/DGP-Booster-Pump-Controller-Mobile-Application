@@ -1,5 +1,6 @@
 package com.dgp.boosterpump.session
 
+import com.dgp.boosterpump.controller.Bpc02Catalog
 import com.dgp.boosterpump.controller.ControllerProfiles
 import com.dgp.boosterpump.controller.ControllerReader
 import com.dgp.boosterpump.controller.ControllerSnapshot
@@ -18,6 +19,7 @@ import com.dgp.boosterpump.modbus.ReadFunction
 import com.dgp.boosterpump.modbus.TcpModbusTransport
 import com.dgp.boosterpump.modbus.TransactionRecord
 import com.dgp.boosterpump.simulation.SimulatedBpc02Transport
+import com.dgp.boosterpump.simulation.SimulatedStationProfile
 import com.dgp.boosterpump.simulation.SimulationScenario
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -74,6 +76,20 @@ data class WriteResult(
     val timestampMillis: Long,
 )
 
+/** Live progress & summary of applying a validated imported JSON configuration batch. */
+data class ConfigImportProgress(
+    val applying: Boolean = false,
+    val completed: Boolean = false,
+    val totalCount: Int = 0,
+    val processedCount: Int = 0,
+    val appliedCount: Int = 0,
+    val currentParameterName: String? = null,
+    val failedDetails: List<String> = emptyList(),
+    val timestampMillis: Long? = null,
+) {
+    val allSucceeded: Boolean get() = completed && failedDetails.isEmpty() && appliedCount == totalCount
+}
+
 /** Result of an on-demand read of the hardware configuration addresses. */
 data class ConfigSnapshotState(
     val loading: Boolean = false,
@@ -81,6 +97,7 @@ data class ConfigSnapshotState(
     val readings: List<RegisterReading> = emptyList(),
     val errors: List<String> = emptyList(),
     val lastWrite: WriteResult? = null,
+    val importProgress: ConfigImportProgress? = null,
     val timestampMillis: Long? = null,
 )
 
@@ -90,7 +107,8 @@ data class PressureSample(val timestampMillis: Long, val pressureBar: Double)
 /**
  * Coordinates the Modbus transport, polling loop, transaction log, on-demand
  * configuration read, verified FC05/FC06 writes with RS485/EEPROM settle timing & read-back
- * confirmation, Reset Pump Error command (Word 99 = 25), and single-request read probe.
+ * confirmation, sequential verified configuration import, Reset Pump Error command (Word 99 = 25),
+ * and single-request read probe.
  *
  * Writes are NEVER executed automatically on startup/reconnect and are strictly limited
  * to registers marked [AccessPolicy.READ_WRITE_VERIFIED] within documented bounds.
@@ -98,7 +116,7 @@ data class PressureSample(val timestampMillis: Long, val pressureBar: Double)
 class ControllerSession(
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val transportFactory: (GatewayConfig, () -> SimulationScenario) -> ModbusTransport = ::defaultTransport,
+    private val transportFactory: ((GatewayConfig, () -> SimulationScenario) -> ModbusTransport)? = null,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
@@ -115,6 +133,9 @@ class ControllerSession(
 
     private val _simulationScenario = MutableStateFlow(SimulationScenario.NORMAL_DUTY)
     val simulationScenario: StateFlow<SimulationScenario> = _simulationScenario.asStateFlow()
+
+    private val _simulationProfile = MutableStateFlow(SimulatedStationProfile())
+    val simulationProfile: StateFlow<SimulatedStationProfile> = _simulationProfile.asStateFlow()
 
     private val _transactions = MutableStateFlow<List<TransactionRecord>>(emptyList())
     val transactions: StateFlow<List<TransactionRecord>> = _transactions.asStateFlow()
@@ -139,12 +160,48 @@ class ControllerSession(
         _simulationScenario.value = scenario
     }
 
+    fun setSimulationProfile(profile: SimulatedStationProfile) {
+        val normalized = profile.normalized()
+        _simulationProfile.value = normalized
+        // Immediately reflect updated simulated architecture in live snapshot for responsive UI
+        val cfg = _activeConfig.value
+        if (cfg?.mode == DataSourceMode.SIMULATION) {
+            _snapshot.update { snap ->
+                snap?.copy(
+                    wiringMode = normalized.wiringMode,
+                    configuredPumpCount = normalized.pumpCount,
+                    variablePumpCount = normalized.driveCount,
+                )
+            }
+            _configSnapshot.update { state ->
+                if (state.readings.isEmpty()) {
+                    state
+                } else {
+                    state.copy(
+                        readings = state.readings.map { r ->
+                            when (r.definition.key) {
+                                "wiring_mode" -> r.copy(raw = normalized.wiringMode)
+                                "number_of_pump" -> r.copy(raw = normalized.pumpCount)
+                                "number_of_variable_pump" -> r.copy(raw = normalized.driveCount)
+                                else -> r
+                            }
+                        },
+                    )
+                }
+            }
+        }
+    }
+
     fun clearTransactionLog() {
         _transactions.value = emptyList()
     }
 
     fun clearLastWriteNotice() {
         _configSnapshot.update { it.copy(lastWrite = null) }
+    }
+
+    fun clearImportProgress() {
+        _configSnapshot.update { it.copy(importProgress = null) }
     }
 
     /** Starts connecting and polling with [config]. Any previous session is stopped first. */
@@ -568,6 +625,175 @@ class ControllerSession(
         }
     }
 
+    /**
+     * Applies a user-confirmed batch of imported configuration parameters sequentially using
+     * verified single-register FC05/FC06 writes with RS485 quiet timing and read-back verification.
+     *
+     * Safety guardrails:
+     *  - Pre-validates EVERY entry's [AccessPolicy.READ_WRITE_VERIFIED] and numeric/enum bounds
+     *    before transmitting a single frame; any violation aborts the entire batch immediately.
+     *  - Never queues writes when disconnected.
+     */
+    fun applyImportedConfiguration(entries: List<Pair<RegisterDefinition, Int>>) {
+        if (entries.isEmpty()) return
+
+        // Upfront atomic safety validation — never partially apply an invalid batch!
+        val validationErrors = mutableListOf<String>()
+        for ((def, value) in entries) {
+            val name = Bpc02Catalog.fullParameterName(def)
+            if (def.access != AccessPolicy.READ_WRITE_VERIFIED) {
+                validationErrors += "$name: read-only or locked register"
+                continue
+            }
+            val min = def.minValue ?: 0
+            val max = def.maxValue ?: if (def.table == VendorTable.BIT) 1 else 0xFFFF
+            if (def.enumLabels.isNotEmpty() && value !in def.enumLabels.keys) {
+                validationErrors += "$name: unsupported option ($value)"
+            } else if (value !in min..max) {
+                validationErrors += "$name: value $value outside $min..$max"
+            }
+        }
+        if (validationErrors.isNotEmpty()) {
+            _configSnapshot.update {
+                it.copy(
+                    importProgress = ConfigImportProgress(
+                        applying = false,
+                        completed = true,
+                        totalCount = entries.size,
+                        processedCount = 0,
+                        appliedCount = 0,
+                        failedDetails = validationErrors,
+                        timestampMillis = clock(),
+                    ),
+                )
+            }
+            return
+        }
+
+        val cfg = _activeConfig.value
+        val generation = sessionGeneration
+        if (cfg == null || transport?.isOpen != true || writeClient == null || readClient == null) {
+            _configSnapshot.update {
+                it.copy(
+                    importProgress = ConfigImportProgress(
+                        applying = false,
+                        completed = true,
+                        totalCount = entries.size,
+                        processedCount = 0,
+                        appliedCount = 0,
+                        failedDetails = listOf("Not connected — import aborted (writes are never queued)."),
+                        timestampMillis = clock(),
+                    ),
+                )
+            }
+            return
+        }
+
+        val isLive = cfg.mode == DataSourceMode.LIVE
+
+        scope.launch(ioDispatcher) {
+            if (generation != sessionGeneration) return@launch
+            var applied = 0
+            var processed = 0
+            val failures = mutableListOf<String>()
+
+            _configSnapshot.update {
+                it.copy(
+                    writingKey = entries.first().first.key,
+                    importProgress = ConfigImportProgress(
+                        applying = true,
+                        completed = false,
+                        totalCount = entries.size,
+                        processedCount = 0,
+                        appliedCount = 0,
+                        currentParameterName = Bpc02Catalog.fullParameterName(entries.first().first),
+                    ),
+                )
+            }
+
+            try {
+                for ((def, targetValue) in entries) {
+                    if (generation != sessionGeneration) return@launch
+                    val displayName = Bpc02Catalog.fullParameterName(def)
+                    _configSnapshot.update {
+                        it.copy(
+                            writingKey = def.key,
+                            importProgress = ConfigImportProgress(
+                                applying = true,
+                                completed = false,
+                                totalCount = entries.size,
+                                processedCount = processed,
+                                appliedCount = applied,
+                                currentParameterName = displayName,
+                                failedDetails = failures.toList(),
+                            ),
+                        )
+                    }
+
+                    val pduAddr = cfg.mapping.pduAddress(def.documentedAddress)
+                    try {
+                        val outcome = ioMutex.withLock {
+                            if (generation != sessionGeneration) return@launch
+                            val activeWrite = writeClient ?: throw IllegalStateException("Not connected")
+                            val activeRead = readClient ?: throw IllegalStateException("Not connected")
+                            if (isLive) delay(LIVE_PRE_WRITE_QUIET_MS)
+                            when (def.table) {
+                                VendorTable.BIT -> activeWrite.writeSingleCoil(pduAddr, targetValue != 0)
+                                VendorTable.WORD -> activeWrite.writeSingleRegister(pduAddr, targetValue)
+                            }
+                            if (isLive) delay(LIVE_POST_WRITE_SETTLE_MS)
+                            readBackWithRetry(cfg, activeRead, def.table, pduAddr, isLive)
+                        }
+                        if (generation != sessionGeneration) return@launch
+                        val (readBack, warn) = outcome
+                        if (readBack == targetValue && warn == null) {
+                            applied++
+                            patchLiveSnapshotAfterWrite(def, readBack)
+                            _configSnapshot.update { state ->
+                                state.copy(
+                                    readings = state.readings.map { r ->
+                                        if (r.definition.key == def.key) r.copy(raw = readBack) else r
+                                    },
+                                )
+                            }
+                        } else {
+                            failures += "$displayName: ${warn ?: "read-back mismatch ($readBack ≠ $targetValue)"}"
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        failures += "$displayName: ${e.message ?: e::class.java.simpleName}"
+                        if (transport?.isOpen != true) {
+                            processed++
+                            break
+                        }
+                    }
+                    processed++
+                }
+            } finally {
+                if (generation == sessionGeneration) {
+                    val now = clock()
+                    _configSnapshot.update { state ->
+                        state.copy(
+                            writingKey = null,
+                            timestampMillis = now,
+                            importProgress = ConfigImportProgress(
+                                applying = false,
+                                completed = true,
+                                totalCount = entries.size,
+                                processedCount = processed,
+                                appliedCount = applied,
+                                currentParameterName = null,
+                                failedDetails = failures.toList(),
+                                timestampMillis = now,
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     /** Executes a single read-only Modbus request (FC01-FC04) directly against the active link. */
     fun runReadProbe(function: ReadFunction, pduAddress: Int, quantity: Int) {
         val generation = sessionGeneration
@@ -614,7 +840,8 @@ class ControllerSession(
         if (!silent) {
             _connectionState.value = ConnectionState.Connecting(target, isSim)
         }
-        val t = transportFactory(config) { _simulationScenario.value }
+        val t = transportFactory?.invoke(config) { _simulationScenario.value }
+            ?: defaultTransport(config, { _simulationScenario.value }, { _simulationProfile.value })
         t.open()
         transport = t
         readClient = ModbusReadClient(
@@ -668,9 +895,13 @@ class ControllerSession(
             DataSourceMode.LIVE -> "${config.host.trim()}:${config.port} (Unit ${config.unitId})"
         }
 
-        fun defaultTransport(config: GatewayConfig, scenario: () -> SimulationScenario): ModbusTransport =
+        fun defaultTransport(
+            config: GatewayConfig,
+            scenario: () -> SimulationScenario,
+            profile: () -> SimulatedStationProfile = { SimulatedStationProfile() },
+        ): ModbusTransport =
             when (config.mode) {
-                DataSourceMode.SIMULATION -> SimulatedBpc02Transport(config.mapping, scenario)
+                DataSourceMode.SIMULATION -> SimulatedBpc02Transport(config.mapping, scenario, profile)
                 DataSourceMode.LIVE -> TcpModbusTransport(
                     host = config.host.trim(),
                     port = config.port,

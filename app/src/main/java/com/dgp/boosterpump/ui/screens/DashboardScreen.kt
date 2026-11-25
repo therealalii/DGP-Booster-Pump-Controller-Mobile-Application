@@ -69,6 +69,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dgp.boosterpump.controller.AlarmSeverity
+import com.dgp.boosterpump.controller.Bpc02Catalog
 import com.dgp.boosterpump.controller.ControllerSnapshot
 import com.dgp.boosterpump.controller.PumpState
 import com.dgp.boosterpump.gateway.DataSourceMode
@@ -76,11 +77,13 @@ import com.dgp.boosterpump.session.ConnectionState
 import com.dgp.boosterpump.ui.PersianLabels
 import com.dgp.boosterpump.ui.components.AnimatedImpellerIcon
 import com.dgp.boosterpump.ui.components.BadgeTone
-import com.dgp.boosterpump.ui.components.BoosterHydraulicFlowDiagram
 import com.dgp.boosterpump.ui.components.DgpGoldButton
 import com.dgp.boosterpump.ui.components.DgpOutlinedButton
+import com.dgp.boosterpump.ui.components.DynamicBoosterSystemSchematic
 import com.dgp.boosterpump.ui.components.LtrText
 import com.dgp.boosterpump.ui.components.NoticeBox
+import com.dgp.boosterpump.ui.components.ParameterHelpBottomSheet
+import com.dgp.boosterpump.ui.components.ParameterHelpIcon
 import com.dgp.boosterpump.ui.components.PressureArcGauge
 import com.dgp.boosterpump.ui.components.PressureTrendChart
 import com.dgp.boosterpump.ui.components.ScadaPanel
@@ -105,6 +108,15 @@ fun DashboardScreen(
     val snapshot = uiState.snapshot
     val conn = uiState.connectionState
     var showResetDialog by remember { mutableStateOf(false) }
+    var activeHelp by remember { mutableStateOf<Pair<Bpc02Catalog.ParameterHelp, String?>?>(null) }
+
+    activeHelp?.let { (help, currentVal) ->
+        ParameterHelpBottomSheet(
+            help = help,
+            currentValue = currentVal,
+            onDismiss = { activeHelp = null },
+        )
+    }
 
     if (showResetDialog) {
         AlertDialog(
@@ -112,11 +124,11 @@ fun DashboardScreen(
             containerColor = p.panel,
             shape = RoundedCornerShape(22.dp),
             icon = { Icon(Icons.Outlined.RestartAlt, contentDescription = null, tint = p.gold) },
-            title = { Text("تایید رفع خطای پمپ‌ها", style = MaterialTheme.typography.titleMedium, color = p.textPrimary) },
+            title = { LtrText("Reset Pump Error", style = MaterialTheme.typography.titleMedium, color = p.textPrimary) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "فرمان رفع خطای پمپ‌ها به کنترلر ارسال خواهد شد.",
+                        "فرمان رفع خطای پمپ‌ها (Reset Pump Error) به کنترلر ارسال خواهد شد.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = p.textPrimary,
                     )
@@ -179,8 +191,13 @@ fun DashboardScreen(
             }
         }
 
-        // 1. Flagship Hero Overview Card (Operating Mode, Drivers, Gauge, Tank, 2x2 Metrics)
-        item { HeroTelemetryPanel(snapshot) }
+        // 1. Flagship Hero Overview Card (Wiring Mode, Drives, Gauge, Tank, 2x2 Metrics)
+        item {
+            HeroTelemetryPanel(
+                snapshot = snapshot,
+                onShowHelp = { key, cur -> activeHelp = Bpc02Catalog.conceptHelp(key) to cur },
+            )
+        }
 
         // 2. Elevate Active Alarms immediately below Hero when any fault exists
         if (hasActiveAlarms) {
@@ -193,31 +210,34 @@ fun DashboardScreen(
             }
         }
 
-        // 3. Station Pumps Quick Status Grid
-        item { BoosterStationPumpsPanel(snapshot.visiblePumps, onOpenPumps) }
-
-        // 4. Live Hydraulic Flow Schematic
+        // 3. Dynamic Pump System Schematic (adapts live to Wiring Mode & 1..6 Pumps)
         item {
             ScadaPanel(
-                title = "شماتیک هیدرولیک ایستگاه",
-                subtitle = "نمای زنده مخزن، پمپاژ و فشار خط خروجی",
+                title = "System Schematic",
+                subtitle = "نمای زنده و پویا از مخزن، فلوتر، پمپ‌ها و فشار خروجی",
                 icon = Icons.Outlined.Hub,
                 accentColor = if (hasActiveAlarms) p.fault else p.gold,
+                trailing = {
+                    ParameterHelpIcon(
+                        onClick = {
+                            activeHelp = Bpc02Catalog.conceptHelp("floater_level") to
+                                "${Bpc02Catalog.wiringModeLabel(snapshot.wiringMode)} • ${snapshot.visiblePumps.size} Pumps"
+                        },
+                    )
+                },
             ) {
-                BoosterHydraulicFlowDiagram(
-                    pressureBar = snapshot.pressureBar,
-                    runningPumpCount = snapshot.runningPumpCount,
-                    floaterLow = snapshot.floaterLowConnected,
-                    hasFault = hasActiveAlarms,
-                )
+                DynamicBoosterSystemSchematic(snapshot = snapshot)
             }
         }
+
+        // 4. Station Pumps Quick Status Grid
+        item { BoosterStationPumpsPanel(snapshot.visiblePumps, onOpenPumps) }
 
         // 5. Rolling Pressure Trend Chart
         item {
             ScadaPanel(
-                title = "نمودار تغییرات فشار",
-                subtitle = "روند فشار سیستم در لحظات اخیر",
+                title = "Pressure Trend",
+                subtitle = "روند تغییرات فشار خط در لحظات اخیر",
                 icon = Icons.AutoMirrored.Outlined.ShowChart,
                 accentColor = p.cyan,
             ) {
@@ -236,45 +256,47 @@ fun DashboardScreen(
             }
         }
 
-        // 7. 3-Phase Electrical Analyzer
+        // 7. 3-Phase Electrical Voltmeter
         item { ElectricalAnalyzerPanel(snapshot) }
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun HeroTelemetryPanel(snapshot: ControllerSnapshot) {
+private fun HeroTelemetryPanel(
+    snapshot: ControllerSnapshot,
+    onShowHelp: (String, String?) -> Unit,
+) {
     val p = LocalScadaPalette.current
-    val modeLabel = PersianLabels.controlStatusShort(snapshot.controlStatus)
+    val modeLabel = Bpc02Catalog.controlStatusLabel(snapshot.controlStatus)
     val modeTone = when (snapshot.controlStatus) {
         1, 2 -> BadgeTone.GOLD
         0 -> BadgeTone.WARNING
         else -> BadgeTone.NEUTRAL
     }
     val (driveLabel, driveTone) = when {
-        snapshot.driveFailed == true -> "خطای درایو" to BadgeTone.FAULT
-        snapshot.driveEnabled == false -> "درایو خاموش" to BadgeTone.WARNING
-        snapshot.driveFailed == false -> "درایو سالم" to BadgeTone.OK
-        else -> "درایو نامشخص" to BadgeTone.NEUTRAL
+        snapshot.driveFailed == true -> "Drive Error" to BadgeTone.FAULT
+        snapshot.driveEnabled == false -> "Drive OFF (S)" to BadgeTone.WARNING
+        snapshot.driveFailed == false -> "Drive OK" to BadgeTone.OK
+        else -> "Drive —" to BadgeTone.NEUTRAL
     }
     val visiblePumps = snapshot.visiblePumps
 
     ScadaPanel(
-        title = "وضعیت ایستگاه بوستر پمپ",
-        subtitle = "پایش زنده فشار، سطح مخزن و مد کاری دستگاه",
+        title = "System Overview",
+        subtitle = "پایش زنده فشار، سطح مخزن، درایو و مد کاری کنترلر",
         icon = Icons.Outlined.Speed,
         accentColor = p.gold,
         headerBadges = {
-            // Dedicated FlowRow beneath title so badges NEVER crush or vertically wrap the title!
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                StatusBadge(modeLabel, modeTone)
+                StatusBadge("Control: $modeLabel", modeTone)
                 StatusBadge(driveLabel, driveTone, pulsing = snapshot.driveFailed == true)
                 if (snapshot.alarms.isNotEmpty()) {
-                    StatusBadge("${snapshot.alarms.size} خطای فعال", BadgeTone.FAULT, pulsing = true)
+                    StatusBadge("${snapshot.alarms.size} Error${if (snapshot.alarms.size > 1) "s" else ""}", BadgeTone.FAULT, pulsing = true)
                 }
             }
         },
@@ -294,14 +316,22 @@ private fun HeroTelemetryPanel(snapshot: ControllerSnapshot) {
                     ),
                 )
                 .border(0.9.dp, p.gold.copy(alpha = 0.34f), RoundedCornerShape(14.dp))
-                .padding(horizontal = 14.dp, vertical = 11.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Column(modifier = Modifier.weight(1.35f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("مد کاری دستگاه", style = MaterialTheme.typography.labelSmall, color = p.textSecondary)
-                Text(
-                    text = PersianLabels.wiringModeLabel(snapshot.wiringMode),
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    LtrText("Wiring Mode", style = MaterialTheme.typography.labelSmall, color = p.textSecondary)
+                    ParameterHelpIcon(
+                        onClick = { onShowHelp("wiring_mode", Bpc02Catalog.wiringModeLabel(snapshot.wiringMode)) },
+                    )
+                }
+                LtrText(
+                    text = Bpc02Catalog.wiringModeArchitecture(snapshot.wiringMode),
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                     color = p.gold,
                 )
@@ -317,9 +347,22 @@ private fun HeroTelemetryPanel(snapshot: ControllerSnapshot) {
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                Text("تعداد درایو", style = MaterialTheme.typography.labelSmall, color = p.textSecondary)
-                Text(
-                    text = PersianLabels.driverCountLabel(snapshot.variablePumpCount),
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    LtrText("Drives", style = MaterialTheme.typography.labelSmall, color = p.textSecondary)
+                    ParameterHelpIcon(
+                        onClick = {
+                            onShowHelp(
+                                "number_of_variable_pump",
+                                Bpc02Catalog.driverCountLabel(snapshot.variablePumpCount),
+                            )
+                        },
+                    )
+                }
+                LtrText(
+                    text = Bpc02Catalog.driverCountLabel(snapshot.variablePumpCount),
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                     color = p.cyan,
                 )
@@ -351,27 +394,27 @@ private fun HeroTelemetryPanel(snapshot: ControllerSnapshot) {
         // Spacious 2x2 Architectural Live Metrics Grid (every card gets 50% width — ZERO truncation!)
         val driverCount = snapshot.variablePumpCount
         val (driveTitle, driveValue, driveCaption) = when {
-            driverCount == 0 -> Triple("وضعیت درایو", "بدون درایو", "کارکرد دورثابت")
+            driverCount == 0 -> Triple("Drive", "0 Drives", "Fixed-Speed (DOL)")
             driverCount != null && driverCount >= 2 -> Triple(
-                "فرکانس درایو ۱",
+                "Drive 1 FRQ",
                 snapshot.drive1FrequencyHz?.let { "%.2f Hz".format(it) } ?: "—",
-                snapshot.drive2FrequencyHz?.let { "درایو ۲: %.2f Hz".format(it) } ?: "۲ درایو متصل",
+                snapshot.drive2FrequencyHz?.let { "Drive 2: %.2f Hz".format(it) } ?: "2 Drives",
             )
             else -> Triple(
-                "فرکانس درایو",
+                "Drive FRQ",
                 snapshot.drive1FrequencyHz?.let { "%.2f Hz".format(it) } ?: "—",
                 when {
-                    snapshot.driveEnabled == false -> "درایو خاموش (S)"
-                    snapshot.drStatus == true -> "درایو در مدار"
-                    else -> "آماده‌به‌کار"
+                    snapshot.driveEnabled == false -> "Disabled (S)"
+                    snapshot.drStatus == true -> "Running"
+                    else -> "Standby"
                 },
             )
         }
         val enabledCount = snapshot.enabledPumpCount
         val pumpCaption = when {
-            snapshot.disabledPumpCount > 0 -> "$enabledCount آماده • ${snapshot.disabledPumpCount} خاموش"
-            enabledCount > 0 -> "$enabledCount پمپ آماده"
-            else -> "مجموع ${visiblePumps.size} پمپ"
+            snapshot.disabledPumpCount > 0 -> "$enabledCount Ready • ${snapshot.disabledPumpCount} Service (S)"
+            enabledCount > 0 -> "$enabledCount Ready"
+            else -> "${visiblePumps.size} Configured"
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -384,15 +427,16 @@ private fun HeroTelemetryPanel(snapshot: ControllerSnapshot) {
                     value = driveValue,
                     caption = driveCaption,
                     accent = p.warning,
-                    ltrValue = driverCount != 0,
+                    onHelpClick = { onShowHelp("drive_frequency", driveValue) },
                     modifier = Modifier.weight(1f),
                 )
+                val spDisplay = snapshot.pressureSetpointBar?.let { "%.2f Bar".format(it) } ?: "—"
                 HomeMetricTile(
-                    title = "فشار هدف",
-                    value = snapshot.pressureSetpointBar?.let { "%.2f bar".format(it) } ?: "—",
-                    caption = "فشار تنظیم‌شده",
+                    title = "Setpoint",
+                    value = spDisplay,
+                    caption = "Target Pressure",
                     accent = p.gold,
-                    ltrValue = true,
+                    onHelpClick = { onShowHelp("setpoint", spDisplay) },
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -401,23 +445,24 @@ private fun HeroTelemetryPanel(snapshot: ControllerSnapshot) {
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 HomeMetricTile(
-                    title = "پمپ در حال کار",
-                    value = "${snapshot.runningPumpCount} از ${visiblePumps.size}",
+                    title = "Active Pumps",
+                    value = "${snapshot.runningPumpCount} / ${visiblePumps.size}",
                     caption = pumpCaption,
                     accent = when {
                         snapshot.disabledPumpCount > 0 && snapshot.runningPumpCount == 0 -> p.warning
                         snapshot.runningPumpCount > 0 -> p.ok
                         else -> p.gold
                     },
-                    ltrValue = false,
+                    onHelpClick = { onShowHelp("number_of_pump", "${visiblePumps.size} Pumps") },
                     modifier = Modifier.weight(1f),
                 )
+                val mainsDisplay = snapshot.mainsFrequencyHz?.let { "%.2f Hz".format(it) } ?: "—"
                 HomeMetricTile(
-                    title = "فرکانس برق شهر",
-                    value = snapshot.mainsFrequencyHz?.let { "%.2f Hz".format(it) } ?: "—",
-                    caption = "برق ورودی شبکه",
+                    title = "Mains FRQ",
+                    value = mainsDisplay,
+                    caption = "Input Supply",
                     accent = p.cyan,
-                    ltrValue = true,
+                    onHelpClick = { onShowHelp("mains_frequency", mainsDisplay) },
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -431,7 +476,7 @@ private fun HomeMetricTile(
     value: String,
     caption: String,
     accent: Color,
-    ltrValue: Boolean,
+    onHelpClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val p = LocalScadaPalette.current
@@ -440,28 +485,28 @@ private fun HomeMetricTile(
             .clip(RoundedCornerShape(14.dp))
             .background(p.panelElevated)
             .border(0.8.dp, p.panelBorder, RoundedCornerShape(14.dp))
-            .padding(horizontal = 12.dp, vertical = 11.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.labelSmall,
-            color = p.textSecondary,
-        )
-        if (ltrValue) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             LtrText(
-                text = value,
-                style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp, fontWeight = FontWeight.Bold),
-                color = accent,
+                text = title,
+                style = MaterialTheme.typography.labelSmall,
+                color = p.textSecondary,
+                modifier = Modifier.weight(1f),
             )
-        } else {
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp, fontWeight = FontWeight.Bold),
-                color = accent,
-            )
+            ParameterHelpIcon(onClick = onHelpClick)
         }
-        Text(
+        LtrText(
+            text = value,
+            style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp, fontWeight = FontWeight.Bold),
+            color = accent,
+        )
+        LtrText(
             text = caption,
             style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
             color = p.textMuted,
@@ -479,16 +524,16 @@ private fun AlarmsPanel(
     val alarms = snapshot.alarms
     val hasAlarms = alarms.isNotEmpty()
     ScadaPanel(
-        title = "وضعیت حفاظت و خطاها",
-        subtitle = "پایش خودکار خطاهای پمپ، درایو، فلوتر و برق ورودی",
+        title = "Errors & Protection",
+        subtitle = "پایش خودکار خطاهای پمپ، درایو، فلوتر و کنترل فاز",
         icon = if (hasAlarms) Icons.Outlined.NotificationsActive else Icons.Outlined.CheckCircleOutline,
         accentColor = if (hasAlarms) p.fault else p.ok,
         borderColor = if (hasAlarms) p.fault.copy(alpha = 0.55f) else null,
         trailing = {
             if (hasAlarms) {
-                StatusBadge("${alarms.size} خطا", BadgeTone.FAULT, pulsing = true)
+                StatusBadge("${alarms.size} Error${if (alarms.size > 1) "s" else ""}", BadgeTone.FAULT, pulsing = true)
             } else {
-                StatusBadge("سالم", BadgeTone.OK)
+                StatusBadge("Normal", BadgeTone.OK)
             }
         },
     ) {
@@ -505,7 +550,7 @@ private fun AlarmsPanel(
             ) {
                 Icon(Icons.Outlined.CheckCircleOutline, contentDescription = null, tint = p.ok, modifier = Modifier.size(19.dp))
                 Text(
-                    "تمام حفاظت‌های ایستگاه، کنترل فاز و درایو در وضعیت عادی هستند.",
+                    "تمام حفاظت‌های ایستگاه (Control Phase، Floater، Drive و Pumps) در وضعیت عادی هستند.",
                     style = MaterialTheme.typography.bodySmall,
                     color = p.ok,
                 )
@@ -513,16 +558,16 @@ private fun AlarmsPanel(
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 alarms.forEach { alarm ->
-                    val (title, detail) = PersianLabels.localizeAlarm(alarm)
+                    val (enTitle, faDetail) = Bpc02Catalog.alarmTitleAndPersianDetail(alarm)
                     NoticeBox(
-                        text = "$title — $detail",
+                        text = "$enTitle — $faDetail",
                         tone = if (alarm.severity == AlarmSeverity.FAULT) BadgeTone.FAULT else BadgeTone.WARNING,
                     )
                 }
                 if (canReset) {
                     Spacer(Modifier.height(2.dp))
                     DgpGoldButton(
-                        text = "رفع خطای پمپ‌ها",
+                        text = "Reset Pump Error",
                         icon = Icons.Outlined.RestartAlt,
                         onClick = onRequestReset,
                         height = 46.dp,
@@ -542,13 +587,13 @@ private fun BoosterStationPumpsPanel(pumps: List<PumpState>, onOpenPumps: () -> 
     val failed = pumps.count { it.failed == true }
     val disabled = pumps.count { it.enabled == false }
     val subtitle = buildString {
-        append("$running از ${pumps.size} در حال کار")
-        if (failed > 0) append(" • $failed خطا")
-        if (enabled > 0) append(" • $enabled آماده")
-        if (disabled > 0) append(" • $disabled خاموش")
+        append("$running/${pumps.size} Running")
+        if (failed > 0) append(" • $failed Fault")
+        if (enabled > 0) append(" • $enabled Ready")
+        if (disabled > 0) append(" • $disabled Service (S)")
     }
     ScadaPanel(
-        title = "وضعیت پمپ‌ها",
+        title = "Pump Status",
         subtitle = subtitle,
         icon = Icons.Outlined.WaterDrop,
         accentColor = when {
@@ -622,14 +667,14 @@ private fun PumpHmiTile(pump: PumpState, modifier: Modifier = Modifier) {
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text("پمپ ${pump.number}", style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
+            LtrText("Pump ${pump.number}", style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
             val (label, tone) = when {
-                pump.failed == true -> "خطا" to BadgeTone.FAULT
-                isDisabled -> "خاموش (S)" to BadgeTone.NEUTRAL
-                isRunning -> "در حال کار" to BadgeTone.OK
-                isReady -> "آماده‌به‌کار" to BadgeTone.INFO
-                pump.running == false -> "آماده‌به‌کار" to BadgeTone.NEUTRAL
-                else -> "نامشخص" to BadgeTone.NEUTRAL
+                pump.failed == true -> "Fault" to BadgeTone.FAULT
+                isDisabled -> "Service (S)" to BadgeTone.NEUTRAL
+                isRunning -> "Running" to BadgeTone.OK
+                isReady -> "Standby" to BadgeTone.INFO
+                pump.running == false -> "Standby" to BadgeTone.NEUTRAL
+                else -> "Unknown" to BadgeTone.NEUTRAL
             }
             StatusBadge(label, tone, pulsing = pump.failed == true || isRunning)
             LtrText(
@@ -649,14 +694,14 @@ private fun PumpHmiTile(pump: PumpState, modifier: Modifier = Modifier) {
 private fun ElectricalAnalyzerPanel(snapshot: ControllerSnapshot) {
     val p = LocalScadaPalette.current
     ScadaPanel(
-        title = "وضعیت برق ورودی و ولتاژ فازها",
-        subtitle = "ولتاژ فازها و فرکانس برق شهر",
+        title = "Voltmeter (Control Phase)",
+        subtitle = "ولتاژ فازها و فرکانس برق ورودی",
         icon = Icons.Outlined.Bolt,
         accentColor = p.cyan,
         trailing = {
             LtrText(
-                text = snapshot.mainsFrequencyHz?.let { "%.2f Hz".format(it) } ?: "— Hz",
-                style = MaterialTheme.typography.titleMedium,
+                text = snapshot.mainsFrequencyHz?.let { "FRQ: %.2f Hz".format(it) } ?: "FRQ: — Hz",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                 color = p.cyan,
             )
         },

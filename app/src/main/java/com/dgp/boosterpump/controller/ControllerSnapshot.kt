@@ -142,22 +142,17 @@ data class ControllerSnapshot(
         }.orEmpty()
 
     /**
-     * Pumps that belong to this station's configured architecture:
-     *  - Modes 2 & 3 physically support 1..4 pumps (Word 4133), hiding non-existent ghost pumps 5-6.
-     *  - Mode 1 supports up to 6 pumps (up to 2 variable + 4 fixed).
+     * Pumps belonging to this station's configured architecture (Word 4133 `Main` + Word 4170 `Wiring`):
+     *  - Mode 2 & Mode 3 support 1..4 pumps sharing one changeover drive.
+     *  - Mode 1 supports 1..6 pumps (of which up to 2 can be VFD-driven).
      */
     val visiblePumps: List<PumpState>
         get() {
-            val count = when {
-                wiringMode in 2..3 && configuredPumpCount != null && configuredPumpCount in 1..4 -> configuredPumpCount
-                wiringMode == 1 && configuredPumpCount != null && configuredPumpCount in 1..4 -> {
-                    val total = (configuredPumpCount + (variablePumpCount ?: 0)).coerceIn(configuredPumpCount, pumps.size)
-                    // Never hide a pump if it is explicitly disabled (S) or faulted
-                    val highestActive = pumps.lastOrNull { it.enabled == false || it.failed == true }?.number ?: 0
-                    maxOf(total, highestActive).coerceIn(1, pumps.size)
-                }
-                else -> pumps.size
-            }
+            val maxForMode = if (wiringMode in 2..3) 4 else pumps.size
+            val count = configuredPumpCount
+                ?.takeIf { it in 1..pumps.size }
+                ?.coerceAtMost(maxForMode)
+                ?: maxForMode
             return pumps.take(count)
         }
 

@@ -40,6 +40,27 @@ enum class SimulationScenario(val label: String, val description: String) {
 }
 
 /**
+ * Configurable station architecture for Simulation/Demo mode, wired directly into simulated
+ * BPC-02 registers Word 4170 (`Wiring Mode`), Word 4133 (`Main`), and Word 4134 (`Drive`).
+ */
+data class SimulatedStationProfile(
+    val wiringMode: Int = 2,
+    val pumpCount: Int = 4,
+    val driveCount: Int = 1,
+) {
+    fun normalized(): SimulatedStationProfile {
+        val mode = wiringMode.coerceIn(1, 3)
+        val maxPumps = if (mode == 1) 6 else 4
+        val pumps = pumpCount.coerceIn(1, maxPumps)
+        val drives = when (mode) {
+            1 -> driveCount.coerceIn(0, minOf(2, pumps))
+            else -> 1
+        }
+        return SimulatedStationProfile(wiringMode = mode, pumpCount = pumps, driveCount = drives)
+    }
+}
+
+/**
  * In-memory [ModbusTransport] simulating a DGP BPC02 across all 154 registers of
  * Booster Pump Memory Map.xlsx, enforcing exact R vs RW permissions (returning Exception 0x02
  * on read-only registers and supporting FC06 Word 99 = 25 Reset Pump Error).
@@ -47,6 +68,7 @@ enum class SimulationScenario(val label: String, val description: String) {
 class SimulatedBpc02Transport(
     private val mapping: ProtocolMapping,
     private val scenarioProvider: () -> SimulationScenario,
+    private val profileProvider: () -> SimulatedStationProfile = { SimulatedStationProfile() },
     private val responseDelayMs: Long = 35L,
 ) : ModbusTransport {
 
@@ -275,13 +297,18 @@ class SimulatedBpc02Transport(
             }
         }
 
-        // Apply persistent simulated hardware configuration
+        // Apply persistent simulated hardware configuration + live station architecture profile
         bits.putAll(cfgBits)
         words.putAll(cfgWords)
+        val profile = profileProvider().normalized()
+        words[4170] = profile.wiringMode
+        words[4133] = profile.pumpCount
+        words[4134] = profile.driveCount
 
         val systemEnabled = (cfgWords[4173] ?: 1) != 0
-        val driveEnabled = cfgBits[4096] != false
-        val pumpEnabled = { n: Int -> cfgBits[4096 + n] != false }
+        val hasDrive = profile.driveCount > 0
+        val driveEnabled = hasDrive && cfgBits[4096] != false
+        val pumpEnabled = { n: Int -> n <= profile.pumpCount && cfgBits[4096 + n] != false }
         val cleared = faultsResetForScenario == scenario
 
         // Baseline mains supply (3-phase 230/400 V, 50.00 Hz)
@@ -327,9 +354,9 @@ class SimulatedBpc02Transport(
 
         when (scenario) {
             SimulationScenario.NORMAL_DUTY -> {
-                val p1Run = pumpEnabled(1) && driveEnabled
+                val p1Run = pumpEnabled(1) && (!hasDrive || driveEnabled)
                 words[2] = (420 + ripple * 8).roundToInt()
-                words[25] = if (p1Run) (3850 + ripple * 65).roundToInt() else 0 // ~38.50 Hz
+                words[25] = if (p1Run && hasDrive) (3850 + ripple * 65).roundToInt() else 0 // ~38.50 Hz
                 words[26] = 0
                 bits[19] = p1Run
                 bits[0] = p1Run
@@ -343,26 +370,26 @@ class SimulatedBpc02Transport(
             }
 
             SimulationScenario.PEAK_DEMAND -> {
-                val p1Run = pumpEnabled(1) && driveEnabled
-                val p2Run = pumpEnabled(2)
-                val p3Run = pumpEnabled(3)
+                val targetActive = when {
+                    profile.pumpCount >= 5 -> 4
+                    else -> minOf(3, profile.pumpCount)
+                }
+                val runningFlags = (1..6).map { n ->
+                    n <= targetActive && pumpEnabled(n) && (n > 1 || !hasDrive || driveEnabled)
+                }
                 words[2] = (385 + ripple * 12).roundToInt()
-                words[25] = if (p1Run) (4750 + ripple * 45).roundToInt() else 0 // ~47.50 Hz
-                words[26] = 0
-                bits[19] = p1Run
-                bits[20] = p2Run
-                bits[21] = p3Run
-                bits[0] = p1Run
-                bits[1] = p2Run
-                bits[2] = p3Run
-                bits[11] = p1Run
-                bits[12] = p2Run
-                bits[13] = p3Run
+                words[25] = if (runningFlags[0] && hasDrive) (4750 + ripple * 45).roundToInt() else 0 // ~47.50 Hz
+                words[26] = if (profile.driveCount >= 2 && runningFlags[1]) (4320 + ripple * 40).roundToInt() else 0
+                runningFlags.forEachIndexed { idx, run ->
+                    bits[19 + idx] = run
+                    if (idx < 6) bits[idx] = run
+                    if (idx < 4) bits[11 + idx] = run
+                }
                 bits[33] = false
-                setRunTime(1, 2, 44, 40, running = p1Run)
-                setRunTime(2, 2, 42, 57, running = p2Run)
-                setRunTime(3, 2, 41, 53, running = p3Run)
-                setRunTime(4, 2, 40, 59, running = false)
+                setRunTime(1, 2, 44, 40, running = runningFlags[0])
+                setRunTime(2, 2, 42, 57, running = runningFlags[1])
+                setRunTime(3, 2, 41, 53, running = runningFlags[2])
+                setRunTime(4, 2, 40, 59, running = runningFlags[3])
                 words[80] = 0
                 words[81] = 0
             }
@@ -384,27 +411,31 @@ class SimulatedBpc02Transport(
             }
 
             SimulationScenario.PUMP_AND_DRIVE_FAULT -> {
+                val faultPump = if (profile.pumpCount >= 2) 2 else 1
+                val p1Run = faultPump != 1 && pumpEnabled(1)
                 words[2] = 685
                 words[3] = 254
                 words[6] = 432
                 words[25] = 0
                 words[26] = 0
-                bits[19] = pumpEnabled(1)
-                bits[0] = bits[19] == true
-                bits[11] = bits[19] == true
-                bits[25] = !cleared // Drive fail
-                bits[27] = !cleared // Pump 2 fail
-                setRunTime(1, 2, 44, 40, running = bits[19] == true)
+                bits[19] = p1Run
+                bits[0] = p1Run
+                bits[11] = p1Run
+                bits[25] = !cleared && hasDrive // Drive fail
+                bits[25 + faultPump] = !cleared // Faulted pump bit
+                setRunTime(1, 2, 44, 40, running = p1Run)
                 setRunTime(2, 2, 42, 57, running = false)
                 setRunTime(3, 2, 41, 53, running = false)
                 setRunTime(4, 2, 40, 59, running = false)
                 words[80] = if (cleared) {
                     0
                 } else {
+                    val pumpBit = if (faultPump == 2) SystemErrorBit.PUMP2.bit else SystemErrorBit.PUMP1.bit
+                    val driveMask = if (hasDrive) (1 shl SystemErrorBit.DRIVE.bit) else 0
                     (1 shl SystemErrorBit.MAX_PRESSURE.bit) or
                         (1 shl SystemErrorBit.PHASE_MAX_VOLTAGE.bit) or
-                        (1 shl SystemErrorBit.DRIVE.bit) or
-                        (1 shl SystemErrorBit.PUMP2.bit)
+                        driveMask or
+                        (1 shl pumpBit)
                 }
                 words[81] = 0
             }

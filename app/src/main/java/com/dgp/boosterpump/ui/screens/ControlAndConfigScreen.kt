@@ -1,5 +1,8 @@
 package com.dgp.boosterpump.ui.screens
 
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -15,6 +18,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -36,17 +41,23 @@ import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.CheckCircleOutline
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeveloperBoard
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.FileOpen
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.RestartAlt
+import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.Sensors
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.UploadFile
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -55,6 +66,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -75,6 +87,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -82,32 +95,44 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import com.dgp.boosterpump.auth.UserRole
+import com.dgp.boosterpump.config.ConfigImportValidationResult
+import com.dgp.boosterpump.config.ControllerConfigTransfer
+import com.dgp.boosterpump.controller.Bpc02Catalog
+import com.dgp.boosterpump.controller.ControllerModel
+import com.dgp.boosterpump.controller.ControllerSnapshot
 import com.dgp.boosterpump.controller.RegisterReading
 import com.dgp.boosterpump.controller.register.Bpc02RegisterMap
 import com.dgp.boosterpump.controller.register.RegisterDefinition
 import com.dgp.boosterpump.controller.register.VendorTable
+import com.dgp.boosterpump.session.ConfigImportProgress
 import com.dgp.boosterpump.session.ConnectionState
 import com.dgp.boosterpump.session.WriteResult
-import com.dgp.boosterpump.ui.PersianLabels
 import com.dgp.boosterpump.ui.components.AnimatedImpellerIcon
 import com.dgp.boosterpump.ui.components.BadgeTone
 import com.dgp.boosterpump.ui.components.DgpGoldButton
+import com.dgp.boosterpump.ui.components.DgpOutlinedButton
 import com.dgp.boosterpump.ui.components.DgpSegmentedControl
+import com.dgp.boosterpump.ui.components.LtrText
 import com.dgp.boosterpump.ui.components.NoticeBox
+import com.dgp.boosterpump.ui.components.ParameterHelpBottomSheet
+import com.dgp.boosterpump.ui.components.ParameterHelpIcon
 import com.dgp.boosterpump.ui.components.PumpPowerToggle
 import com.dgp.boosterpump.ui.components.ScadaPanel
 import com.dgp.boosterpump.ui.components.StatusBadge
 import com.dgp.boosterpump.ui.components.formatTime
 import com.dgp.boosterpump.ui.theme.LocalScadaPalette
+import com.dgp.boosterpump.ui.theme.MonoStyle
 import com.dgp.boosterpump.viewmodel.MonitoringUiState
+import java.io.File
 import java.util.Locale
 import kotlin.math.roundToInt
 
 private val DialogGoldBg = Color(0xFFD09629)
 private val DialogGoldInk = Color(0xFF0A0702)
 
-/** Pending edit state driving one of the Persian confirmation dialogs. */
+/** Pending edit state driving one of the confirmation/edit dialogs. */
 private sealed interface PendingEdit {
     data class SwitchConfirm(val def: RegisterDefinition, val currentValue: Int?, val targetValue: Int) : PendingEdit
     data class NumberEdit(val def: RegisterDefinition, val currentValue: Int?) : PendingEdit
@@ -116,273 +141,27 @@ private sealed interface PendingEdit {
     data object ResetErrorsConfirm : PendingEdit
 }
 
-/** One page inside a physical DGP BPC02 hardware menu category. */
-private data class ControllerMenuPage(
-    val number: Int,
-    val title: String,
-    val registerKeys: List<String>,
+private data class PreparedExportPayload(
+    val fileName: String,
+    val jsonContent: String,
+    val parameterCount: Int,
+    val modelLabel: String,
+    val wiringSummary: String,
 )
 
-/**
- * Physical DGP BPC02 controller menu categories mirroring the hardware LCD menu tree:
- *  1. Control Phase (2 pages)
- *  2. Floater (1 page)
- *  3. Sensor (2 pages)
- *  4. Control (13 pages)
- *  5. MFx — Multi-Function I/O & Analog Outputs (3 pages)
- *  6. Device & Network Info (1 page)
- */
-private enum class ControllerCategory(
-    val index: Int,
-    val title: String,
-    val summary: String,
-    val icon: ImageVector,
-    val pages: List<ControllerMenuPage>,
-) {
-    CONTROL_PHASE(
-        index = 1,
-        title = "کنترل فاز",
-        summary = "نوع برق، حداقل و حداکثر ولتاژ، تاخیر و حساسیت",
-        icon = Icons.Outlined.Bolt,
-        pages = listOf(
-            ControllerMenuPage(
-                number = 1,
-                title = "ولتاژ و نوع برق",
-                registerKeys = listOf(
-                    "control_phase_activation",
-                    "control_phase_type",
-                    "control_phase_min_voltage",
-                    "control_phase_max_voltage",
-                ),
-            ),
-            ControllerMenuPage(
-                number = 2,
-                title = "تاخیر و حساسیت",
-                registerKeys = listOf(
-                    "control_phase_delay",
-                    "control_phase_sensitivity",
-                ),
-            ),
-        ),
-    ),
-    FLOATER(
-        index = 2,
-        title = "فلوتر مخزن",
-        summary = "نوع فلوتر، حساسیت سنسور و تاخیر قطع و وصل",
-        icon = Icons.Outlined.WaterDrop,
-        pages = listOf(
-            ControllerMenuPage(
-                number = 1,
-                title = "تنظیمات فلوتر",
-                registerKeys = listOf(
-                    "floater_type",
-                    "floater_trigger_level",
-                    "floater_delay",
-                ),
-            ),
-        ),
-    ),
-    SENSOR(
-        index = 3,
-        title = "سنسور فشار",
-        summary = "رنج و سیگنال سنسور، حداکثر فشار و کالیبراسیون",
-        icon = Icons.Outlined.Sensors,
-        pages = listOf(
-            ControllerMenuPage(
-                number = 1,
-                title = "نوع و رنج سنسور",
-                registerKeys = listOf(
-                    "pressure_sensor_input_type",
-                    "pressure_sensor_output_type",
-                ),
-            ),
-            ControllerMenuPage(
-                number = 2,
-                title = "حداکثر فشار و کالیبراسیون",
-                registerKeys = listOf(
-                    "max_pressure_value",
-                    "sensor_calibration_value",
-                ),
-            ),
-        ),
-    ),
-    CONTROL(
-        index = 4,
-        title = "کنترل پمپ‌ها",
-        summary = "مد کاری، سرویس پمپ، خواب و بیداری، اتو سرویس و PID",
-        icon = Icons.Outlined.Speed,
-        pages = listOf(
-            ControllerMenuPage(
-                number = 1,
-                title = "تعداد پمپ و درایو",
-                registerKeys = listOf("number_of_pump", "number_of_variable_pump"),
-            ),
-            ControllerMenuPage(
-                number = 2,
-                title = "مد کاری (سیم‌بندی)",
-                registerKeys = listOf("wiring_mode"),
-            ),
-            ControllerMenuPage(
-                number = 3,
-                title = "سرویس پمپ‌ها و درایو",
-                registerKeys = listOf(
-                    Bpc02RegisterMap.DRIVE_ACTIVATION,
-                    "pump_1_activation",
-                    "pump_2_activation",
-                    "pump_3_activation",
-                    "pump_4_activation",
-                    "pump_5_activation",
-                    "pump_6_activation",
-                ),
-            ),
-            ControllerMenuPage(
-                number = 4,
-                title = "حالت کنترل و فشار پله‌ای",
-                registerKeys = listOf(
-                    Bpc02RegisterMap.CONTROL_STATUS,
-                    "control_direction",
-                    Bpc02RegisterMap.SYSTEM_PRESSURE_SETPOINT,
-                    "pump_1_on_delay",
-                    "pump_1_off_pressure",
-                    "pump_1_off_delay",
-                    "pump_2_on_pressure",
-                    "pump_2_on_delay",
-                    "pump_2_off_pressure",
-                    "pump_2_off_delay",
-                    "pump_3_on_pressure",
-                    "pump_3_on_delay",
-                    "pump_3_off_pressure",
-                    "pump_3_off_delay",
-                    "pump_4_on_pressure",
-                    "pump_4_on_delay",
-                    "pump_4_off_pressure",
-                    "pump_4_off_delay",
-                ),
-            ),
-            ControllerMenuPage(
-                number = 5,
-                title = "افزودن و خروج پمپ",
-                registerKeys = listOf(
-                    "constant_pump_percent",
-                    "add_delay",
-                    "remove_delay",
-                    "mode3_switch_time",
-                ),
-            ),
-            ControllerMenuPage(
-                number = 6,
-                title = "حالت خواب (Sleep)",
-                registerKeys = listOf(
-                    "sleep_frequency",
-                    "sleep_off_delay",
-                    "sleep_gap",
-                ),
-            ),
-            ControllerMenuPage(
-                number = 7,
-                title = "بیداری و فرکانس‌ها",
-                registerKeys = listOf(
-                    "wakeup_differential",
-                    "wakeup_on_delay",
-                    "start_frequency",
-                    "stop_frequency",
-                ),
-            ),
-            ControllerMenuPage(
-                number = 8,
-                title = "جابه‌جایی و پمپ جاکی",
-                registerKeys = listOf(
-                    "off_changing_activation",
-                    "jockey_type",
-                ),
-            ),
-            ControllerMenuPage(
-                number = 9,
-                title = "تغییر نوبت زمانی",
-                registerKeys = listOf(
-                    "time_changing_activation",
-                    "time_changing_time",
-                ),
-            ),
-            ControllerMenuPage(
-                number = 10,
-                title = "رزرو خودکار پمپ",
-                registerKeys = listOf(
-                    "reserve_auto_activation",
-                    "reserve_auto_type",
-                ),
-            ),
-            ControllerMenuPage(
-                number = 11,
-                title = "حفاظت تمام‌بار",
-                registerKeys = listOf(
-                    "full_load_status",
-                    "full_load_pressure",
-                    "full_load_time",
-                ),
-            ),
-            ControllerMenuPage(
-                number = 12,
-                title = "اتو سرویس",
-                registerKeys = listOf(
-                    "auto_service_off_time",
-                    "auto_service_on_time",
-                    "auto_service_interval",
-                ),
-            ),
-            ControllerMenuPage(
-                number = 13,
-                title = "تنظیمات PID",
-                registerKeys = listOf(
-                    "pid_p_value",
-                    "pid_i_value",
-                    "pid_d_value",
-                ),
-            ),
-        ),
-    ),
-    MFX(
-        index = 5,
-        title = "ورودی و خروجی",
-        summary = "ورودی‌های MFI، خروجی‌های MFO و آنالوگ AO",
-        icon = Icons.Outlined.DeveloperBoard,
-        pages = listOf(
-            ControllerMenuPage(
-                number = 1,
-                title = "ورودی‌های چندمنظوره",
-                registerKeys = listOf("mfi_1_type", "mfi_2_type", "mfi_3_type", "mfi_4_type"),
-            ),
-            ControllerMenuPage(
-                number = 2,
-                title = "خروجی‌های چندمنظوره",
-                registerKeys = listOf("mfo_1_type", "mfo_2_type", "mfo_3_type", "mfo_4_type"),
-            ),
-            ControllerMenuPage(
-                number = 3,
-                title = "خروجی‌های آنالوگ",
-                registerKeys = listOf("ao1_type", "ao2_type", "ao1_gain", "ao2_gain"),
-            ),
-        ),
-    ),
-    DEVICE(
-        index = 6,
-        title = "اطلاعات دستگاه",
-        summary = "شماره سریال، کنتراست نمایشگر و شماره شبکه",
-        icon = Icons.Outlined.Info,
-        pages = listOf(
-            ControllerMenuPage(
-                number = 1,
-                title = "مشخصات و شبکه دستگاه",
-                registerKeys = listOf("serial_number", "lcd_contrast", "modbus_address"),
-            ),
-        ),
-    ),
+private fun categoryIcon(category: Bpc02Catalog.MenuCategory): ImageVector = when (category) {
+    Bpc02Catalog.MenuCategory.CONTROL_PHASE -> Icons.Outlined.Bolt
+    Bpc02Catalog.MenuCategory.FLOATER -> Icons.Outlined.WaterDrop
+    Bpc02Catalog.MenuCategory.SENSOR -> Icons.Outlined.Sensors
+    Bpc02Catalog.MenuCategory.CONTROL -> Icons.Outlined.Speed
+    Bpc02Catalog.MenuCategory.MFX -> Icons.Outlined.DeveloperBoard
+    Bpc02Catalog.MenuCategory.SYSTEM_NETWORK -> Icons.Outlined.Info
 }
 
 /**
- * Operational Control & Controller-Matched Settings screen organized around the exact physical
- * DGP BPC02 menu categories and pagination, enforcing two-tier role permissions (Administrator
- * vs Operator) with clean market-appropriate Persian terminology and zero Modbus developer clutter.
+ * Operational Control, Portable JSON Configuration Transfer (Import/Export), and Official
+ * BPC-02 Hardware Menu screen with exact English catalog terminology and interactive `?`
+ * Persian help explanations for every parameter.
  */
 @Composable
 fun ControlAndConfigScreen(
@@ -390,18 +169,29 @@ fun ControlAndConfigScreen(
     userRole: UserRole,
     onReadHardwareConfig: () -> Unit,
     onWriteParameter: (RegisterDefinition, Int) -> Unit,
+    onApplyImportedConfig: (List<Pair<RegisterDefinition, Int>>) -> Unit,
+    onDismissImportProgress: () -> Unit,
     onResetPumpErrors: () -> Unit,
     onDismissWriteNotice: () -> Unit,
 ) {
     val p = LocalScadaPalette.current
+    val context = LocalContext.current
     val cfgSnap = uiState.configSnapshot
     val liveSnap = uiState.snapshot
     val isConnected = uiState.connectionState is ConnectionState.Connected
-    val isWriting = cfgSnap.writingKey != null
+    val isImporting = cfgSnap.importProgress?.applying == true
+    val isWriting = cfgSnap.writingKey != null || isImporting
+    val activeModel = liveSnap?.model ?: uiState.activeConfig?.controllerModel ?: uiState.savedConfig.controllerModel
 
     var pendingEdit by remember { mutableStateOf<PendingEdit?>(null) }
-    var expandedCategory by remember { mutableStateOf<ControllerCategory?>(null) }
+    var activeHelp by remember { mutableStateOf<Pair<Bpc02Catalog.ParameterHelp, String?>?>(null) }
+    var expandedCategory by remember { mutableStateOf<Bpc02Catalog.MenuCategory?>(null) }
     var expandedPageNumber by remember { mutableStateOf<Int?>(null) }
+
+    // Import/Export workflow states
+    var preparedExport by remember { mutableStateOf<PreparedExportPayload?>(null) }
+    var importPreview by remember { mutableStateOf<ConfigImportValidationResult?>(null) }
+    var transferNotice by remember { mutableStateOf<Pair<String, BadgeTone>?>(null) }
 
     // Automatically load controller settings when connected and empty
     LaunchedEffect(isConnected) {
@@ -418,6 +208,117 @@ fun ControlAndConfigScreen(
         }
     }
 
+    // Android Storage Access Framework (SAF): Save exported JSON to user-chosen location
+    val saveDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        val payload = preparedExport
+        if (uri != null && payload != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    out.write(payload.jsonContent.toByteArray(Charsets.UTF_8))
+                } ?: error("Cannot open output stream")
+            }.onSuccess {
+                preparedExport = null
+                transferNotice = "فایل تنظیمات (${payload.fileName}) با موفقیت ذخیره شد." to BadgeTone.OK
+            }.onFailure { err ->
+                transferNotice = "ذخیره فایل ناموفق بود: ${err.message ?: "خطای دسترسی"}" to BadgeTone.FAULT
+            }
+        }
+    }
+
+    // Android SAF: Open JSON configuration file for strict validation & preview
+    val openDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val bytes = stream.readBytes()
+                    if (bytes.size > ControllerConfigTransfer.MAX_IMPORT_BYTES) {
+                        error("حجم فایل بیش از حد مجاز (۵۱۲ کیلوبایت) است.")
+                    }
+                    String(bytes, Charsets.UTF_8)
+                } ?: error("امکان خواندن فایل انتخاب‌شده وجود ندارد.")
+            }.onSuccess { text ->
+                transferNotice = null
+                importPreview = ControllerConfigTransfer.parseAndValidate(
+                    jsonText = text,
+                    targetModel = activeModel,
+                    currentValuesByKey = valueByKey,
+                    userRole = userRole,
+                )
+            }.onFailure { err ->
+                transferNotice = "خواندن فایل ناموفق بود: ${err.message ?: "خطای ناشناخته"}" to BadgeTone.FAULT
+            }
+        }
+    }
+
+    fun shareExportedJson(payload: PreparedExportPayload) {
+        runCatching {
+            val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+            val outFile = File(exportDir, payload.fileName)
+            outFile.writeText(payload.jsonContent, Charsets.UTF_8)
+            val contentUri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                outFile,
+            )
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/json"
+                putExtra(Intent.EXTRA_STREAM, contentUri)
+                putExtra(Intent.EXTRA_SUBJECT, "DGP ${payload.modelLabel} Configuration")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(shareIntent, "Share Configuration File"))
+        }.onSuccess {
+            preparedExport = null
+            transferNotice = "فایل آماده اشتراک‌گذاری شد (${payload.fileName})." to BadgeTone.INFO
+        }.onFailure { err ->
+            transferNotice = "اشتراک‌گذاری فایل ناموفق بود: ${err.message ?: "خطا"}" to BadgeTone.FAULT
+        }
+    }
+
+    // Interactive Persian Help Bottom Sheet
+    activeHelp?.let { (help, curDisplay) ->
+        ParameterHelpBottomSheet(
+            help = help,
+            currentValue = curDisplay,
+            onDismiss = { activeHelp = null },
+        )
+    }
+
+    // Export Options Dialog (Save to Device / Share)
+    preparedExport?.let { payload ->
+        ExportConfigDialog(
+            payload = payload,
+            onSaveFile = { saveDocumentLauncher.launch(payload.fileName) },
+            onShareFile = { shareExportedJson(payload) },
+            onDismiss = { preparedExport = null },
+        )
+    }
+
+    // Import Validation & Diff Confirmation Dialog
+    importPreview?.let { result ->
+        ImportConfigPreviewDialog(
+            result = result,
+            isConnected = isConnected,
+            isWriting = isWriting,
+            targetModel = activeModel,
+            onConfirmApply = {
+                val changes = result.changesToApply.map { it.definition to it.targetValue }
+                importPreview = null
+                if (changes.isNotEmpty()) {
+                    onApplyImportedConfig(changes)
+                } else {
+                    transferNotice = "تمام مقادیر قابل ویرایش این فایل با تنظیمات فعلی کنترلر یکسان هستند." to BadgeTone.INFO
+                }
+            },
+            onDismiss = { importPreview = null },
+        )
+    }
+
+    // Parameter Write Confirmation / Edit Dialogs
     when (val edit = pendingEdit) {
         is PendingEdit.SwitchConfirm -> SwitchWriteConfirmDialog(
             def = edit.def,
@@ -479,7 +380,7 @@ fun ControlAndConfigScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        // 0. Write Result Notification Banner
+        // 0A. Write Result Notification Banner
         if (cfgSnap.lastWrite != null) {
             item {
                 AnimatedVisibility(
@@ -492,44 +393,74 @@ fun ControlAndConfigScreen(
             }
         }
 
-        // 1. Quick Daily Operational Controls (Pressure Setpoint, Pump Service ON/OFF, Error Reset, Control Mode)
+        // 0B. Live Configuration Import Progress / Completion Banner
+        if (cfgSnap.importProgress != null) {
+            item {
+                ImportProgressBanner(
+                    progress = cfgSnap.importProgress,
+                    onDismiss = onDismissImportProgress,
+                )
+            }
+        }
+
+        // 0C. File Export / Read Notice Banner
+        transferNotice?.let { (msg, tone) ->
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    NoticeBox(text = msg, tone = tone, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { transferNotice = null }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Outlined.Close, contentDescription = "بستن", tint = p.textSecondary, modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+        }
+
+        // 1. Quick Operational Controls (Setpoint, Control Status, Reset Pump Error, Pump/Drive Service)
         item {
             val canEditControlMode = userRole.canWriteRegister(Bpc02RegisterMap.controlStatusDef) && isConnected && !isWriting
             val canEditSetpoint = userRole.canWriteRegister(Bpc02RegisterMap.pressureSetpointDef) && isConnected && !isWriting
             val canResetErrors = userRole.canOperateBasicControls && isConnected && !isWriting
 
             ScadaPanel(
-                title = "کنترل سریع ایستگاه",
+                title = "Quick Control",
                 subtitle = if (userRole == UserRole.ADMIN) {
-                    "فشار تنظیم‌شده، حالت کارکرد، رفع خطا و روشن/خاموش کردن پمپ‌ها"
+                    "تنظیم سریع Setpoint، حالت عملکرد، رفع خطا و سرویس پمپ‌ها"
                 } else {
-                    "تنظیم فشار، رفع خطا و روشن/خاموش کردن پمپ‌ها برای بهره‌برداری روزانه"
+                    "تنظیم فشار، رفع خطا و فعال/غیرفعال کردن پمپ‌ها برای بهره‌برداری روزانه"
                 },
                 icon = Icons.Outlined.PowerSettingsNew,
                 accentColor = p.gold,
                 trailing = {
                     if (isWriting) {
-                        StatusBadge("در حال ثبت…", BadgeTone.GOLD, pulsing = true)
+                        StatusBadge("Writing…", BadgeTone.GOLD, pulsing = true)
                     } else if (userRole == UserRole.OPERATOR) {
-                        StatusBadge("دسترسی اپراتور", BadgeTone.INFO)
+                        StatusBadge("Operator", BadgeTone.INFO)
                     }
                 },
             ) {
-                // System Pressure Setpoint (editable by both Admin & Operator)
+                // System Pressure Setpoint (editable by Admin & Operator)
                 ParameterRow(
                     reading = RegisterReading(Bpc02RegisterMap.pressureSetpointDef, liveSetpointRaw),
-                    actionLabel = "تغییر فشار",
+                    actionLabel = "Edit",
                     canEdit = canEditSetpoint,
                     isAdminRestricted = false,
                     isWritingThis = cfgSnap.writingKey == Bpc02RegisterMap.SYSTEM_PRESSURE_SETPOINT,
                     onClickEdit = {
                         pendingEdit = PendingEdit.NumberEdit(Bpc02RegisterMap.pressureSetpointDef, liveSetpointRaw)
                     },
+                    onClickHelp = {
+                        val cur = liveSetpointRaw?.let { Bpc02Catalog.formatValue(Bpc02RegisterMap.pressureSetpointDef, it) }
+                        activeHelp = Bpc02Catalog.helpFor(Bpc02RegisterMap.pressureSetpointDef) to cur
+                    },
                 )
 
                 HorizontalDivider(color = p.hairline)
 
-                // Controller Operating Status (Disable / PID / ON-OFF — Admin only editable)
+                // Control Status (Disable / PID / ON/OFF — Admin editable)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -537,7 +468,18 @@ fun ControlAndConfigScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                            Text("حالت عملکرد کنترلر", style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                LtrText("Control Status", style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
+                                ParameterHelpIcon(
+                                    onClick = {
+                                        activeHelp = Bpc02Catalog.helpFor(Bpc02RegisterMap.controlStatusDef) to
+                                            Bpc02Catalog.controlStatusLabel(liveControlStatus)
+                                    },
+                                )
+                            }
                             if (!userRole.canEditAdvancedSettings) {
                                 Text("تغییر حالت عملکرد مخصوص مدیر سیستم است", style = MaterialTheme.typography.labelSmall, color = p.textMuted)
                             }
@@ -546,7 +488,7 @@ fun ControlAndConfigScreen(
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = p.gold)
                         } else {
                             StatusBadge(
-                                PersianLabels.controlStatusShort(liveControlStatus),
+                                Bpc02Catalog.controlStatusLabel(liveControlStatus),
                                 when (liveControlStatus) {
                                     1, 2 -> BadgeTone.OK
                                     0 -> BadgeTone.WARNING
@@ -559,13 +501,7 @@ fun ControlAndConfigScreen(
                         DgpSegmentedControl(
                             items = listOf(0, 1, 2),
                             selected = liveControlStatus ?: -1,
-                            label = { mode ->
-                                when (mode) {
-                                    0 -> "خاموش"
-                                    1 -> "دورمتغیر (PID)"
-                                    else -> "پله‌ای (ON/OFF)"
-                                }
-                            },
+                            label = { mode -> Bpc02Catalog.controlStatusLabel(mode) },
                             onSelect = { target ->
                                 if (liveControlStatus != target) {
                                     pendingEdit = PendingEdit.ControlModeConfirm(liveControlStatus, target)
@@ -579,16 +515,24 @@ fun ControlAndConfigScreen(
 
                 HorizontalDivider(color = p.hairline)
 
-                // Reset Pump Errors (both Admin & Operator)
+                // Reset Pump Error command (Word 99 = 25)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("رفع خطای پمپ‌ها", style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            LtrText("Reset Pump Error", style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
+                            ParameterHelpIcon(
+                                onClick = { activeHelp = Bpc02Catalog.conceptHelp("reset_pump_error") to null },
+                            )
+                        }
                         Text(
-                            "پاک‌سازی خطاهای ثبت‌شده پس از برطرف شدن مشکل",
+                            "پاک‌سازی خطاهای ثبت‌شده پس از برطرف شدن عامل خطا",
                             style = MaterialTheme.typography.labelSmall,
                             color = p.textSecondary,
                         )
@@ -598,7 +542,7 @@ fun ControlAndConfigScreen(
                         CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = p.gold)
                     } else {
                         DgpGoldButton(
-                            text = "رفع خطا",
+                            text = "Reset",
                             icon = Icons.Outlined.RestartAlt,
                             enabled = canResetErrors,
                             onClick = { pendingEdit = PendingEdit.ResetErrorsConfirm },
@@ -609,9 +553,9 @@ fun ControlAndConfigScreen(
 
                 HorizontalDivider(color = p.hairline)
 
-                // Quick Pump & Drive Service ON/OFF toggles with redesigned Pump Icon & PumpPowerToggle
-                Text(
-                    "روشن / خاموش کردن پمپ‌ها (حالت سرویس)",
+                // Quick Pump & Drive Service ON/OFF toggles
+                LtrText(
+                    "Status (Pump & Drive Service)",
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                     color = p.textPrimary,
                 )
@@ -619,8 +563,8 @@ fun ControlAndConfigScreen(
                     if (hasDrivers) {
                         val canEditDrive = userRole.canWriteRegister(Bpc02RegisterMap.driveActivationDef) && isConnected && !isWriting
                         PumpServiceRow(
-                            title = "درایو (اینورتر)",
-                            subtitle = if (liveDriveEnabled == 0) "غیرفعال در مدار (S)" else "فعال در مدار",
+                            title = "Drive",
+                            subtitle = if (liveDriveEnabled == 0) "Disable — Service (S)" else "Enable",
                             isOn = liveDriveEnabled?.let { it == 1 },
                             running = liveSnap?.drStatus,
                             failed = liveSnap?.driveFailed,
@@ -634,6 +578,10 @@ fun ControlAndConfigScreen(
                                     if (targetOn) 1 else 0,
                                 )
                             },
+                            onClickHelp = {
+                                val cur = liveDriveEnabled?.let { if (it == 1) "Enable" else "Disable" }
+                                activeHelp = Bpc02Catalog.helpFor(Bpc02RegisterMap.driveActivationDef) to cur
+                            },
                         )
                     }
                     visiblePumpNumbers.forEachIndexed { idx, pumpNum ->
@@ -645,13 +593,13 @@ fun ControlAndConfigScreen(
                         val isDisabled = rawVal == 0
                         val isRunning = !isDisabled && pumpState?.running == true
                         PumpServiceRow(
-                            title = "پمپ $pumpNum",
+                            title = "Pump $pumpNum",
                             subtitle = when {
-                                pumpState?.failed == true -> "دارای خطا"
-                                isDisabled -> "خاموش — نمایش S روی کنترلر"
-                                isRunning -> "در حال کار"
-                                rawVal == 1 -> "روشن و آماده به کار"
-                                else -> "وضعیت نامشخص"
+                                pumpState?.failed == true -> "Fault"
+                                isDisabled -> "Disable — Service (S)"
+                                isRunning -> "Running"
+                                rawVal == 1 -> "Enable — Standby"
+                                else -> "Unknown"
                             },
                             isOn = rawVal?.let { it == 1 },
                             running = isRunning,
@@ -662,17 +610,104 @@ fun ControlAndConfigScreen(
                             onRequestToggle = { targetOn ->
                                 pendingEdit = PendingEdit.SwitchConfirm(def, rawVal, if (targetOn) 1 else 0)
                             },
+                            onClickHelp = {
+                                val cur = rawVal?.let { if (it == 1) "Enable" else "Disable" }
+                                activeHelp = Bpc02Catalog.helpFor(def) to cur
+                            },
                         )
                     }
                 }
             }
         }
 
-        // 2. Controller-Based Vertical Expandable Menu Tree (All 6 Sections + Ordered Pages On Click)
+        // 2. Portable Configuration Backup (Import / Export JSON)
+        item {
+            val loadedParamCount = valueByKey.count { (k, v) ->
+                v != null && Bpc02RegisterMap.configuration.any { it.key == k }
+            }
+            val canExport = loadedParamCount > 0 && !cfgSnap.loading
+            val canImport = userRole.canEditAdvancedSettings && isConnected && !isWriting
+
+            ScadaPanel(
+                title = "Configuration Import / Export",
+                subtitle = "ذخیره، اشتراک‌گذاری و بازیابی تنظیمات کنترلر با فایل استاندارد JSON",
+                icon = Icons.Outlined.UploadFile,
+                accentColor = p.gold,
+                trailing = {
+                    ParameterHelpIcon(
+                        onClick = {
+                            activeHelp = Bpc02Catalog.conceptHelp("config_transfer") to
+                                "${activeModel.label} • $loadedParamCount Params"
+                        },
+                    )
+                },
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    DgpGoldButton(
+                        text = "Export JSON",
+                        icon = Icons.Outlined.Download,
+                        enabled = canExport,
+                        onClick = {
+                            val now = System.currentTimeMillis()
+                            val json = ControllerConfigTransfer.exportToJson(
+                                model = activeModel,
+                                configReadings = cfgSnap.readings,
+                                liveSnapshot = liveSnap,
+                                timestampMillis = now,
+                            )
+                            val modeTxt = Bpc02Catalog.wiringModeLabel(liveSnap?.wiringMode ?: valueByKey["wiring_mode"])
+                            val pumpTxt = (liveSnap?.configuredPumpCount ?: valueByKey["number_of_pump"])?.let { "$it Pumps" } ?: "—"
+                            preparedExport = PreparedExportPayload(
+                                fileName = ControllerConfigTransfer.suggestedFileName(activeModel, now),
+                                jsonContent = json,
+                                parameterCount = loadedParamCount,
+                                modelLabel = activeModel.label,
+                                wiringSummary = "$modeTxt • $pumpTxt",
+                            )
+                        },
+                        height = 46.dp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    DgpOutlinedButton(
+                        text = "Import JSON",
+                        icon = Icons.Outlined.FileOpen,
+                        accentColor = p.cyan,
+                        enabled = canImport,
+                        onClick = {
+                            openDocumentLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                        },
+                        height = 46.dp,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                when {
+                    !userRole.canEditAdvancedSettings -> NoticeBox(
+                        text = "وارد کردن فایل تنظیمات (Import) مخصوص مدیر سیستم است؛ خروجی گرفتن (Export) پس از دریافت تنظیمات دستگاه فعال است.",
+                        tone = BadgeTone.INFO,
+                    )
+                    loadedParamCount == 0 -> NoticeBox(
+                        text = "برای خروجی گرفتن از کل تنظیمات، ابتدا به کنترلر متصل شده و دکمه Refresh را بزنید.",
+                        tone = BadgeTone.WARNING,
+                    )
+                    else -> Text(
+                        text = "فایل خروجی شامل تمام $loadedParamCount پارامتر خوانده‌شده از ${activeModel.label} (به همراه نسخه فرمت و مدل دستگاه) است.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = p.textSecondary,
+                    )
+                }
+            }
+        }
+
+        // 3. Official BPC-02 Hardware Menu (All 6 English Categories + Ordered Pages On Click + Persian ? Help)
         item {
             ScadaPanel(
-                title = "منوی تنظیمات کنترلر",
-                subtitle = "برای مشاهده صفحات و گزینه‌های هر بخش، روی آن ضربه بزنید",
+                title = "Hardware Menu (BPC-02)",
+                subtitle = "ساختار دقیق منوی کنترلر — برای دیدن صفحات روی هر بخش و برای راهنمای فارسی روی ؟ ضربه بزنید",
                 icon = Icons.Outlined.Tune,
                 accentColor = p.cyan,
                 trailing = {
@@ -699,11 +734,10 @@ fun ControlAndConfigScreen(
                                     modifier = Modifier.size(15.dp),
                                 )
                             }
-                            Text(
-                                text = "بروزرسانی",
+                            LtrText(
+                                text = "Refresh",
                                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                                 color = if (canRefresh) p.gold else p.textMuted,
-                                softWrap = false,
                             )
                         }
                     }
@@ -711,7 +745,7 @@ fun ControlAndConfigScreen(
             ) {
                 if (!userRole.canEditAdvancedSettings) {
                     NoticeBox(
-                        text = "در سطح دسترسی اپراتور، تنظیمات پیشرفته کنترلر فقط قابل مشاهده است. برای ویرایش پارامترهای فنی با حساب «مدیر سیستم» وارد شوید.",
+                        text = "در سطح دسترسی اپراتور، تنظیمات پیشرفته Hardware Menu فقط قابل مشاهده است. برای ویرایش با حساب «مدیر سیستم» وارد شوید.",
                         tone = BadgeTone.INFO,
                     )
                 }
@@ -722,8 +756,8 @@ fun ControlAndConfigScreen(
                         tone = BadgeTone.WARNING,
                     )
                 } else if (cfgSnap.timestampMillis != null) {
-                    Text(
-                        "آخرین همگام‌سازی: ساعت ${formatTime(cfgSnap.timestampMillis)}",
+                    LtrText(
+                        "Last Sync: ${formatTime(cfgSnap.timestampMillis)}",
                         style = MaterialTheme.typography.labelSmall,
                         color = p.cyan,
                     )
@@ -731,14 +765,14 @@ fun ControlAndConfigScreen(
 
                 if (cfgSnap.errors.isNotEmpty()) {
                     NoticeBox(
-                        text = "دریافت برخی تنظیمات با تاخیر مواجه شد؛ دکمه «بروزرسانی» را بزنید.",
+                        text = "دریافت برخی تنظیمات با تاخیر مواجه شد؛ دکمه Refresh را بزنید.",
                         tone = BadgeTone.WARNING,
                     )
                 }
 
-                // All 6 Controller Menu Categories stacked vertically — 100% visible, calm & uncluttered
+                // All 6 BPC-02 Hardware Categories stacked vertically — 100% visible, calm & uncluttered
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    ControllerCategory.entries.forEach { category ->
+                    Bpc02Catalog.MenuCategory.entries.forEach { category ->
                         val isCategoryOpen = expandedCategory == category
                         val catChevronAngle by animateFloatAsState(
                             targetValue = if (isCategoryOpen) 180f else 0f,
@@ -759,7 +793,7 @@ fun ControlAndConfigScreen(
                                 .background(headerBg)
                                 .border(0.9.dp, borderColor, RoundedCornerShape(15.dp)),
                         ) {
-                            // Category Row Header (1..6)
+                            // Category Row Header (1..6, Official English Title)
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -776,7 +810,6 @@ fun ControlAndConfigScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(11.dp),
                             ) {
-                                // Numbered Icon Medallion (1..6)
                                 Box(
                                     modifier = Modifier
                                         .size(38.dp)
@@ -805,19 +838,19 @@ fun ControlAndConfigScreen(
                                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     ) {
                                         Icon(
-                                            imageVector = category.icon,
+                                            imageVector = categoryIcon(category),
                                             contentDescription = null,
                                             tint = if (isCategoryOpen) p.gold else p.cyan,
                                             modifier = Modifier.size(16.dp),
                                         )
-                                        Text(
+                                        LtrText(
                                             text = category.title,
                                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                                             color = if (isCategoryOpen) p.gold else p.textPrimary,
                                         )
                                     }
-                                    Text(
-                                        text = category.summary,
+                                    LtrText(
+                                        text = category.subtitleEn,
                                         style = MaterialTheme.typography.labelSmall.copy(lineHeight = 16.sp),
                                         color = p.textSecondary,
                                     )
@@ -835,20 +868,20 @@ fun ControlAndConfigScreen(
                                             if (isCategoryOpen) p.gold.copy(alpha = 0.45f) else p.panelBorder,
                                         ),
                                     ) {
-                                        Text(
-                                            text = "${category.pages.size} صفحه",
+                                        val pageLabel = if (category.pages.size == 1) "1 Page" else "${category.pages.size} Pages"
+                                        LtrText(
+                                            text = pageLabel,
                                             style = MaterialTheme.typography.labelSmall.copy(
                                                 fontSize = 10.sp,
                                                 fontWeight = FontWeight.SemiBold,
                                             ),
                                             color = if (isCategoryOpen) p.gold else p.textSecondary,
-                                            softWrap = false,
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                                         )
                                     }
                                     Icon(
                                         imageVector = Icons.Outlined.ExpandMore,
-                                        contentDescription = if (isCategoryOpen) "بستن" else "باز کردن",
+                                        contentDescription = if (isCategoryOpen) "Collapse" else "Expand",
                                         tint = if (isCategoryOpen) p.gold else p.textSecondary,
                                         modifier = Modifier
                                             .size(20.dp)
@@ -857,7 +890,7 @@ fun ControlAndConfigScreen(
                                 }
                             }
 
-                            // Expandable Body: Direct Parameters (1-page category) OR Ordered Page Directory (multi-page)
+                            // Expandable Body: Direct Parameters (1-page) OR Ordered Page Directory (multi-page)
                             AnimatedVisibility(
                                 visible = isCategoryOpen,
                                 enter = expandVertically(tween(240)) + fadeIn(tween(200)),
@@ -872,7 +905,6 @@ fun ControlAndConfigScreen(
                                     HorizontalDivider(color = p.hairline)
 
                                     if (category.pages.size == 1) {
-                                        // 1-page category opens its parameters directly on first click!
                                         ControllerPageParameters(
                                             page = category.pages.first(),
                                             valueByKey = valueByKey,
@@ -884,11 +916,14 @@ fun ControlAndConfigScreen(
                                             hasDrivers = hasDrivers,
                                             visiblePumpNumbers = visiblePumpNumbers,
                                             onRequestPendingEdit = { pendingEdit = it },
+                                            onRequestHelp = { def, raw ->
+                                                val cur = raw?.let { Bpc02Catalog.formatValue(def, it) }
+                                                activeHelp = Bpc02Catalog.helpFor(def) to cur
+                                            },
                                         )
                                     } else {
-                                        // Multi-page category displays ALL pages in exact controller order (Page 1..N)
                                         Text(
-                                            text = "صفحات بخش «${category.title}» (برای باز کردن گزینه‌ها ضربه بزنید):",
+                                            text = "صفحات بخش ${category.title} (برای مشاهده گزینه‌ها ضربه بزنید):",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = p.textSecondary,
                                             modifier = Modifier.padding(horizontal = 2.dp, vertical = 2.dp),
@@ -918,7 +953,6 @@ fun ControlAndConfigScreen(
                                                         shape = RoundedCornerShape(12.dp),
                                                     ),
                                             ) {
-                                                // Page Header Row (e.g. "صفحه 6 — حالت خواب (Sleep)")
                                                 Row(
                                                     modifier = Modifier
                                                         .fillMaxWidth()
@@ -952,15 +986,15 @@ fun ControlAndConfigScreen(
                                                         modifier = Modifier.weight(1f),
                                                         verticalArrangement = Arrangement.spacedBy(1.dp),
                                                     ) {
-                                                        Text(
-                                                            text = "صفحه ${page.number} — ${page.title}",
+                                                        LtrText(
+                                                            text = "Page ${page.number} — ${page.title}",
                                                             style = MaterialTheme.typography.bodyMedium.copy(
                                                                 fontWeight = if (isPageOpen) FontWeight.Bold else FontWeight.SemiBold,
                                                             ),
                                                             color = if (isPageOpen) p.cyan else p.textPrimary,
                                                         )
-                                                        Text(
-                                                            text = if (hasEditableForUser) "دارای تنظیمات قابل ویرایش" else "فقط نمایش",
+                                                        LtrText(
+                                                            text = if (hasEditableForUser) "Editable" else "Read-Only",
                                                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                                                             color = if (hasEditableForUser) p.gold.copy(alpha = 0.88f) else p.textMuted,
                                                         )
@@ -968,7 +1002,7 @@ fun ControlAndConfigScreen(
 
                                                     Icon(
                                                         imageVector = Icons.Outlined.ExpandMore,
-                                                        contentDescription = if (isPageOpen) "بستن صفحه" else "باز کردن صفحه",
+                                                        contentDescription = if (isPageOpen) "Collapse" else "Expand",
                                                         tint = if (isPageOpen) p.cyan else p.textSecondary,
                                                         modifier = Modifier
                                                             .size(19.dp)
@@ -976,7 +1010,6 @@ fun ControlAndConfigScreen(
                                                     )
                                                 }
 
-                                                // Expanded Page Parameters + Sequential Prev/Next Step Bar
                                                 AnimatedVisibility(
                                                     visible = isPageOpen,
                                                     enter = expandVertically(tween(220)) + fadeIn(tween(180)),
@@ -1001,9 +1034,13 @@ fun ControlAndConfigScreen(
                                                             hasDrivers = hasDrivers,
                                                             visiblePumpNumbers = visiblePumpNumbers,
                                                             onRequestPendingEdit = { pendingEdit = it },
+                                                            onRequestHelp = { def, raw ->
+                                                                val cur = raw?.let { Bpc02Catalog.formatValue(def, it) }
+                                                                activeHelp = Bpc02Catalog.helpFor(def) to cur
+                                                            },
                                                         )
 
-                                                        // Quick sequential page stepper (< قبلی | X / Y | بعدی >)
+                                                        // Sequential page stepper (< Prev | X / Y | Next >)
                                                         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                                                             Row(
                                                                 modifier = Modifier
@@ -1014,7 +1051,7 @@ fun ControlAndConfigScreen(
                                                             ) {
                                                                 PageArrowButton(
                                                                     icon = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
-                                                                    label = "قبلی",
+                                                                    label = "Prev",
                                                                     iconBeforeLabel = true,
                                                                     enabled = pageIdx > 0,
                                                                     onClick = {
@@ -1031,7 +1068,7 @@ fun ControlAndConfigScreen(
                                                                 )
                                                                 PageArrowButton(
                                                                     icon = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                                                                    label = "بعدی",
+                                                                    label = "Next",
                                                                     iconBeforeLabel = false,
                                                                     enabled = pageIdx < category.pages.lastIndex,
                                                                     onClick = {
@@ -1059,16 +1096,17 @@ fun ControlAndConfigScreen(
 
 @Composable
 private fun ControllerPageParameters(
-    page: ControllerMenuPage,
+    page: Bpc02Catalog.MenuPage,
     valueByKey: Map<String, Int?>,
     userRole: UserRole,
-    liveSnap: com.dgp.boosterpump.controller.ControllerSnapshot?,
+    liveSnap: ControllerSnapshot?,
     writingKey: String?,
     isConnected: Boolean,
     isWriting: Boolean,
     hasDrivers: Boolean,
     visiblePumpNumbers: List<Int>,
     onRequestPendingEdit: (PendingEdit) -> Unit,
+    onRequestHelp: (RegisterDefinition, Int?) -> Unit,
 ) {
     val p = LocalScadaPalette.current
     val keysToShow = page.registerKeys.filter { key ->
@@ -1097,8 +1135,8 @@ private fun ControllerPageParameters(
                     val pNum = if (isPump) key.removePrefix("pump_").removeSuffix("_activation").toIntOrNull() else null
                     val pState = pNum?.let { n -> liveSnap?.pumps?.firstOrNull { it.number == n } }
                     PumpServiceRow(
-                        title = PersianLabels.registerLabel(def),
-                        subtitle = if (raw == 0) "خاموش (S)" else if (raw == 1) "روشن در مدار" else "—",
+                        title = Bpc02Catalog.lcdParameterName(def),
+                        subtitle = if (raw == 0) "Disable (S)" else if (raw == 1) "Enable" else "—",
                         isOn = raw?.let { it == 1 },
                         running = if (raw == 0) false else pState?.running,
                         failed = pState?.failed,
@@ -1108,25 +1146,27 @@ private fun ControllerPageParameters(
                         onRequestToggle = { targetOn ->
                             onRequestPendingEdit(PendingEdit.SwitchConfirm(def, raw, if (targetOn) 1 else 0))
                         },
+                        onClickHelp = { onRequestHelp(def, raw) },
                     )
                 }
                 def.key == Bpc02RegisterMap.CONTROL_STATUS -> {
                     ParameterRow(
                         reading = reading,
-                        actionLabel = "تغییر حالت",
+                        actionLabel = "Select",
                         canEdit = canEditParam,
                         isAdminRestricted = isAdminRestricted,
                         isWritingThis = writingKey == key,
                         onClickEdit = {
                             onRequestPendingEdit(PendingEdit.EnumEdit(def, raw))
                         },
+                        onClickHelp = { onRequestHelp(def, raw) },
                     )
                 }
                 def.isWritable -> {
                     val isEnum = def.enumLabels.isNotEmpty()
                     ParameterRow(
                         reading = reading,
-                        actionLabel = if (isEnum) "انتخاب" else "ویرایش",
+                        actionLabel = if (isEnum) "Select" else "Edit",
                         canEdit = canEditParam,
                         isAdminRestricted = isAdminRestricted,
                         isWritingThis = writingKey == key,
@@ -1139,10 +1179,372 @@ private fun ControllerPageParameters(
                                 },
                             )
                         },
+                        onClickHelp = { onRequestHelp(def, raw) },
                     )
                 }
                 else -> {
-                    ReadOnlyParameterRow(reading = reading)
+                    ReadOnlyParameterRow(
+                        reading = reading,
+                        onClickHelp = { onRequestHelp(def, raw) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExportConfigDialog(
+    payload: PreparedExportPayload,
+    onSaveFile: () -> Unit,
+    onShareFile: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val p = LocalScadaPalette.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = p.panel,
+        shape = RoundedCornerShape(22.dp),
+        icon = { Icon(Icons.Outlined.Download, contentDescription = null, tint = p.gold) },
+        title = { LtrText("Export Configuration (JSON)", style = MaterialTheme.typography.titleMedium, color = p.textPrimary) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Surface(
+                    color = p.panelElevated,
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(0.8.dp, p.panelBorder),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        LtrText(payload.fileName, style = MonoStyle.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold), color = p.gold)
+                        LtrText("Model: ${payload.modelLabel}  •  Schema v${ControllerConfigTransfer.SCHEMA_VERSION}", style = MaterialTheme.typography.labelSmall, color = p.cyan)
+                        LtrText("Station: ${payload.wiringSummary}  •  ${payload.parameterCount} Parameters", style = MaterialTheme.typography.labelSmall, color = p.textSecondary)
+                    }
+                }
+                Text(
+                    "می‌توانید فایل JSON تنظیمات را روی حافظه دستگاه ذخیره کرده یا مستقیماً برای استفاده در پروژه‌های دیگر به اشتراک بگذارید.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = p.textSecondary,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DgpGoldButton(
+                        text = "Save to Device (ذخیره فایل)",
+                        icon = Icons.Outlined.Save,
+                        onClick = onSaveFile,
+                        height = 44.dp,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    DgpOutlinedButton(
+                        text = "Share File (اشتراک‌گذاری)",
+                        icon = Icons.Outlined.Share,
+                        accentColor = p.cyan,
+                        onClick = onShareFile,
+                        height = 44.dp,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("بستن", color = p.textSecondary) }
+        },
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ImportConfigPreviewDialog(
+    result: ConfigImportValidationResult,
+    isConnected: Boolean,
+    isWriting: Boolean,
+    targetModel: ControllerModel,
+    onConfirmApply: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val p = LocalScadaPalette.current
+    val hasErrors = result.errors.isNotEmpty()
+    val hasWarnings = result.warnings.isNotEmpty()
+    val changes = result.changesToApply
+    val canApplyNow = result.canApply && isConnected && !isWriting
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = p.panel,
+        shape = RoundedCornerShape(22.dp),
+        icon = {
+            Icon(
+                imageVector = if (hasErrors) Icons.Outlined.ErrorOutline else Icons.Outlined.UploadFile,
+                contentDescription = null,
+                tint = if (hasErrors) p.fault else p.gold,
+            )
+        },
+        title = {
+            LtrText(
+                if (hasErrors) "Import Validation Failed" else "Import Configuration Preview",
+                style = MaterialTheme.typography.titleMedium,
+                color = if (hasErrors) p.fault else p.textPrimary,
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                // File Metadata Summary
+                result.metadata?.let { meta ->
+                    Surface(
+                        color = p.panelElevated,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(0.8.dp, p.panelBorder),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            LtrText(
+                                "File Model: ${meta.controllerModelName}  •  Target: ${targetModel.name}  •  v${meta.schemaVersion}",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = if (meta.controllerModelName.equals(targetModel.name, ignoreCase = true)) p.cyan else p.fault,
+                            )
+                            val archParts = buildList {
+                                meta.wiringMode?.let { add(Bpc02Catalog.wiringModeLabel(it)) }
+                                meta.numberOfPumps?.let { add("$it Pumps") }
+                                meta.numberOfDrives?.let { add(Bpc02Catalog.driverCountLabel(it)) }
+                            }
+                            if (archParts.isNotEmpty()) {
+                                LtrText(archParts.joinToString(" • "), style = MaterialTheme.typography.labelSmall, color = p.gold)
+                            }
+                            meta.exportedAt?.let {
+                                LtrText("Exported: $it", style = MonoStyle.copy(fontSize = 10.sp), color = p.textSecondary)
+                            }
+                        }
+                    }
+                }
+
+                // Summary Chips
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    StatusBadge("${changes.size} Changes", if (changes.isNotEmpty()) BadgeTone.GOLD else BadgeTone.NEUTRAL)
+                    if (result.unchangedWritableCount > 0) {
+                        StatusBadge("${result.unchangedWritableCount} Same", BadgeTone.INFO)
+                    }
+                    if (result.readOnlyEntries.isNotEmpty()) {
+                        StatusBadge("${result.readOnlyEntries.size} Read-Only", BadgeTone.NEUTRAL)
+                    }
+                    if (hasErrors) {
+                        StatusBadge("${result.errors.size} Error(s)", BadgeTone.FAULT)
+                    }
+                }
+
+                // Blocking Validation Errors (Strict — zero partial writes allowed!)
+                if (hasErrors) {
+                    NoticeBox(
+                        text = "به دلیل وجود خطاهای اعتبارسنجی زیر، اعمال فایل متوقف شد و هیچ تغییری روی کنترلر انجام نمی‌شود:",
+                        tone = BadgeTone.FAULT,
+                    )
+                    result.errors.forEach { err ->
+                        Surface(
+                            color = p.faultBg,
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(0.7.dp, p.fault.copy(alpha = 0.35f)),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(modifier = Modifier.padding(9.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                LtrText(err.title, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = p.fault)
+                                Text(err.detailFa, style = MaterialTheme.typography.labelSmall, color = p.fault)
+                            }
+                        }
+                    }
+                }
+
+                // Hardware Compatibility Warnings (e.g. Mode or Pump Count differs on Read-Only registers)
+                if (hasWarnings) {
+                    result.warnings.forEach { warn ->
+                        Surface(
+                            color = p.warningBg,
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(0.7.dp, p.warning.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(modifier = Modifier.padding(9.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    Icon(Icons.Outlined.WarningAmber, contentDescription = null, tint = p.warning, modifier = Modifier.size(14.dp))
+                                    LtrText(warn.title, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = p.warning)
+                                }
+                                Text(warn.detailFa, style = MaterialTheme.typography.labelSmall, color = p.warning)
+                            }
+                        }
+                    }
+                }
+
+                // Diff Preview of Writable Changes to Apply
+                if (!hasErrors) {
+                    if (changes.isEmpty()) {
+                        NoticeBox(
+                            text = "تمام پارامترهای قابل ویرایش در فایل با مقادیر فعلی کنترلر برابر هستند و نیازی به بازنویسی نیست.",
+                            tone = BadgeTone.OK,
+                        )
+                    } else {
+                        Text(
+                            "تغییراتی که پس از تایید روی کنترلر اعمال می‌شوند:",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = p.textPrimary,
+                        )
+                        Surface(
+                            color = p.panelElevated,
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(0.8.dp, p.panelBorder),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                                changes.forEachIndexed { idx, ch ->
+                                    if (idx > 0) HorizontalDivider(color = p.hairline)
+                                    val oldTxt = ch.currentValue?.let { Bpc02Catalog.formatValue(ch.definition, it) } ?: "—"
+                                    val newTxt = Bpc02Catalog.formatValue(ch.definition, ch.targetValue)
+                                    Column(
+                                        modifier = Modifier.padding(vertical = 6.dp),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                                    ) {
+                                        LtrText(
+                                            text = Bpc02Catalog.fullParameterName(ch.definition),
+                                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                            color = p.textPrimary,
+                                        )
+                                        LtrText(
+                                            text = "$oldTxt  →  $newTxt",
+                                            style = MonoStyle.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
+                                            color = p.gold,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (result.readOnlyEntries.isNotEmpty()) {
+                        Text(
+                            "${result.readOnlyEntries.size} پارامتر فقط‌خواندنی (مانند Wiring Mode، Main، Sensor Type و MFx) صرفاً جهت مقایسه نگهداری شده و بازنویسی نمی‌شوند.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = p.textMuted,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (!hasErrors && changes.isNotEmpty()) {
+                Button(
+                    onClick = onConfirmApply,
+                    enabled = canApplyNow,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = DialogGoldBg, contentColor = DialogGoldInk),
+                ) {
+                    Text("تایید و اعمال (${changes.size})", fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("انصراف", color = p.textSecondary) }
+        },
+    )
+}
+
+@Composable
+private fun ImportProgressBanner(
+    progress: ConfigImportProgress,
+    onDismiss: () -> Unit,
+) {
+    val p = LocalScadaPalette.current
+    val toneColor = when {
+        progress.applying -> p.gold
+        progress.allSucceeded -> p.ok
+        progress.appliedCount > 0 -> p.warning
+        else -> p.fault
+    }
+    val bgColor = when {
+        progress.applying -> p.goldSoft
+        progress.allSucceeded -> p.okBg
+        progress.appliedCount > 0 -> p.warningBg
+        else -> p.faultBg
+    }
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(0.9.dp, toneColor.copy(alpha = 0.45f), RoundedCornerShape(14.dp)),
+        color = bgColor,
+        shape = RoundedCornerShape(14.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 13.dp, vertical = 11.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (progress.applying) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = p.gold)
+                    } else {
+                        Icon(
+                            imageVector = if (progress.allSucceeded) Icons.Outlined.CheckCircleOutline else Icons.Outlined.ErrorOutline,
+                            contentDescription = null,
+                            tint = toneColor,
+                            modifier = Modifier.size(19.dp),
+                        )
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = when {
+                                progress.applying -> "در حال اعمال تنظیمات (${progress.processedCount} / ${progress.totalCount})…"
+                                progress.allSucceeded -> "اعمال فایل تنظیمات با موفقیت کامل انجام شد (${progress.appliedCount} پارامتر)"
+                                else -> "اعمال تنظیمات به پایان رسید (${progress.appliedCount} از ${progress.totalCount} موفق)"
+                            },
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                            color = toneColor,
+                        )
+                        progress.currentParameterName?.let { activeName ->
+                            LtrText("Writing: $activeName", style = MaterialTheme.typography.labelSmall, color = toneColor)
+                        }
+                    }
+                }
+                if (!progress.applying) {
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Outlined.Close, contentDescription = "بستن", tint = toneColor, modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+
+            if (progress.applying && progress.totalCount > 0) {
+                LinearProgressIndicator(
+                    progress = { (progress.processedCount.toFloat() / progress.totalCount.toFloat()).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = p.gold,
+                    trackColor = p.panel,
+                )
+            }
+
+            if (progress.failedDetails.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    progress.failedDetails.take(4).forEach { fail ->
+                        LtrText("• $fail", style = MaterialTheme.typography.labelSmall, color = p.fault)
+                    }
                 }
             }
         }
@@ -1220,7 +1622,7 @@ private fun WriteResultBanner(result: WriteResult, onDismiss: () -> Unit) {
     val fg = if (result.success) p.ok else p.fault
     val bg = if (result.success) p.okBg else p.faultBg
     val def = result.definition
-    val label = PersianLabels.registerLabel(def)
+    val label = Bpc02Catalog.fullParameterName(def)
 
     Surface(
         modifier = Modifier
@@ -1245,17 +1647,17 @@ private fun WriteResultBanner(result: WriteResult, onDismiss: () -> Unit) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = if (result.success) {
-                        "تغییر «$label» با موفقیت ثبت شد"
+                        "تغییر $label با موفقیت ثبت شد"
                     } else {
-                        "ثبت «$label» انجام نشد"
+                        "ثبت $label انجام نشد"
                     },
                     style = MaterialTheme.typography.labelLarge,
                     color = fg,
                 )
                 Text(
                     text = if (result.success) {
-                        val confirmed = result.readBackValue?.let { PersianLabels.formatRegisterValue(def, it) } ?: "—"
-                        "مقدار جدید: $confirmed  •  ساعت ${formatTime(result.timestampMillis)}"
+                        val confirmed = result.readBackValue?.let { Bpc02Catalog.formatValue(def, it) } ?: "—"
+                        "New Value: $confirmed  •  ${formatTime(result.timestampMillis)}"
                     } else {
                         "لطفاً اتصال به کنترلر را بررسی کرده و دوباره تلاش کنید."
                     },
@@ -1281,6 +1683,7 @@ private fun PumpServiceRow(
     enabled: Boolean,
     isWritingThis: Boolean,
     onRequestToggle: (Boolean) -> Unit,
+    onClickHelp: () -> Unit,
 ) {
     val p = LocalScadaPalette.current
     val isDisabled = isOn == false
@@ -1308,12 +1711,18 @@ private fun PumpServiceRow(
                 )
             }
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = p.textPrimary,
-                )
-                Text(
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
+                    LtrText(
+                        text = title,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = p.textPrimary,
+                    )
+                    ParameterHelpIcon(onClick = onClickHelp)
+                }
+                LtrText(
                     text = subtitle,
                     style = MaterialTheme.typography.labelSmall,
                     color = when {
@@ -1325,7 +1734,7 @@ private fun PumpServiceRow(
                 )
             }
         }
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(8.dp))
         if (isWritingThis) {
             CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = p.gold)
         } else {
@@ -1333,6 +1742,8 @@ private fun PumpServiceRow(
                 isOn = isOn,
                 enabled = enabled,
                 onToggle = onRequestToggle,
+                onLabel = "ON",
+                offLabel = "OFF",
             )
         }
     }
@@ -1346,6 +1757,7 @@ private fun ParameterRow(
     isAdminRestricted: Boolean,
     isWritingThis: Boolean,
     onClickEdit: () -> Unit,
+    onClickHelp: () -> Unit,
 ) {
     val p = LocalScadaPalette.current
     val def = reading.definition
@@ -1358,13 +1770,19 @@ private fun ParameterRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                text = PersianLabels.registerLabel(def),
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                color = p.textPrimary,
-            )
-            Text(
-                text = reading.raw?.let { PersianLabels.formatRegisterValue(def, it) } ?: "—",
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                LtrText(
+                    text = Bpc02Catalog.lcdParameterName(def),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = p.textPrimary,
+                )
+                ParameterHelpIcon(onClick = onClickHelp)
+            }
+            LtrText(
+                text = reading.raw?.let { Bpc02Catalog.formatValue(def, it) } ?: "—",
                 style = MaterialTheme.typography.titleSmall,
                 color = if (reading.raw != null) p.cyan else p.textSecondary,
             )
@@ -1385,7 +1803,7 @@ private fun ParameterRow(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Icon(Icons.Outlined.Lock, contentDescription = null, tint = p.textMuted, modifier = Modifier.size(12.dp))
-                    Text("مخصوص مدیر", style = MaterialTheme.typography.labelSmall, color = p.textMuted)
+                    LtrText("Admin", style = MaterialTheme.typography.labelSmall, color = p.textMuted)
                 }
             }
             else -> {
@@ -1408,7 +1826,7 @@ private fun ParameterRow(
                             tint = if (active) p.gold else p.textMuted,
                             modifier = Modifier.size(13.dp),
                         )
-                        Text(
+                        LtrText(
                             actionLabel,
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                             color = if (active) p.gold else p.textMuted,
@@ -1421,7 +1839,10 @@ private fun ParameterRow(
 }
 
 @Composable
-private fun ReadOnlyParameterRow(reading: RegisterReading) {
+private fun ReadOnlyParameterRow(
+    reading: RegisterReading,
+    onClickHelp: () -> Unit,
+) {
     val p = LocalScadaPalette.current
     val def = reading.definition
 
@@ -1433,20 +1854,26 @@ private fun ReadOnlyParameterRow(reading: RegisterReading) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(
-                text = PersianLabels.registerLabel(def),
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                color = p.textPrimary,
-            )
-            Text(
-                text = "فقط نمایش",
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                LtrText(
+                    text = Bpc02Catalog.lcdParameterName(def),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = p.textPrimary,
+                )
+                ParameterHelpIcon(onClick = onClickHelp)
+            }
+            LtrText(
+                text = "Read-Only",
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                 color = p.textMuted,
             )
         }
         Spacer(Modifier.width(8.dp))
-        Text(
-            text = reading.raw?.let { PersianLabels.formatRegisterValue(def, it) } ?: "—",
+        LtrText(
+            text = reading.raw?.let { Bpc02Catalog.formatValue(def, it) } ?: "—",
             style = MaterialTheme.typography.titleSmall,
             color = if (reading.raw != null) p.textPrimary else p.textMuted,
         )
@@ -1461,9 +1888,8 @@ private fun ControlModeConfirmDialog(
     onConfirm: () -> Unit,
 ) {
     val p = LocalScadaPalette.current
-    val def = Bpc02RegisterMap.controlStatusDef
-    val currentText = currentValue?.let { PersianLabels.enumOptionLabel(def, it) } ?: "—"
-    val targetText = PersianLabels.enumOptionLabel(def, targetValue)
+    val currentText = Bpc02Catalog.controlStatusLabel(currentValue)
+    val targetText = Bpc02Catalog.controlStatusLabel(targetValue)
     val isDisabling = targetValue == 0
 
     AlertDialog(
@@ -1477,7 +1903,7 @@ private fun ControlModeConfirmDialog(
                 tint = if (isDisabling) p.fault else p.gold,
             )
         },
-        title = { Text("تایید تغییر حالت عملکرد", style = MaterialTheme.typography.titleMedium, color = p.textPrimary) },
+        title = { LtrText("Control Status", style = MaterialTheme.typography.titleMedium, color = p.textPrimary) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Surface(
@@ -1487,9 +1913,9 @@ private fun ControlModeConfirmDialog(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("حالت فعلی: $currentText", style = MaterialTheme.typography.bodySmall, color = p.textSecondary)
-                        Text(
-                            "حالت جدید: $targetText",
+                        LtrText("Current: $currentText", style = MaterialTheme.typography.bodySmall, color = p.textSecondary)
+                        LtrText(
+                            "New: $targetText",
                             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                             color = if (isDisabling) p.fault else p.gold,
                         )
@@ -1497,7 +1923,7 @@ private fun ControlModeConfirmDialog(
                 }
                 if (isDisabling) {
                     NoticeBox(
-                        text = "توجه: انتخاب حالت «خاموش» باعث توقف کامل ایستگاه بوستر پمپ و قطع تامین فشار می‌شود.",
+                        text = "توجه: انتخاب حالت Disable باعث توقف کامل ایستگاه بوستر پمپ و قطع تامین فشار می‌شود.",
                         tone = BadgeTone.FAULT,
                     )
                 }
@@ -1532,7 +1958,7 @@ private fun ResetErrorsConfirmDialog(
         containerColor = p.panel,
         shape = RoundedCornerShape(22.dp),
         icon = { Icon(Icons.Outlined.RestartAlt, contentDescription = null, tint = p.gold) },
-        title = { Text("تایید رفع خطای پمپ‌ها", style = MaterialTheme.typography.titleMedium, color = p.textPrimary) },
+        title = { LtrText("Reset Pump Error", style = MaterialTheme.typography.titleMedium, color = p.textPrimary) },
         text = {
             Text(
                 "فرمان رفع خطای پمپ‌ها به کنترلر ارسال می‌شود. پیش از تایید، از برطرف شدن عامل خطا اطمینان حاصل کنید.",
@@ -1564,22 +1990,17 @@ private fun SwitchWriteConfirmDialog(
     onConfirm: () -> Unit,
 ) {
     val p = LocalScadaPalette.current
-    val currentText = currentValue?.let { if (it == 1) "روشن" else "خاموش (S)" } ?: "—"
-    val targetText = if (targetValue == 1) "روشن" else "خاموش (S)"
+    val currentText = currentValue?.let { if (it == 1) "Enable" else "Disable (S)" } ?: "—"
+    val targetText = if (targetValue == 1) "Enable" else "Disable (S)"
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = p.panel,
         shape = RoundedCornerShape(22.dp),
         icon = { Icon(Icons.Outlined.PowerSettingsNew, contentDescription = null, tint = p.gold) },
-        title = { Text("تایید تغییر وضعیت", style = MaterialTheme.typography.titleMedium, color = p.textPrimary) },
+        title = { LtrText(Bpc02Catalog.fullParameterName(def), style = MaterialTheme.typography.titleMedium, color = p.textPrimary) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                Text(
-                    PersianLabels.registerLabel(def),
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                    color = p.textPrimary,
-                )
                 Surface(
                     color = p.panelElevated,
                     shape = RoundedCornerShape(12.dp),
@@ -1590,9 +2011,9 @@ private fun SwitchWriteConfirmDialog(
                         modifier = Modifier.padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Text("وضعیت فعلی: $currentText", style = MaterialTheme.typography.bodySmall, color = p.textSecondary)
-                        Text(
-                            "وضعیت جدید: $targetText",
+                        LtrText("Current: $currentText", style = MaterialTheme.typography.bodySmall, color = p.textSecondary)
+                        LtrText(
+                            "New: $targetText",
                             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                             color = if (targetValue == 1) p.ok else p.warning,
                         )
@@ -1656,25 +2077,19 @@ private fun NumberEditDialog(
     }
     val inRange = parsedRaw != null && parsedRaw in min..max
     val changed = parsedRaw != null && parsedRaw != currentValue
-
-    val rangeSummary = "بازه مجاز: ${PersianLabels.formatRegisterValue(def, min)} تا ${PersianLabels.formatRegisterValue(def, max)}"
+    val rangeSummary = "Range: ${Bpc02Catalog.formatValue(def, min)} – ${Bpc02Catalog.formatValue(def, max)}"
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = p.panel,
         shape = RoundedCornerShape(22.dp),
         icon = { Icon(Icons.Outlined.Edit, contentDescription = null, tint = p.gold) },
-        title = { Text("ویرایش تنظیم", style = MaterialTheme.typography.titleMedium, color = p.textPrimary) },
+        title = { LtrText(Bpc02Catalog.fullParameterName(def), style = MaterialTheme.typography.titleMedium, color = p.textPrimary) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    PersianLabels.registerLabel(def),
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                    color = p.textPrimary,
-                )
                 currentValue?.let { cur ->
-                    Text(
-                        "مقدار فعلی: ${PersianLabels.formatRegisterValue(def, cur)}",
+                    LtrText(
+                        "Current: ${Bpc02Catalog.formatValue(def, cur)}",
                         style = MaterialTheme.typography.bodySmall,
                         color = p.textSecondary,
                     )
@@ -1688,7 +2103,7 @@ private fun NumberEditDialog(
                             input.filter { it.isDigit() }
                         }
                     },
-                    label = { Text("مقدار جدید") },
+                    label = { Text("New Value") },
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     isError = text.isNotEmpty() && !inRange,
@@ -1697,12 +2112,11 @@ private fun NumberEditDialog(
                     ),
                     supportingText = {
                         when {
-                            text.isEmpty() -> Text(rangeSummary)
-                            !inRange -> Text("خارج از بازه مجاز ($rangeSummary)", color = p.fault)
-                            else -> Text(
-                                "مقدار جدید: ${PersianLabels.formatRegisterValue(def, parsedRaw!!)}",
+                            text.isEmpty() -> LtrText(rangeSummary)
+                            !inRange -> LtrText("Out of range ($rangeSummary)", color = p.fault)
+                            else -> LtrText(
+                                "New: ${Bpc02Catalog.formatValue(def, parsedRaw!!)}",
                                 color = p.ok,
-                                fontWeight = FontWeight.Medium,
                             )
                         }
                     },
@@ -1744,7 +2158,7 @@ private fun EnumEditDialog(
         containerColor = p.panel,
         shape = RoundedCornerShape(22.dp),
         icon = { Icon(Icons.Outlined.Tune, contentDescription = null, tint = p.gold) },
-        title = { Text(PersianLabels.registerLabel(def), style = MaterialTheme.typography.titleMedium, color = p.textPrimary) },
+        title = { LtrText(Bpc02Catalog.fullParameterName(def), style = MaterialTheme.typography.titleMedium, color = p.textPrimary) },
         text = {
             Column(
                 modifier = Modifier
@@ -1766,8 +2180,8 @@ private fun EnumEditDialog(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         RadioButton(selected = isSel, onClick = { selected = code })
-                        Text(
-                            text = PersianLabels.enumOptionLabel(def, code),
+                        LtrText(
+                            text = Bpc02Catalog.enumOptionLabel(def, code),
                             style = MaterialTheme.typography.bodyMedium,
                             color = if (isSel) p.gold else p.textPrimary,
                         )

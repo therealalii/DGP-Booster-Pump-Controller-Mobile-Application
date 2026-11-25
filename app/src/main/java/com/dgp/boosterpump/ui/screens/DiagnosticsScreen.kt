@@ -443,6 +443,15 @@ private fun RegisterMapTabContent(uiState: MonitoringUiState) {
     val p = LocalScadaPalette.current
     var query by remember { mutableStateOf("") }
     var selectedGroup by remember { mutableStateOf<RegisterGroup?>(null) }
+    var activeHelp by remember { mutableStateOf<Pair<com.dgp.boosterpump.controller.Bpc02Catalog.ParameterHelp, String?>?>(null) }
+
+    activeHelp?.let { (help, curVal) ->
+        com.dgp.boosterpump.ui.components.ParameterHelpBottomSheet(
+            help = help,
+            currentValue = curVal,
+            onDismiss = { activeHelp = null },
+        )
+    }
 
     val liveMap: Map<String, Int?> = remember(uiState.snapshot, uiState.configSnapshot) {
         buildMap {
@@ -456,7 +465,7 @@ private fun RegisterMapTabContent(uiState: MonitoringUiState) {
         Bpc02RegisterMap.all.filter { def ->
             val groupOk = selectedGroup == null || def.group == selectedGroup
             val searchOk = q.isEmpty() ||
-                PersianLabels.registerLabel(def).lowercase().contains(q) ||
+                com.dgp.boosterpump.controller.Bpc02Catalog.fullParameterName(def).lowercase().contains(q) ||
                 def.label.lowercase().contains(q) ||
                 def.documentedAddress.toString().contains(q)
             groupOk && searchOk
@@ -470,15 +479,15 @@ private fun RegisterMapTabContent(uiState: MonitoringUiState) {
     ) {
         item {
             ScadaPanel(
-                title = "نقشه متمرکز رجیسترهای BPC02",
-                subtitle = "${Bpc02RegisterMap.all.size} رجیستر (کویل FC01/FC05 و هولدینگ FC03/FC06، آفست 0)",
+                title = "BPC-02 Register Map",
+                subtitle = "${Bpc02RegisterMap.all.size} Registers (Coil FC01/FC05 & Holding FC03/FC06, Offset 0)",
                 icon = Icons.AutoMirrored.Outlined.ListAlt,
                 accentColor = p.gold,
             ) {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    placeholder = { Text("جستجو بر اساس نام یا آدرس (مثلاً 2، 80، فشار، پمپ)…") },
+                    placeholder = { Text("Search by English name or address (e.g. 2, 80, Sleep, Pump)…") },
                     leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
                     singleLine = true,
                     shape = RoundedCornerShape(13.dp),
@@ -491,19 +500,19 @@ private fun RegisterMapTabContent(uiState: MonitoringUiState) {
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
                     DgpPillChip(
-                        label = "همه",
+                        label = "All",
                         selected = selectedGroup == null,
                         onClick = { selectedGroup = null },
                     )
                     val groups = listOf(
-                        RegisterGroup.MEASUREMENT to "اندازه‌گیری",
-                        RegisterGroup.PUMP_STATUS to "پمپ‌ها",
-                        RegisterGroup.RUN_TIME to "تایمر",
-                        RegisterGroup.ALARM to "آلارم",
-                        RegisterGroup.DIGITAL_IO to "دیجیتال I/O",
-                        RegisterGroup.CONFIGURATION to "سخت‌افزار",
-                        RegisterGroup.COMMAND to "فرمان (RW)",
-                        RegisterGroup.MANUAL_CONTROL to "دستی (R)",
+                        RegisterGroup.MEASUREMENT to "Measurements",
+                        RegisterGroup.PUMP_STATUS to "Pumps",
+                        RegisterGroup.RUN_TIME to "Work Time",
+                        RegisterGroup.ALARM to "Errors",
+                        RegisterGroup.DIGITAL_IO to "Digital I/O",
+                        RegisterGroup.CONFIGURATION to "Hardware",
+                        RegisterGroup.COMMAND to "Command (RW)",
+                        RegisterGroup.MANUAL_CONTROL to "Manual (R)",
                     )
                     groups.forEach { (g, title) ->
                         DgpPillChip(
@@ -518,13 +527,22 @@ private fun RegisterMapTabContent(uiState: MonitoringUiState) {
 
         items(filtered, key = { it.key }) { def ->
             val raw = liveMap[def.key]
-            RegisterDirectoryCard(RegisterReading(def, raw))
+            RegisterDirectoryCard(
+                reading = RegisterReading(def, raw),
+                onHelpClick = {
+                    val cur = raw?.let { com.dgp.boosterpump.controller.Bpc02Catalog.formatValue(def, it) }
+                    activeHelp = com.dgp.boosterpump.controller.Bpc02Catalog.helpFor(def) to cur
+                },
+            )
         }
     }
 }
 
 @Composable
-private fun RegisterDirectoryCard(reading: RegisterReading) {
+private fun RegisterDirectoryCard(
+    reading: RegisterReading,
+    onHelpClick: () -> Unit,
+) {
     val p = LocalScadaPalette.current
     val def = reading.definition
     val locked = def.access == AccessPolicy.CONTROL_LOCKED
@@ -543,15 +561,21 @@ private fun RegisterDirectoryCard(reading: RegisterReading) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = PersianLabels.registerLabel(def),
-                style = MaterialTheme.typography.titleSmall,
-                color = p.textPrimary,
+            Row(
                 modifier = Modifier.weight(1f),
-            )
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                LtrText(
+                    text = com.dgp.boosterpump.controller.Bpc02Catalog.fullParameterName(def),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = p.textPrimary,
+                )
+                com.dgp.boosterpump.ui.components.ParameterHelpIcon(onClick = onHelpClick)
+            }
             Spacer(Modifier.width(8.dp))
-            Text(
-                text = reading.raw?.let { PersianLabels.formatRegisterValue(def, it) } ?: "—",
+            LtrText(
+                text = reading.raw?.let { com.dgp.boosterpump.controller.Bpc02Catalog.formatValue(def, it) } ?: "—",
                 style = MaterialTheme.typography.titleSmall,
                 color = if (reading.raw != null) p.cyan else p.textSecondary,
             )
@@ -562,24 +586,24 @@ private fun RegisterDirectoryCard(reading: RegisterReading) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             LtrText(
-                text = "${PersianLabels.tableLabel(def.table)}  •  Dec ${def.documentedAddress} (0x%04X)".format(def.documentedAddress) +
+                text = "${def.table.name}  •  Dec ${def.documentedAddress} (0x%04X)".format(def.documentedAddress) +
                     (reading.raw?.let { "  •  raw=$it" } ?: ""),
                 style = MonoStyle.copy(fontSize = 10.sp),
                 color = p.textMuted,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (def.isWritable) {
-                    StatusBadge("قابل ویرایش", BadgeTone.GOLD)
+                    StatusBadge("RW", BadgeTone.GOLD)
                 }
                 if (locked) {
-                    StatusBadge("قفل نوشتن", BadgeTone.WARNING)
+                    StatusBadge("Locked", BadgeTone.WARNING)
                 } else {
-                    val tone = when (def.verification) {
-                        Verification.HARDWARE_VERIFIED -> BadgeTone.OK
-                        Verification.DOCUMENTED -> BadgeTone.NEUTRAL
-                        Verification.AMBIGUOUS -> BadgeTone.WARNING
+                    val (vLabel, tone) = when (def.verification) {
+                        Verification.HARDWARE_VERIFIED -> "Verified" to BadgeTone.OK
+                        Verification.DOCUMENTED -> "Catalog" to BadgeTone.NEUTRAL
+                        Verification.AMBIGUOUS -> "Check" to BadgeTone.WARNING
                     }
-                    StatusBadge(PersianLabels.verificationLabel(def.verification), tone)
+                    StatusBadge(vLabel, tone)
                 }
             }
         }
