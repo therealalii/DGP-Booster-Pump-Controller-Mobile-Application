@@ -456,7 +456,7 @@ fun LoginScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     RoleBadgeChip("مدیر سیستم (دسترسی کامل)", AuthGold)
-                    RoleBadgeChip("اپراتور (دسترسی کاربری)", Color(0xFF38BDF8))
+                    RoleBadgeChip("اپراتور (فقط خواندنی / قابل تنظیم)", Color(0xFF38BDF8))
                 }
             }
 

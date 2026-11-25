@@ -3,6 +3,9 @@ package com.dgp.boosterpump.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.dgp.boosterpump.auth.AuthSessionStore
+import com.dgp.boosterpump.auth.InMemoryOperatorPermissionsStore
+import com.dgp.boosterpump.auth.OperatorPermissionsStore
 import com.dgp.boosterpump.controller.ControllerModel
 import com.dgp.boosterpump.gateway.ConfigValidation
 import com.dgp.boosterpump.gateway.DataSourceMode
@@ -65,6 +68,8 @@ data class GatewayFormState(
 class GatewaySettingsViewModel(
     private val configRepository: GatewayConfigRepository,
     private val session: ControllerSession,
+    private val permissionsStore: OperatorPermissionsStore = InMemoryOperatorPermissionsStore(),
+    private val authSession: AuthSessionStore = AuthSessionStore(),
 ) : ViewModel() {
 
     private val _form = MutableStateFlow(GatewayFormState())
@@ -115,6 +120,10 @@ class GatewaySettingsViewModel(
     }
 
     fun save(andConnect: Boolean, onConnected: () -> Unit = {}) {
+        val role = authSession.currentUser.value?.role ?: return
+        val effective = role.effectivePermissions(permissionsStore.permissions.value)
+        if (!effective.canManageGateway) return
+
         val current = _form.value
         val parseErrors = mutableMapOf<ConfigValidation.Field, String>()
         val port = current.portText.trim().toIntOrNull()
@@ -173,10 +182,12 @@ class GatewaySettingsViewModel(
         fun factory(
             configRepository: GatewayConfigRepository,
             session: ControllerSession,
+            permissionsStore: OperatorPermissionsStore,
+            authSession: AuthSessionStore,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                GatewaySettingsViewModel(configRepository, session) as T
+                GatewaySettingsViewModel(configRepository, session, permissionsStore, authSession) as T
         }
     }
 }

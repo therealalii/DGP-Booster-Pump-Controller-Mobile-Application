@@ -916,13 +916,14 @@ fun DgpBottomNavBar(
 fun SimulationBanner(
     scenario: SimulationScenario,
     profile: SimulatedStationProfile,
+    canConfigureDemo: Boolean = true,
     onScenarioSelected: (SimulationScenario) -> Unit,
     onProfileChanged: (SimulatedStationProfile) -> Unit,
 ) {
     val p = LocalScadaPalette.current
     var showDialog by remember { mutableStateOf(false) }
 
-    if (showDialog) {
+    if (showDialog && canConfigureDemo) {
         val maxPumps = if (profile.wiringMode == 1) 6 else 4
         AlertDialog(
             onDismissRequest = { showDialog = false },
@@ -1084,25 +1085,27 @@ fun SimulationBanner(
                         )
                     }
                 }
-                Spacer(Modifier.width(8.dp))
-                Surface(
-                    onClick = { showDialog = true },
-                    color = p.simBannerFg.copy(alpha = 0.14f),
-                    border = BorderStroke(0.8.dp, p.simBannerFg.copy(alpha = 0.38f)),
-                    shape = RoundedCornerShape(999.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                if (canConfigureDemo) {
+                    Spacer(Modifier.width(8.dp))
+                    Surface(
+                        onClick = { showDialog = true },
+                        color = p.simBannerFg.copy(alpha = 0.14f),
+                        border = BorderStroke(0.8.dp, p.simBannerFg.copy(alpha = 0.38f)),
+                        shape = RoundedCornerShape(999.dp),
                     ) {
-                        Text(
-                            "تنظیم دمو",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                            color = p.simBannerFg,
-                            softWrap = false,
-                        )
-                        Icon(Icons.Outlined.ArrowDropDown, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Text(
+                                "تنظیم دمو",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = p.simBannerFg,
+                                softWrap = false,
+                            )
+                            Icon(Icons.Outlined.ArrowDropDown, contentDescription = null, modifier = Modifier.size(15.dp))
+                        }
                     }
                 }
             }

@@ -4,6 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.dgp.boosterpump.auth.AppUser
+import com.dgp.boosterpump.auth.AuthSessionStore
+import com.dgp.boosterpump.auth.InMemoryOperatorPermissionsStore
+import com.dgp.boosterpump.auth.OperatorPermission
+import com.dgp.boosterpump.auth.OperatorPermissions
+import com.dgp.boosterpump.auth.OperatorPermissionsStore
+import com.dgp.boosterpump.auth.UserRole
 import com.dgp.boosterpump.controller.ControllerSnapshot
 import com.dgp.boosterpump.gateway.GatewayConfig
 import com.dgp.boosterpump.gateway.GatewayConfigRepository
@@ -40,6 +46,8 @@ data class MonitoringUiState(
 class MonitoringViewModel(
     private val configRepository: GatewayConfigRepository,
     private val session: ControllerSession,
+    private val permissionsStore: OperatorPermissionsStore = InMemoryOperatorPermissionsStore(),
+    private val authSession: AuthSessionStore = AuthSessionStore(),
 ) : ViewModel() {
 
     /** Industrial control-room obsidian dark theme is enabled by default; users can toggle daylight mode. */
@@ -50,9 +58,11 @@ class MonitoringViewModel(
     private val _splashCompleted = MutableStateFlow(false)
     val splashCompleted: StateFlow<Boolean> = _splashCompleted.asStateFlow()
 
-    /** Currently signed-in operator/installer/admin user; null shows the dark DGP LoginScreen. */
-    private val _currentUser = MutableStateFlow<AppUser?>(null)
-    val currentUser: StateFlow<AppUser?> = _currentUser.asStateFlow()
+    /** Currently signed-in administrator or operator; null shows the dark DGP LoginScreen. */
+    val currentUser: StateFlow<AppUser?> = authSession.currentUser
+
+    /** Live admin-configured permissions applied to [UserRole.OPERATOR] (default: read-only). */
+    val operatorPermissions: StateFlow<OperatorPermissions> = permissionsStore.permissions
 
     fun toggleDarkTheme() {
         _darkTheme.value = !_darkTheme.value
@@ -63,12 +73,48 @@ class MonitoringViewModel(
     }
 
     fun login(user: AppUser) {
-        _currentUser.value = user
+        authSession.login(user)
     }
 
     fun logout() {
         session.disconnect()
-        _currentUser.value = null
+        authSession.logout()
+    }
+
+    /**
+     * Resolves the currently signed-in user's effective permissions.
+     * Returns null when signed out; [UserRole.ADMIN] always receives [OperatorPermissions.FULL_ADMIN].
+     */
+    private fun currentEffectivePermissions(): OperatorPermissions? {
+        val role = authSession.currentUser.value?.role ?: return null
+        return role.effectivePermissions(permissionsStore.permissions.value)
+    }
+
+    /** Admin-only: toggle one individual [OperatorPermission] for the OPERATOR account. */
+    fun setOperatorPermission(permission: OperatorPermission, enabled: Boolean) {
+        val role = authSession.currentUser.value?.role ?: return
+        if (!role.canManageOperatorPermissions) return
+        viewModelScope.launch {
+            permissionsStore.setPermission(permission, enabled)
+        }
+    }
+
+    /** Admin-only: apply a full [OperatorPermissions] configuration (e.g. preset). */
+    fun applyOperatorPermissions(permissions: OperatorPermissions) {
+        val role = authSession.currentUser.value?.role ?: return
+        if (!role.canManageOperatorPermissions) return
+        viewModelScope.launch {
+            permissionsStore.save(permissions)
+        }
+    }
+
+    /** Admin-only: restore the default strict read-only policy for OPERATOR accounts. */
+    fun resetOperatorPermissionsToReadOnly() {
+        val role = authSession.currentUser.value?.role ?: return
+        if (!role.canManageOperatorPermissions) return
+        viewModelScope.launch {
+            permissionsStore.resetToDefault()
+        }
     }
 
     private val coreFlow = combine(
@@ -121,9 +167,17 @@ class MonitoringViewModel(
 
     fun disconnect() = session.disconnect()
 
-    fun setSimulationScenario(scenario: SimulationScenario) = session.setSimulationScenario(scenario)
+    fun setSimulationScenario(scenario: SimulationScenario) {
+        val effective = currentEffectivePermissions() ?: return
+        if (!effective.canManageGateway) return
+        session.setSimulationScenario(scenario)
+    }
 
-    fun setSimulationProfile(profile: SimulatedStationProfile) = session.setSimulationProfile(profile)
+    fun setSimulationProfile(profile: SimulatedStationProfile) {
+        val effective = currentEffectivePermissions() ?: return
+        if (!effective.canManageGateway) return
+        session.setSimulationProfile(profile)
+    }
 
     fun readHardwareConfiguration() = session.readHardwareConfiguration()
 
@@ -131,47 +185,56 @@ class MonitoringViewModel(
         definition: com.dgp.boosterpump.controller.register.RegisterDefinition,
         newValue: Int,
     ) {
-        val role = _currentUser.value?.role ?: return
-        if (!role.canWriteRegister(definition)) return
+        val role = authSession.currentUser.value?.role ?: return
+        if (!role.canWriteRegister(definition, permissionsStore.permissions.value)) return
         session.writeHardwareParameter(definition, newValue)
     }
 
     fun applyImportedConfiguration(
         entries: List<Pair<com.dgp.boosterpump.controller.register.RegisterDefinition, Int>>,
     ) {
-        val role = _currentUser.value?.role ?: return
+        val role = authSession.currentUser.value?.role ?: return
+        val opPerms = permissionsStore.permissions.value
+        val effective = role.effectivePermissions(opPerms)
+        if (!effective.canImportConfig) return
         if (entries.isEmpty()) return
-        // Enforce role write permission across EVERY parameter before touching Modbus
-        if (entries.any { (def, _) -> !role.canWriteRegister(def) }) return
+        // Enforce role & operator write permission across EVERY parameter before touching Modbus
+        if (entries.any { (def, _) -> !role.canWriteRegister(def, opPerms) }) return
         session.applyImportedConfiguration(entries)
     }
 
     fun clearImportProgress() = session.clearImportProgress()
 
     fun resetPumpErrors() {
-        val role = _currentUser.value?.role ?: return
-        if (!role.canOperateBasicControls) return
+        val effective = currentEffectivePermissions() ?: return
+        if (!effective.canResetPumpErrors) return
         session.resetPumpErrors()
     }
 
     fun clearLastWriteNotice() = session.clearLastWriteNotice()
 
     fun runReadProbe(function: ReadFunction, pduAddress: Int, quantity: Int) {
-        val role = _currentUser.value?.role ?: return
-        if (!role.canAccessDiagnostics) return
+        val effective = currentEffectivePermissions() ?: return
+        if (!effective.canAccessDiagnostics) return
         session.runReadProbe(function, pduAddress, quantity)
     }
 
-    fun clearTransactionLog() = session.clearTransactionLog()
+    fun clearTransactionLog() {
+        val effective = currentEffectivePermissions() ?: return
+        if (!effective.canAccessDiagnostics) return
+        session.clearTransactionLog()
+    }
 
     companion object {
         fun factory(
             configRepository: GatewayConfigRepository,
             session: ControllerSession,
+            permissionsStore: OperatorPermissionsStore,
+            authSession: AuthSessionStore,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                MonitoringViewModel(configRepository, session) as T
+                MonitoringViewModel(configRepository, session, permissionsStore, authSession) as T
         }
     }
 }

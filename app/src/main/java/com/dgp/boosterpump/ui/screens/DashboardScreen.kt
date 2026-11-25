@@ -99,6 +99,7 @@ fun DashboardScreen(
     uiState: MonitoringUiState,
     canResetErrors: Boolean,
     canOpenGatewaySettings: Boolean,
+    canOpenPumps: Boolean = true,
     onConnect: () -> Unit,
     onResetPumpErrors: () -> Unit,
     onOpenGatewaySettings: () -> Unit,
@@ -231,7 +232,7 @@ fun DashboardScreen(
         }
 
         // 4. Station Pumps Quick Status Grid
-        item { BoosterStationPumpsPanel(snapshot.visiblePumps, onOpenPumps) }
+        item { BoosterStationPumpsPanel(snapshot.visiblePumps, canOpenPumps = canOpenPumps, onOpenPumps = onOpenPumps) }
 
         // 5. Rolling Pressure Trend Chart
         item {
@@ -580,7 +581,11 @@ private fun AlarmsPanel(
 }
 
 @Composable
-private fun BoosterStationPumpsPanel(pumps: List<PumpState>, onOpenPumps: () -> Unit) {
+private fun BoosterStationPumpsPanel(
+    pumps: List<PumpState>,
+    canOpenPumps: Boolean,
+    onOpenPumps: () -> Unit,
+) {
     val p = LocalScadaPalette.current
     val running = pumps.count { it.running == true && it.enabled != false }
     val enabled = pumps.count { it.enabled == true }
@@ -601,21 +606,25 @@ private fun BoosterStationPumpsPanel(pumps: List<PumpState>, onOpenPumps: () -> 
             disabled > 0 -> p.warning
             else -> p.ok
         },
-        trailing = {
-            Surface(
-                onClick = onOpenPumps,
-                color = p.panelElevated,
-                shape = RoundedCornerShape(999.dp),
-                border = BorderStroke(0.8.dp, p.gold.copy(alpha = 0.35f)),
-            ) {
-                Text(
-                    "جزئیات",
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                    color = p.gold,
-                    softWrap = false,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                )
+        trailing = if (canOpenPumps) {
+            {
+                Surface(
+                    onClick = onOpenPumps,
+                    color = p.panelElevated,
+                    shape = RoundedCornerShape(999.dp),
+                    border = BorderStroke(0.8.dp, p.gold.copy(alpha = 0.35f)),
+                ) {
+                    Text(
+                        "جزئیات",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = p.gold,
+                        softWrap = false,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                }
             }
+        } else {
+            null
         },
     ) {
         pumps.chunked(2).forEach { row ->

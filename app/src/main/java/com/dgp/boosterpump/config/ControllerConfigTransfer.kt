@@ -1,5 +1,6 @@
 package com.dgp.boosterpump.config
 
+import com.dgp.boosterpump.auth.OperatorPermissions
 import com.dgp.boosterpump.auth.UserRole
 import com.dgp.boosterpump.controller.Bpc02Catalog
 import com.dgp.boosterpump.controller.ControllerModel
@@ -178,8 +179,19 @@ object ControllerConfigTransfer {
         targetModel: ControllerModel,
         currentValuesByKey: Map<String, Int?>,
         userRole: UserRole,
+        operatorPermissions: OperatorPermissions = OperatorPermissions.READ_ONLY_DEFAULT,
     ): ConfigImportValidationResult {
         val issues = mutableListOf<ConfigValidationIssue>()
+        val effectivePermissions = userRole.effectivePermissions(operatorPermissions)
+
+        if (!effectivePermissions.canImportConfig) {
+            issues += ConfigValidationIssue(
+                severity = ValidationSeverity.ERROR,
+                parameterKey = null,
+                title = "Import Permission Required",
+                detailFa = "حساب اپراتور مجوز بارگذاری فایل تنظیمات (Import JSON) را ندارد. این مجوز از بخش «دسترسی های اپراتور» در پنل مدیر قابل فعال‌سازی است.",
+            )
+        }
 
         if (jsonText.isBlank()) {
             issues += ConfigValidationIssue(
@@ -357,13 +369,13 @@ object ControllerConfigTransfer {
                         detailFa = "در فایل «${Bpc02Catalog.formatValue(def, rawInt)}» ثبت شده اما روی کنترلر فعلی «${Bpc02Catalog.formatValue(def, currentVal!!)}» است. این پارامتر فقط از روی نمایشگر کنترلر قابل تغییر است.",
                     )
                 }
-            } else if (!userRole.canWriteRegister(def)) {
+            } else if (!userRole.canWriteRegister(def, operatorPermissions)) {
                 roleRestrictedKeys += key
                 issues += ConfigValidationIssue(
                     severity = ValidationSeverity.ERROR,
                     parameterKey = key,
                     title = "Permission Required: ${Bpc02Catalog.fullParameterName(def)}",
-                    detailFa = "اعمال پارامتر ${Bpc02Catalog.fullParameterName(def)} نیازمند سطح دسترسی «مدیر سیستم» است.",
+                    detailFa = "اعمال پارامتر ${Bpc02Catalog.fullParameterName(def)} در سطح دسترسی فعلی مجاز نیست (قابل تنظیم توسط مدیر سیستم).",
                 )
             } else {
                 writableEntries += ImportParameterChange(def, currentVal, rawInt)

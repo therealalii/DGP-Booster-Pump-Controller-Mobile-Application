@@ -20,11 +20,21 @@ class MainActivity : ComponentActivity() {
     private val appContainer by lazy { (application as DgpApplication).container }
 
     private val monitoringViewModel: MonitoringViewModel by viewModels {
-        MonitoringViewModel.factory(appContainer.configRepository, appContainer.session)
+        MonitoringViewModel.factory(
+            configRepository = appContainer.configRepository,
+            session = appContainer.session,
+            permissionsStore = appContainer.permissionsRepository,
+            authSession = appContainer.authSession,
+        )
     }
 
     private val settingsViewModel: GatewaySettingsViewModel by viewModels {
-        GatewaySettingsViewModel.factory(appContainer.configRepository, appContainer.session)
+        GatewaySettingsViewModel.factory(
+            configRepository = appContainer.configRepository,
+            session = appContainer.session,
+            permissionsStore = appContainer.permissionsRepository,
+            authSession = appContainer.authSession,
+        )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

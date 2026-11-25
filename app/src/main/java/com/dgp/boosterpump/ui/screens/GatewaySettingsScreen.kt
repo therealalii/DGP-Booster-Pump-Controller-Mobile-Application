@@ -41,6 +41,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.dgp.boosterpump.auth.OperatorPermissions
 import com.dgp.boosterpump.gateway.ConfigValidation
 import com.dgp.boosterpump.gateway.DataSourceMode
 import com.dgp.boosterpump.ui.PersianLabels
@@ -65,8 +66,11 @@ fun GatewaySettingsScreen(
     viewModel: GatewaySettingsViewModel,
     canEditGateway: Boolean,
     canOpenDiagnostics: Boolean,
+    canManageOperatorPermissions: Boolean = false,
+    operatorPermissions: OperatorPermissions = OperatorPermissions.READ_ONLY_DEFAULT,
     onSavedAndConnected: () -> Unit,
     onOpenDiagnostics: () -> Unit,
+    onOpenOperatorPermissions: () -> Unit = {},
 ) {
     val p = LocalScadaPalette.current
     var showAdvancedTiming by remember { mutableStateOf(false) }
@@ -319,7 +323,17 @@ fun GatewaySettingsScreen(
             }
         }
 
-        // 5. Admin-Only Technical Diagnostics Entry (kept cleanly out of everyday bottom nav)
+        // 5. Admin-Only Operator Access Control («دسترسی های اپراتور»)
+        if (canManageOperatorPermissions) {
+            item {
+                OperatorPermissionsAdminCard(
+                    permissions = operatorPermissions,
+                    onClick = onOpenOperatorPermissions,
+                )
+            }
+        }
+
+        // 6. Technical Diagnostics Entry (Admin or Operator granted diagnostics permission)
         if (canOpenDiagnostics) {
             item {
                 Surface(
@@ -349,7 +363,11 @@ fun GatewaySettingsScreen(
                                     color = p.textPrimary,
                                 )
                                 Text(
-                                    "مخصوص مدیر سیستم و پشتیبان فنی",
+                                    if (canManageOperatorPermissions) {
+                                        "مخصوص مدیر سیستم و پشتیبان فنی"
+                                    } else {
+                                        "تست خواندن Modbus، لاگ فریم‌ها و نقشه رجیستر"
+                                    },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = p.textSecondary,
                                 )

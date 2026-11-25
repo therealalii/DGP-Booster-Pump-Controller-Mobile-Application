@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.SettingsEthernet
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.outlined.AdminPanelSettings
@@ -33,6 +34,7 @@ import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.LightMode
+import androidx.compose.material.icons.outlined.ManageAccounts
 import androidx.compose.material.icons.outlined.SettingsEthernet
 import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material.icons.outlined.WaterDrop
@@ -73,6 +75,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.dgp.boosterpump.R
 import com.dgp.boosterpump.auth.AppUser
+import com.dgp.boosterpump.auth.UserRole
 import com.dgp.boosterpump.gateway.DataSourceMode
 import com.dgp.boosterpump.session.ConnectionState
 import com.dgp.boosterpump.ui.components.ConnectionHeaderStrip
@@ -84,6 +87,7 @@ import com.dgp.boosterpump.ui.screens.DashboardScreen
 import com.dgp.boosterpump.ui.screens.DiagnosticsScreen
 import com.dgp.boosterpump.ui.screens.GatewaySettingsScreen
 import com.dgp.boosterpump.ui.screens.LoginScreen
+import com.dgp.boosterpump.ui.screens.OperatorPermissionsScreen
 import com.dgp.boosterpump.ui.screens.PumpsAndIoScreen
 import com.dgp.boosterpump.ui.screens.SplashLoadingScreen
 import com.dgp.boosterpump.ui.theme.LocalScadaPalette
@@ -103,6 +107,7 @@ private enum class Destination(
     CONTROL("control", "تنظیمات", Icons.Outlined.AdminPanelSettings, Icons.Filled.AdminPanelSettings),
     GATEWAY("gateway", "اتصال", Icons.Outlined.SettingsEthernet, Icons.Filled.SettingsEthernet),
     DIAGNOSTICS("diagnostics", "عیب‌یابی", Icons.Outlined.BugReport, Icons.Filled.BugReport),
+    OPERATOR_PERMISSIONS("operator_permissions", "دسترسی های اپراتور", Icons.Outlined.ManageAccounts, Icons.Filled.ManageAccounts),
 }
 
 @Composable
@@ -163,8 +168,13 @@ private fun MainScadaShell(
     val p = LocalScadaPalette.current
     val navController = rememberNavController()
     val uiState by monitoringViewModel.uiState.collectAsStateWithLifecycle()
+    val operatorPermissions by monitoringViewModel.operatorPermissions.collectAsStateWithLifecycle()
     val formState by settingsViewModel.form.collectAsStateWithLifecycle()
     var showLogoutDialog by remember { mutableStateOf(false) }
+
+    val effectivePermissions = remember(user.role, operatorPermissions) {
+        user.role.effectivePermissions(operatorPermissions)
+    }
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: Destination.DASHBOARD.route
@@ -183,23 +193,46 @@ private fun MainScadaShell(
         }
     }
 
-    val navEntries = remember(user.role) {
+    fun openOperatorPermissions() {
+        if (user.role.canManageOperatorPermissions) {
+            navController.navigate(Destination.OPERATOR_PERMISSIONS.route) {
+                launchSingleTop = true
+            }
+        }
+    }
+
+    val navEntries = remember(effectivePermissions) {
         buildList {
             add(Destination.DASHBOARD)
-            add(Destination.PUMPS)
+            if (effectivePermissions.canViewPumpsAndIo) {
+                add(Destination.PUMPS)
+            }
             add(Destination.CONTROL)
-            if (user.role.canManageConnection) {
+            if (effectivePermissions.canManageGateway) {
                 add(Destination.GATEWAY)
+            } else if (effectivePermissions.canAccessDiagnostics) {
+                add(Destination.DIAGNOSTICS)
             }
         }.map { NavBarEntry(it.route, it.label, it.icon, it.selectedIcon) }
     }
-    val activeBottomRoute = if (currentRoute == Destination.DIAGNOSTICS.route) {
-        Destination.GATEWAY.route
-    } else {
-        currentRoute
+    val activeBottomRoute = when (currentRoute) {
+        Destination.DIAGNOSTICS.route -> if (effectivePermissions.canManageGateway) {
+            Destination.GATEWAY.route
+        } else {
+            Destination.DIAGNOSTICS.route
+        }
+        Destination.OPERATOR_PERMISSIONS.route -> Destination.CONTROL.route
+        else -> currentRoute
     }
 
     if (showLogoutDialog) {
+        val roleDetailText = when {
+            user.role == UserRole.ADMIN -> user.role.subtitleFa
+            effectivePermissions.grantedWriteCount == 0 ->
+                "دسترسی فعلی: فقط خواندنی (مشاهده مانیتورینگ و وضعیت بدون امکان تغییر)"
+            else ->
+                "دسترسی فعلی: اپراتور با ${effectivePermissions.grantedWriteCount} مجوز تغییر فعال‌شده توسط مدیر"
+        }
         AlertDialog(
             onDismissRequest = { showLogoutDialog = false },
             containerColor = p.panel,
@@ -223,7 +256,7 @@ private fun MainScadaShell(
                                 color = p.gold,
                             )
                             Text(
-                                user.role.subtitleFa,
+                                roleDetailText,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = p.textSecondary,
                             )
@@ -286,8 +319,8 @@ private fun MainScadaShell(
                                     style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp, lineHeight = 18.sp),
                                     maxLines = 2,
                                 )
-                                val badgeAccent = if (user.role.canEditAdvancedSettings) p.gold else p.cyan
-                                val badgeBg = if (user.role.canEditAdvancedSettings) p.goldSoft else p.cyanSoft
+                                val badgeAccent = if (user.role == UserRole.ADMIN) p.gold else p.cyan
+                                val badgeBg = if (user.role == UserRole.ADMIN) p.goldSoft else p.cyanSoft
                                 Surface(
                                     color = badgeBg,
                                     shape = RoundedCornerShape(999.dp),
@@ -361,6 +394,7 @@ private fun MainScadaShell(
                     SimulationBanner(
                         scenario = uiState.simulationScenario,
                         profile = uiState.simulationProfile,
+                        canConfigureDemo = effectivePermissions.canManageGateway,
                         onScenarioSelected = monitoringViewModel::setSimulationScenario,
                         onProfileChanged = monitoringViewModel::setSimulationProfile,
                     )
@@ -393,56 +427,82 @@ private fun MainScadaShell(
             composable(Destination.DASHBOARD.route) {
                 DashboardScreen(
                     uiState = uiState,
-                    canResetErrors = user.role.canOperateBasicControls,
-                    canOpenGatewaySettings = user.role.canManageConnection,
+                    canResetErrors = effectivePermissions.canResetPumpErrors,
+                    canOpenGatewaySettings = effectivePermissions.canManageGateway,
+                    canOpenPumps = effectivePermissions.canViewPumpsAndIo,
                     onConnect = monitoringViewModel::connectWithSavedConfig,
                     onResetPumpErrors = monitoringViewModel::resetPumpErrors,
                     onOpenGatewaySettings = {
-                        if (user.role.canManageConnection) navigateTo(Destination.GATEWAY.route)
+                        if (effectivePermissions.canManageGateway) navigateTo(Destination.GATEWAY.route)
                     },
-                    onOpenPumps = { navigateTo(Destination.PUMPS.route) },
+                    onOpenPumps = {
+                        if (effectivePermissions.canViewPumpsAndIo) navigateTo(Destination.PUMPS.route)
+                    },
                 )
             }
             composable(Destination.PUMPS.route) {
-                PumpsAndIoScreen(uiState = uiState)
+                if (effectivePermissions.canViewPumpsAndIo) {
+                    PumpsAndIoScreen(uiState = uiState)
+                }
             }
             composable(Destination.CONTROL.route) {
                 ControlAndConfigScreen(
                     uiState = uiState,
                     userRole = user.role,
+                    operatorPermissions = operatorPermissions,
                     onReadHardwareConfig = monitoringViewModel::readHardwareConfiguration,
                     onWriteParameter = monitoringViewModel::writeHardwareParameter,
                     onApplyImportedConfig = monitoringViewModel::applyImportedConfiguration,
                     onDismissImportProgress = monitoringViewModel::clearImportProgress,
                     onResetPumpErrors = monitoringViewModel::resetPumpErrors,
                     onDismissWriteNotice = monitoringViewModel::clearLastWriteNotice,
+                    onOpenOperatorPermissions = ::openOperatorPermissions,
                 )
             }
             composable(Destination.GATEWAY.route) {
-                if (user.role.canManageConnection) {
+                if (effectivePermissions.canManageGateway) {
                     GatewaySettingsScreen(
                         form = formState,
                         viewModel = settingsViewModel,
-                        canEditGateway = user.role.canManageConnection,
-                        canOpenDiagnostics = user.role.canAccessDiagnostics,
+                        canEditGateway = effectivePermissions.canManageGateway,
+                        canOpenDiagnostics = effectivePermissions.canAccessDiagnostics,
+                        canManageOperatorPermissions = user.role.canManageOperatorPermissions,
+                        operatorPermissions = operatorPermissions,
                         onSavedAndConnected = { navigateTo(Destination.DASHBOARD.route) },
                         onOpenDiagnostics = {
-                            if (user.role.canAccessDiagnostics) {
+                            if (effectivePermissions.canAccessDiagnostics) {
                                 navController.navigate(Destination.DIAGNOSTICS.route) {
                                     launchSingleTop = true
                                 }
                             }
                         },
+                        onOpenOperatorPermissions = ::openOperatorPermissions,
                     )
                 }
             }
             composable(Destination.DIAGNOSTICS.route) {
-                if (user.role.canAccessDiagnostics) {
+                if (effectivePermissions.canAccessDiagnostics) {
                     DiagnosticsScreen(
                         uiState = uiState,
-                        canRunProbe = user.role.canAccessDiagnostics,
+                        canRunProbe = effectivePermissions.canAccessDiagnostics,
+                        isAdmin = user.role == UserRole.ADMIN,
                         onRunProbe = monitoringViewModel::runReadProbe,
                         onClearLog = monitoringViewModel::clearTransactionLog,
+                        onBack = if (effectivePermissions.canManageGateway) {
+                            { navController.popBackStack() }
+                        } else {
+                            null
+                        },
+                    )
+                }
+            }
+            composable(Destination.OPERATOR_PERMISSIONS.route) {
+                if (user.role.canManageOperatorPermissions) {
+                    OperatorPermissionsScreen(
+                        permissions = operatorPermissions,
+                        onTogglePermission = monitoringViewModel::setOperatorPermission,
+                        onApplyPreset = monitoringViewModel::applyOperatorPermissions,
+                        onResetToReadOnly = monitoringViewModel::resetOperatorPermissionsToReadOnly,
                         onBack = { navController.popBackStack() },
                     )
                 }

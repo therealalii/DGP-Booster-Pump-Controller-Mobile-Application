@@ -83,6 +83,7 @@ private enum class DiagTab(val label: String) {
 fun DiagnosticsScreen(
     uiState: MonitoringUiState,
     canRunProbe: Boolean,
+    isAdmin: Boolean = true,
     onRunProbe: (ReadFunction, Int, Int) -> Unit,
     onClearLog: () -> Unit,
     onBack: (() -> Unit)? = null,
@@ -123,7 +124,10 @@ fun DiagnosticsScreen(
                         )
                     }
                 }
-                StatusBadge("ابزار فنی مدیر", BadgeTone.GOLD)
+                StatusBadge(
+                    text = if (isAdmin) "ابزار فنی مدیر" else "ابزار فنی ارتباط",
+                    tone = if (isAdmin) BadgeTone.GOLD else BadgeTone.INFO,
+                )
             }
         }
         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {

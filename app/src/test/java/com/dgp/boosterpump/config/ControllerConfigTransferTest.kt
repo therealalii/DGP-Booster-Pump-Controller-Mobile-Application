@@ -155,7 +155,34 @@ class ControllerConfigTransferTest {
         assertTrue("sleep_gap" in errKeys)
         assertTrue("control_status" in errKeys)
 
-        // 4. Operator role blocked from importing Admin-only advanced parameters
+        // 4. Default read-only Operator is blocked from importing even daily parameters (Setpoint)
+        val setpointJson = """
+            {
+              "schemaVersion": 1,
+              "format": "dgp-bpc-config",
+              "controllerModel": "BPC02",
+              "parameters": { "system_pressure_setpoint": 480 }
+            }
+        """.trimIndent()
+        val defaultOpRes = ControllerConfigTransfer.parseAndValidate(setpointJson, ControllerModel.BPC02, current, UserRole.OPERATOR)
+        assertFalse("Default read-only Operator must be blocked from importing JSON", defaultOpRes.canApply)
+        assertTrue("system_pressure_setpoint" in defaultOpRes.roleRestrictedKeys)
+
+        // 5. Operator granted IMPORT_CONFIG + EDIT_PRESSURE_SETPOINT can import setpoint-only JSON
+        val customOpPerms = com.dgp.boosterpump.auth.OperatorPermissions.READ_ONLY_DEFAULT
+            .withPermission(com.dgp.boosterpump.auth.OperatorPermission.IMPORT_CONFIG, true)
+            .withPermission(com.dgp.boosterpump.auth.OperatorPermission.EDIT_PRESSURE_SETPOINT, true)
+        val allowedOpRes = ControllerConfigTransfer.parseAndValidate(
+            setpointJson,
+            ControllerModel.BPC02,
+            current,
+            UserRole.OPERATOR,
+            operatorPermissions = customOpPerms,
+        )
+        assertTrue("Operator granted IMPORT_CONFIG + EDIT_PRESSURE_SETPOINT should apply setpoint JSON", allowedOpRes.canApply)
+        assertEquals(1, allowedOpRes.changesToApply.size)
+
+        // 6. Operator with IMPORT_CONFIG + EDIT_PRESSURE_SETPOINT is STILL blocked from ungranted parameters (sleep_gap)
         val adminOnlyJson = """
             {
               "schemaVersion": 1,
@@ -164,8 +191,14 @@ class ControllerConfigTransferTest {
               "parameters": { "sleep_gap": 35 }
             }
         """.trimIndent()
-        val opRes = ControllerConfigTransfer.parseAndValidate(adminOnlyJson, ControllerModel.BPC02, current, UserRole.OPERATOR)
-        assertFalse("Operator must be blocked from applying admin-only config", opRes.canApply)
+        val opRes = ControllerConfigTransfer.parseAndValidate(
+            adminOnlyJson,
+            ControllerModel.BPC02,
+            current,
+            UserRole.OPERATOR,
+            operatorPermissions = customOpPerms,
+        )
+        assertFalse("Operator must remain blocked from ungranted config parameters", opRes.canApply)
         assertTrue("sleep_gap" in opRes.roleRestrictedKeys)
     }
 

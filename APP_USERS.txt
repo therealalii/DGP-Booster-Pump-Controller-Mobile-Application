@@ -20,7 +20,8 @@ NOTE:
     - Full controller menu & all editable settings (Control Phase, Floater,
       Sensor, Control Pages 1–13, PID, Sleep/Wakeup, Auto Service, MFx)
     - Converter network settings (IP, Port, Device ID, Demo mode)
-    - Technical connection diagnostics (Admin-only)
+    - Technical connection diagnostics (Admin-only by default)
+    - Operator access management («دسترسی های اپراتور» — Admin-only)
 
 --------------------------------------------------------------------------------
 2. CLIENT ACCESS — OPERATOR / اپراتور بهره‌بردار (دسترسی کاربری)
@@ -29,15 +30,13 @@ NOTE:
   Password : Pump@1234
   Role     : اپراتور (OPERATOR)
   Access   :
+    - Default policy: STRICTLY READ-ONLY (cannot modify or write anything)
     - Live monitoring (pressure, setpoint, operating mode, drivers, tank, voltages)
-    - Pumps, run times & station status
-    - Daily operational controls only:
-        * Adjust target pressure (Setpoint)
-        * Enable / disable pumps for service (S)
-        * Reset active pump errors
-    - Read-only view of controller settings
-    - Restricted from advanced controller parameters, converter network
-      settings, and technical diagnostics
+    - Read-only view of pumps, run times, digital I/O, and controller settings
+    - Individual write & feature permissions (Setpoint, Pump/Drive ON-OFF,
+      Reset Pump Error, Control Status, Hardware Menu sections, JSON Export/Import,
+      Gateway settings, and Diagnostics) can be explicitly granted or revoked
+      individually by the Administrator via «دسترسی های اپراتور»
 
 ================================================================================
   Source Code Reference: app/src/main/java/com/dgp/boosterpump/auth/AppAuth.kt

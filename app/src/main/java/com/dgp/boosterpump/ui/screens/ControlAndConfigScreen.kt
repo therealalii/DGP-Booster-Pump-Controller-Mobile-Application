@@ -96,6 +96,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import com.dgp.boosterpump.auth.OperatorPermissions
 import com.dgp.boosterpump.auth.UserRole
 import com.dgp.boosterpump.config.ConfigImportValidationResult
 import com.dgp.boosterpump.config.ControllerConfigTransfer
@@ -167,15 +168,18 @@ private fun categoryIcon(category: Bpc02Catalog.MenuCategory): ImageVector = whe
 fun ControlAndConfigScreen(
     uiState: MonitoringUiState,
     userRole: UserRole,
+    operatorPermissions: OperatorPermissions = OperatorPermissions.READ_ONLY_DEFAULT,
     onReadHardwareConfig: () -> Unit,
     onWriteParameter: (RegisterDefinition, Int) -> Unit,
     onApplyImportedConfig: (List<Pair<RegisterDefinition, Int>>) -> Unit,
     onDismissImportProgress: () -> Unit,
     onResetPumpErrors: () -> Unit,
     onDismissWriteNotice: () -> Unit,
+    onOpenOperatorPermissions: () -> Unit = {},
 ) {
     val p = LocalScadaPalette.current
     val context = LocalContext.current
+    val effectivePermissions = userRole.effectivePermissions(operatorPermissions)
     val cfgSnap = uiState.configSnapshot
     val liveSnap = uiState.snapshot
     val isConnected = uiState.connectionState is ConnectionState.Connected
@@ -247,6 +251,7 @@ fun ControlAndConfigScreen(
                     targetModel = activeModel,
                     currentValuesByKey = valueByKey,
                     userRole = userRole,
+                    operatorPermissions = operatorPermissions,
                 )
             }.onFailure { err ->
                 transferNotice = "خواندن فایل ناموفق بود: ${err.message ?: "خطای ناشناخته"}" to BadgeTone.FAULT
@@ -419,18 +424,31 @@ fun ControlAndConfigScreen(
             }
         }
 
+        // 0D. Admin-Only Section: «دسترسی های اپراتور»
+        if (userRole.canManageOperatorPermissions) {
+            item {
+                OperatorPermissionsAdminCard(
+                    permissions = operatorPermissions,
+                    onClick = onOpenOperatorPermissions,
+                )
+            }
+        }
+
         // 1. Quick Operational Controls (Setpoint, Control Status, Reset Pump Error, Pump/Drive Service)
         item {
-            val canEditControlMode = userRole.canWriteRegister(Bpc02RegisterMap.controlStatusDef) && isConnected && !isWriting
-            val canEditSetpoint = userRole.canWriteRegister(Bpc02RegisterMap.pressureSetpointDef) && isConnected && !isWriting
-            val canResetErrors = userRole.canOperateBasicControls && isConnected && !isWriting
+            val roleCanEditControlMode = userRole.canWriteRegister(Bpc02RegisterMap.controlStatusDef, operatorPermissions)
+            val roleCanEditSetpoint = userRole.canWriteRegister(Bpc02RegisterMap.pressureSetpointDef, operatorPermissions)
+            val roleCanResetErrors = effectivePermissions.canResetPumpErrors
+            val canEditControlMode = roleCanEditControlMode && isConnected && !isWriting
+            val canEditSetpoint = roleCanEditSetpoint && isConnected && !isWriting
+            val canResetErrors = roleCanResetErrors && isConnected && !isWriting
 
             ScadaPanel(
                 title = "Quick Control",
-                subtitle = if (userRole == UserRole.ADMIN) {
-                    "تنظیم سریع Setpoint، حالت عملکرد، رفع خطا و سرویس پمپ‌ها"
-                } else {
-                    "تنظیم فشار، رفع خطا و فعال/غیرفعال کردن پمپ‌ها برای بهره‌برداری روزانه"
+                subtitle = when {
+                    userRole == UserRole.ADMIN -> "تنظیم سریع Setpoint، حالت عملکرد، رفع خطا و سرویس پمپ‌ها"
+                    effectivePermissions.hasAnyDailyControlWrite -> "کنترل‌های فعال‌شده توسط مدیر سیستم قابل ویرایش هستند"
+                    else -> "حالت فقط خواندنی — برای اعمال تغییرات، مجوز باید توسط مدیر سیستم فعال شود"
                 },
                 icon = Icons.Outlined.PowerSettingsNew,
                 accentColor = p.gold,
@@ -438,16 +456,20 @@ fun ControlAndConfigScreen(
                     if (isWriting) {
                         StatusBadge("Writing…", BadgeTone.GOLD, pulsing = true)
                     } else if (userRole == UserRole.OPERATOR) {
-                        StatusBadge("Operator", BadgeTone.INFO)
+                        if (effectivePermissions.hasAnyWritePermission) {
+                            StatusBadge("Operator", BadgeTone.INFO)
+                        } else {
+                            StatusBadge("Read-Only", BadgeTone.NEUTRAL)
+                        }
                     }
                 },
             ) {
-                // System Pressure Setpoint (editable by Admin & Operator)
+                // System Pressure Setpoint
                 ParameterRow(
                     reading = RegisterReading(Bpc02RegisterMap.pressureSetpointDef, liveSetpointRaw),
                     actionLabel = "Edit",
                     canEdit = canEditSetpoint,
-                    isAdminRestricted = false,
+                    isAdminRestricted = !roleCanEditSetpoint,
                     isWritingThis = cfgSnap.writingKey == Bpc02RegisterMap.SYSTEM_PRESSURE_SETPOINT,
                     onClickEdit = {
                         pendingEdit = PendingEdit.NumberEdit(Bpc02RegisterMap.pressureSetpointDef, liveSetpointRaw)
@@ -460,7 +482,7 @@ fun ControlAndConfigScreen(
 
                 HorizontalDivider(color = p.hairline)
 
-                // Control Status (Disable / PID / ON/OFF — Admin editable)
+                // Control Status (Disable / PID / ON/OFF)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -480,8 +502,8 @@ fun ControlAndConfigScreen(
                                     },
                                 )
                             }
-                            if (!userRole.canEditAdvancedSettings) {
-                                Text("تغییر حالت عملکرد مخصوص مدیر سیستم است", style = MaterialTheme.typography.labelSmall, color = p.textMuted)
+                            if (!roleCanEditControlMode) {
+                                Text("تغییر حالت عملکرد نیازمند مجوز مدیر سیستم است", style = MaterialTheme.typography.labelSmall, color = p.textMuted)
                             }
                         }
                         if (cfgSnap.writingKey == Bpc02RegisterMap.CONTROL_STATUS) {
@@ -497,7 +519,7 @@ fun ControlAndConfigScreen(
                             )
                         }
                     }
-                    if (userRole.canEditAdvancedSettings) {
+                    if (roleCanEditControlMode) {
                         DgpSegmentedControl(
                             items = listOf(0, 1, 2),
                             selected = liveControlStatus ?: -1,
@@ -532,22 +554,43 @@ fun ControlAndConfigScreen(
                             )
                         }
                         Text(
-                            "پاک‌سازی خطاهای ثبت‌شده پس از برطرف شدن عامل خطا",
+                            if (roleCanResetErrors) {
+                                "پاک‌سازی خطاهای ثبت‌شده پس از برطرف شدن عامل خطا"
+                            } else {
+                                "ارسال فرمان رفع خطا نیازمند مجوز مدیر سیستم است"
+                            },
                             style = MaterialTheme.typography.labelSmall,
-                            color = p.textSecondary,
+                            color = if (roleCanResetErrors) p.textSecondary else p.textMuted,
                         )
                     }
                     Spacer(Modifier.width(10.dp))
-                    if (cfgSnap.writingKey == Bpc02RegisterMap.MULTI_FUNCTION_REGISTER) {
-                        CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = p.gold)
-                    } else {
-                        DgpGoldButton(
-                            text = "Reset",
-                            icon = Icons.Outlined.RestartAlt,
-                            enabled = canResetErrors,
-                            onClick = { pendingEdit = PendingEdit.ResetErrorsConfirm },
-                            height = 40.dp,
-                        )
+                    when {
+                        cfgSnap.writingKey == Bpc02RegisterMap.MULTI_FUNCTION_REGISTER -> {
+                            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = p.gold)
+                        }
+                        !roleCanResetErrors -> {
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(9.dp))
+                                    .background(p.panel)
+                                    .border(0.8.dp, p.panelBorder, RoundedCornerShape(9.dp))
+                                    .padding(horizontal = 9.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Icon(Icons.Outlined.Lock, contentDescription = null, tint = p.textMuted, modifier = Modifier.size(12.dp))
+                                LtrText("Admin", style = MaterialTheme.typography.labelSmall, color = p.textMuted)
+                            }
+                        }
+                        else -> {
+                            DgpGoldButton(
+                                text = "Reset",
+                                icon = Icons.Outlined.RestartAlt,
+                                enabled = canResetErrors,
+                                onClick = { pendingEdit = PendingEdit.ResetErrorsConfirm },
+                                height = 40.dp,
+                            )
+                        }
                     }
                 }
 
@@ -561,7 +604,8 @@ fun ControlAndConfigScreen(
                 )
                 ConfigGroupBox {
                     if (hasDrivers) {
-                        val canEditDrive = userRole.canWriteRegister(Bpc02RegisterMap.driveActivationDef) && isConnected && !isWriting
+                        val roleCanEditDrive = userRole.canWriteRegister(Bpc02RegisterMap.driveActivationDef, operatorPermissions)
+                        val canEditDrive = roleCanEditDrive && isConnected && !isWriting
                         PumpServiceRow(
                             title = "Drive",
                             subtitle = if (liveDriveEnabled == 0) "Disable — Service (S)" else "Enable",
@@ -570,6 +614,7 @@ fun ControlAndConfigScreen(
                             failed = liveSnap?.driveFailed,
                             showPumpIcon = false,
                             enabled = canEditDrive,
+                            isRestricted = !roleCanEditDrive,
                             isWritingThis = cfgSnap.writingKey == Bpc02RegisterMap.DRIVE_ACTIVATION,
                             onRequestToggle = { targetOn ->
                                 pendingEdit = PendingEdit.SwitchConfirm(
@@ -589,7 +634,8 @@ fun ControlAndConfigScreen(
                         val def = Bpc02RegisterMap.pumpActivationDefs[pumpNum - 1]
                         val pumpState = liveSnap?.pumps?.firstOrNull { it.number == pumpNum }
                         val rawVal = pumpState?.enabled?.let { if (it) 1 else 0 } ?: valueByKey[def.key]
-                        val canEditPump = userRole.canWriteRegister(def) && isConnected && !isWriting
+                        val roleCanEditPump = userRole.canWriteRegister(def, operatorPermissions)
+                        val canEditPump = roleCanEditPump && isConnected && !isWriting
                         val isDisabled = rawVal == 0
                         val isRunning = !isDisabled && pumpState?.running == true
                         PumpServiceRow(
@@ -606,6 +652,7 @@ fun ControlAndConfigScreen(
                             failed = pumpState?.failed,
                             showPumpIcon = true,
                             enabled = canEditPump,
+                            isRestricted = !roleCanEditPump,
                             isWritingThis = cfgSnap.writingKey == def.key,
                             onRequestToggle = { targetOn ->
                                 pendingEdit = PendingEdit.SwitchConfirm(def, rawVal, if (targetOn) 1 else 0)
@@ -625,8 +672,10 @@ fun ControlAndConfigScreen(
             val loadedParamCount = valueByKey.count { (k, v) ->
                 v != null && Bpc02RegisterMap.configuration.any { it.key == k }
             }
-            val canExport = loadedParamCount > 0 && !cfgSnap.loading
-            val canImport = userRole.canEditAdvancedSettings && isConnected && !isWriting
+            val roleCanExport = effectivePermissions.canExportConfig
+            val roleCanImport = effectivePermissions.canImportConfig
+            val canExport = roleCanExport && loadedParamCount > 0 && !cfgSnap.loading
+            val canImport = roleCanImport && isConnected && !isWriting
 
             ScadaPanel(
                 title = "Configuration Import / Export",
@@ -686,8 +735,16 @@ fun ControlAndConfigScreen(
                 }
 
                 when {
-                    !userRole.canEditAdvancedSettings -> NoticeBox(
-                        text = "وارد کردن فایل تنظیمات (Import) مخصوص مدیر سیستم است؛ خروجی گرفتن (Export) پس از دریافت تنظیمات دستگاه فعال است.",
+                    !roleCanExport && !roleCanImport -> NoticeBox(
+                        text = "خروجی گرفتن (Export) و وارد کردن فایل تنظیمات (Import) نیازمند مجوز مدیر سیستم است.",
+                        tone = BadgeTone.INFO,
+                    )
+                    !roleCanImport -> NoticeBox(
+                        text = "وارد کردن فایل تنظیمات (Import) نیازمند مجوز مدیر سیستم است؛ خروجی گرفتن (Export) پس از دریافت تنظیمات دستگاه فعال است.",
+                        tone = BadgeTone.INFO,
+                    )
+                    !roleCanExport -> NoticeBox(
+                        text = "خروجی گرفتن (Export) برای این حساب غیرفعال است؛ وارد کردن فایل تنظیمات (Import) با مجوزهای فعال مجاز است.",
                         tone = BadgeTone.INFO,
                     )
                     loadedParamCount == 0 -> NoticeBox(
@@ -704,51 +761,74 @@ fun ControlAndConfigScreen(
         }
 
         // 3. Official BPC-02 Hardware Menu (All 6 English Categories + Ordered Pages On Click + Persian ? Help)
-        item {
-            ScadaPanel(
-                title = "Hardware Menu (BPC-02)",
-                subtitle = "ساختار دقیق منوی کنترلر — برای دیدن صفحات روی هر بخش و برای راهنمای فارسی روی ؟ ضربه بزنید",
-                icon = Icons.Outlined.Tune,
-                accentColor = p.cyan,
-                trailing = {
-                    val canRefresh = isConnected && !cfgSnap.loading && !isWriting
-                    Surface(
-                        onClick = onReadHardwareConfig,
-                        enabled = canRefresh,
-                        color = if (canRefresh) p.goldSoft else p.panelElevated,
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(0.9.dp, if (canRefresh) p.gold.copy(alpha = 0.5f) else p.panelBorder),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(5.dp),
-                        ) {
-                            if (cfgSnap.loading) {
-                                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = p.gold)
-                            } else {
-                                Icon(
-                                    Icons.Outlined.Refresh,
-                                    contentDescription = null,
-                                    tint = if (canRefresh) p.gold else p.textMuted,
-                                    modifier = Modifier.size(15.dp),
-                                )
-                            }
-                            LtrText(
-                                text = "Refresh",
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                color = if (canRefresh) p.gold else p.textMuted,
-                            )
-                        }
-                    }
-                },
-            ) {
-                if (!userRole.canEditAdvancedSettings) {
+        val canSeeHardwareMenu = effectivePermissions.canViewHardwareMenu || effectivePermissions.hasAnyHardwareMenuWrite
+        if (!canSeeHardwareMenu) {
+            item {
+                ScadaPanel(
+                    title = "Hardware Menu (BPC-02)",
+                    subtitle = "ساختار منوی تنظیمات کنترلر BPC-02",
+                    icon = Icons.Outlined.Tune,
+                    accentColor = p.cyan,
+                ) {
                     NoticeBox(
-                        text = "در سطح دسترسی اپراتور، تنظیمات پیشرفته Hardware Menu فقط قابل مشاهده است. برای ویرایش با حساب «مدیر سیستم» وارد شوید.",
+                        text = "مشاهده منوی تنظیمات کنترلر برای حساب اپراتور توسط مدیر سیستم محدود شده است.",
                         tone = BadgeTone.INFO,
                     )
                 }
+            }
+        } else {
+            item {
+                ScadaPanel(
+                    title = "Hardware Menu (BPC-02)",
+                    subtitle = "ساختار دقیق منوی کنترلر — برای دیدن صفحات روی هر بخش و برای راهنمای فارسی روی ؟ ضربه بزنید",
+                    icon = Icons.Outlined.Tune,
+                    accentColor = p.cyan,
+                    trailing = {
+                        val canRefresh = isConnected && !cfgSnap.loading && !isWriting
+                        Surface(
+                            onClick = onReadHardwareConfig,
+                            enabled = canRefresh,
+                            color = if (canRefresh) p.goldSoft else p.panelElevated,
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(0.9.dp, if (canRefresh) p.gold.copy(alpha = 0.5f) else p.panelBorder),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            ) {
+                                if (cfgSnap.loading) {
+                                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = p.gold)
+                                } else {
+                                    Icon(
+                                        Icons.Outlined.Refresh,
+                                        contentDescription = null,
+                                        tint = if (canRefresh) p.gold else p.textMuted,
+                                        modifier = Modifier.size(15.dp),
+                                    )
+                                }
+                                LtrText(
+                                    text = "Refresh",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = if (canRefresh) p.gold else p.textMuted,
+                                )
+                            }
+                        }
+                    },
+                ) {
+                    if (userRole == UserRole.OPERATOR) {
+                        val anyMenuWritable = Bpc02RegisterMap.configuration.any {
+                            userRole.canWriteRegister(it, operatorPermissions)
+                        }
+                        NoticeBox(
+                            text = if (anyMenuWritable) {
+                                "پارامترهای دارای دکمه Edit/Select توسط مدیر سیستم برای حساب اپراتور فعال شده‌اند؛ سایر موارد فقط خواندنی هستند."
+                            } else {
+                                "در سطح دسترسی فعلی اپراتور، منوی Hardware Menu فقط قابل مشاهده (Read-Only) است."
+                            },
+                            tone = BadgeTone.INFO,
+                        )
+                    }
 
                 if (!isConnected && cfgSnap.readings.isEmpty() && liveSnap == null) {
                     NoticeBox(
@@ -909,6 +989,7 @@ fun ControlAndConfigScreen(
                                             page = category.pages.first(),
                                             valueByKey = valueByKey,
                                             userRole = userRole,
+                                            operatorPermissions = operatorPermissions,
                                             liveSnap = liveSnap,
                                             writingKey = cfgSnap.writingKey,
                                             isConnected = isConnected,
@@ -936,9 +1017,9 @@ fun ControlAndConfigScreen(
                                                 animationSpec = tween(200),
                                                 label = "page_chevron_${category.index}_${page.number}",
                                             )
-                                            val hasEditableForUser = remember(page, userRole) {
+                                            val hasEditableForUser = remember(page, userRole, operatorPermissions) {
                                                 page.registerKeys.any { key ->
-                                                    userRole.canWriteRegister(Bpc02RegisterMap.byKey(key))
+                                                    userRole.canWriteRegister(Bpc02RegisterMap.byKey(key), operatorPermissions)
                                                 }
                                             }
 
@@ -1027,6 +1108,7 @@ fun ControlAndConfigScreen(
                                                             page = page,
                                                             valueByKey = valueByKey,
                                                             userRole = userRole,
+                                                            operatorPermissions = operatorPermissions,
                                                             liveSnap = liveSnap,
                                                             writingKey = cfgSnap.writingKey,
                                                             isConnected = isConnected,
@@ -1091,6 +1173,7 @@ fun ControlAndConfigScreen(
                 }
             }
         }
+        }
     }
 }
 
@@ -1099,6 +1182,7 @@ private fun ControllerPageParameters(
     page: Bpc02Catalog.MenuPage,
     valueByKey: Map<String, Int?>,
     userRole: UserRole,
+    operatorPermissions: OperatorPermissions,
     liveSnap: ControllerSnapshot?,
     writingKey: String?,
     isConnected: Boolean,
@@ -1125,7 +1209,7 @@ private fun ControllerPageParameters(
             val def = Bpc02RegisterMap.byKey(key)
             val raw = valueByKey[key]
             val reading = RegisterReading(def, raw)
-            val roleCanWrite = userRole.canWriteRegister(def)
+            val roleCanWrite = userRole.canWriteRegister(def, operatorPermissions)
             val canEditParam = roleCanWrite && isConnected && !isWriting
             val isAdminRestricted = def.isWritable && !roleCanWrite
 
@@ -1142,6 +1226,7 @@ private fun ControllerPageParameters(
                         failed = pState?.failed,
                         showPumpIcon = isPump,
                         enabled = canEditParam,
+                        isRestricted = isAdminRestricted,
                         isWritingThis = writingKey == key,
                         onRequestToggle = { targetOn ->
                             onRequestPendingEdit(PendingEdit.SwitchConfirm(def, raw, if (targetOn) 1 else 0))
@@ -1681,6 +1766,7 @@ private fun PumpServiceRow(
     failed: Boolean?,
     showPumpIcon: Boolean,
     enabled: Boolean,
+    isRestricted: Boolean = false,
     isWritingThis: Boolean,
     onRequestToggle: (Boolean) -> Unit,
     onClickHelp: () -> Unit,
@@ -1732,6 +1818,24 @@ private fun PumpServiceRow(
                         else -> p.textSecondary
                     },
                 )
+                if (isRestricted) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Lock,
+                            contentDescription = null,
+                            tint = p.textMuted,
+                            modifier = Modifier.size(11.dp),
+                        )
+                        Text(
+                            text = "فقط خواندنی",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            color = p.textMuted,
+                        )
+                    }
+                }
             }
         }
         Spacer(Modifier.width(8.dp))
