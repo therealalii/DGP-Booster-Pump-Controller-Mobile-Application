@@ -1,0 +1,7 @@
+cd C:\Users\a.rezaei\Desktop\DGP-Booster-Pump-Controller-Mobile-Application-main
+
+set "JAVA_HOME=C:\Users\a.rezaei\AppData\Local\Programs\Eclipse Adoptium\jdk-21.0.13.10002-hotspot"
+set "PATH=%JAVA_HOME%\bin;%PATH%"
+
+
+gradlew testDebugUnitTest assembleDebug --no-daemon
