@@ -61,6 +61,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -786,6 +787,7 @@ fun DgpBottomNavBar(
     onSelect: (String) -> Unit,
 ) {
     val p = LocalScadaPalette.current
+    val currentOnSelect by rememberUpdatedState(onSelect)
     val fontScale = LocalDensity.current.fontScale.coerceIn(1f, 1.3f)
     val dockHeight = (62f * fontScale).dp
     val selectedIndex = entries.indexOfFirst { it.route == currentRoute }.coerceAtLeast(0)
@@ -896,7 +898,7 @@ fun DgpBottomNavBar(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
                                     role = Role.Tab,
-                                    onClick = { onSelect(entry.route) },
+                                    onClick = { currentOnSelect(entry.route) },
                                 ),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically),

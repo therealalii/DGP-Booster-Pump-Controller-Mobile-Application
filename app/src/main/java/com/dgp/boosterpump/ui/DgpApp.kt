@@ -210,21 +210,33 @@ private fun MainScadaShell(
     }
 
     fun navigateTo(route: String) {
-        // 1. Tapping the active parent tab while inside one of its sub-screens
+        val liveRoute = navController.currentDestination?.route
+        val liveParentTab = when (liveRoute) {
+            Destination.DIAGNOSTICS.route -> if (effectivePermissions.canManageGateway) {
+                Destination.GATEWAY.route
+            } else {
+                Destination.DIAGNOSTICS.route
+            }
+            Destination.OPERATOR_PERMISSIONS.route -> Destination.GATEWAY.route
+            else -> liveRoute
+        }
+
+        // 1. Already on the exact root destination -> nothing to do.
+        if (liveRoute == route) return
+
+        // 2. Tapping the active parent tab while inside one of its sub-screens
         //    (e.g. tapping «اتصال» while on «دسترسی های اپراتور» or «عیب‌یابی»)
         //    pops directly back to that tab's root screen.
-        if (currentRoute != route && activeBottomRoute == route) {
+        if (liveParentTab == route) {
             if (navController.popBackStack(route, inclusive = false)) {
                 return
             }
         }
-        // 2. Already on the exact root destination -> nothing to do.
-        if (currentRoute == route) return
 
         // 3. Leaving a transient sub-screen for a different tab -> pop the sub-screen first so
         //    saveState stores the parent tab root rather than trapping the user in the sub-screen.
-        val isTransientSubScreen = currentRoute == Destination.OPERATOR_PERMISSIONS.route ||
-            (currentRoute == Destination.DIAGNOSTICS.route && effectivePermissions.canManageGateway)
+        val isTransientSubScreen = liveRoute == Destination.OPERATOR_PERMISSIONS.route ||
+            (liveRoute == Destination.DIAGNOSTICS.route && effectivePermissions.canManageGateway)
         if (isTransientSubScreen) {
             navController.popBackStack()
         }
@@ -429,7 +441,7 @@ private fun MainScadaShell(
             DgpBottomNavBar(
                 entries = navEntries,
                 currentRoute = activeBottomRoute,
-                onSelect = ::navigateTo,
+                onSelect = { route -> navigateTo(route) },
             )
         },
     ) { innerPadding ->
@@ -494,7 +506,7 @@ private fun MainScadaShell(
                                 }
                             }
                         },
-                        onOpenOperatorPermissions = ::openOperatorPermissions,
+                        onOpenOperatorPermissions = { openOperatorPermissions() },
                     )
                 }
             }
