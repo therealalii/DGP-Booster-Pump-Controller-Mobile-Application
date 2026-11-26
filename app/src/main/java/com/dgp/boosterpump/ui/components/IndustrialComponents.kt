@@ -193,86 +193,107 @@ fun ScadaPanel(
     val accent = accentColor ?: p.gold
     val shape = RoundedCornerShape(20.dp)
     val borderBrush = if (borderColor != null) {
-        Brush.verticalGradient(listOf(borderColor, borderColor.copy(alpha = 0.45f)))
+        Brush.verticalGradient(listOf(borderColor, borderColor.copy(alpha = 0.55f)))
     } else {
-        Brush.verticalGradient(listOf(p.panelHighlight, p.panelBorder))
+        Brush.verticalGradient(
+            listOf(
+                if (p.isDark) accent.copy(alpha = 0.42f) else p.panelBorder,
+                p.panelBorder,
+            ),
+        )
+    }
+    val headerBandColor = if (p.isDark) {
+        Color(0xFF182133)
+    } else {
+        Color(0xFFF7FAFD)
     }
 
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = p.panel),
-        border = BorderStroke(1.dp, borderBrush),
+        border = BorderStroke(1.15.dp, borderBrush),
         shape = shape,
-        elevation = CardDefaults.cardElevation(defaultElevation = if (p.isDark) 0.dp else 1.5.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (p.isDark) 6.dp else 3.5.dp),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            // Subtle directional hairline accent across top edge
+            // Luminous directional top accent bar marking each independent section
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(1.5.dp)
+                    .height(2.2.dp)
                     .background(
                         Brush.horizontalGradient(
                             listOf(
-                                Color.Transparent,
-                                accent.copy(alpha = 0.55f),
-                                accent.copy(alpha = 0.14f),
+                                accent.copy(alpha = 0.12f),
+                                accent.copy(alpha = 0.85f),
+                                accent.copy(alpha = 0.28f),
                                 Color.Transparent,
                             ),
                         ),
                     ),
             )
+            // Distinct tinted section header band clearly framing the module
             Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(headerBandColor)
+                    .padding(horizontal = 16.dp, vertical = 13.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.weight(1f),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.spacedBy(11.dp),
                     ) {
-                        Row(
-                            modifier = Modifier.weight(1f),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(11.dp),
-                        ) {
-                            if (icon != null) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(RoundedCornerShape(11.dp))
-                                        .background(accent.copy(alpha = if (p.isDark) 0.12f else 0.10f))
-                                        .border(0.8.dp, accent.copy(alpha = 0.28f), RoundedCornerShape(11.dp)),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(18.dp))
-                                }
-                            }
-                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(
-                                    text = title,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = p.textPrimary,
-                                )
-                                if (subtitle != null) {
-                                    Text(
-                                        text = subtitle,
-                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, lineHeight = 18.sp),
-                                        color = p.textSecondary,
-                                    )
-                                }
+                        if (icon != null) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(RoundedCornerShape(11.dp))
+                                    .background(accent.copy(alpha = if (p.isDark) 0.16f else 0.12f))
+                                    .border(0.95.dp, accent.copy(alpha = 0.40f), RoundedCornerShape(11.dp)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(19.dp))
                             }
                         }
-                        if (trailing != null) {
-                            Spacer(Modifier.width(10.dp))
-                            trailing()
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = title,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = p.textPrimary,
+                            )
+                            if (subtitle != null) {
+                                Text(
+                                    text = subtitle,
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, lineHeight = 18.sp),
+                                    color = p.textSecondary,
+                                )
+                            }
                         }
                     }
-                    if (headerBadges != null) {
-                        headerBadges()
+                    if (trailing != null) {
+                        Spacer(Modifier.width(10.dp))
+                        trailing()
                     }
                 }
+                if (headerBadges != null) {
+                    headerBadges()
+                }
+            }
+            HorizontalDivider(color = p.hairline, thickness = 0.9.dp)
+            // Section body
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
                 content()
             }
         }

@@ -54,9 +54,9 @@ enum class OperatorPermission(
     VIEW_PUMPS_AND_IO(
         storageKey = "perm_view_pumps_io",
         group = PermissionGroup.VIEW,
-        titleFa = "مشاهده صفحه پمپ‌ها و ورودی/خروجی",
-        titleEn = "Pumps & Digital I/O (Read-Only)",
-        descriptionFa = "نمایش وضعیت لحظه‌ای پمپ‌ها، زمان کارکرد، خروجی رله‌ها و ورودی‌های حفاظتی",
+        titleFa = "مشاهده صفحه تجهیزات و ورودی/خروجی",
+        titleEn = "Equipment & Digital I/O (Read-Only)",
+        descriptionFa = "نمایش وضعیت لحظه‌ای پمپ‌ها، زمان کارکرد، خروجی رله‌ها، درایو و ورودی‌های حفاظتی",
         isWriteOperation = false,
         defaultGranted = true,
     ),

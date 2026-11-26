@@ -26,18 +26,18 @@ import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.DeveloperBoard
 import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.SettingsEthernet
-import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Dashboard
+import androidx.compose.material.icons.outlined.DeveloperBoard
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.ManageAccounts
 import androidx.compose.material.icons.outlined.SettingsEthernet
 import androidx.compose.material.icons.outlined.VerifiedUser
-import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -103,7 +103,7 @@ private enum class Destination(
     val selectedIcon: ImageVector,
 ) {
     DASHBOARD("dashboard", "خانه", Icons.Outlined.Dashboard, Icons.Filled.Dashboard),
-    PUMPS("pumps", "پمپ‌ها", Icons.Outlined.WaterDrop, Icons.Filled.WaterDrop),
+    PUMPS("pumps", "تجهیزات", Icons.Outlined.DeveloperBoard, Icons.Filled.DeveloperBoard),
     CONTROL("control", "تنظیمات", Icons.Outlined.AdminPanelSettings, Icons.Filled.AdminPanelSettings),
     GATEWAY("gateway", "اتصال", Icons.Outlined.SettingsEthernet, Icons.Filled.SettingsEthernet),
     DIAGNOSTICS("diagnostics", "عیب‌یابی", Icons.Outlined.BugReport, Icons.Filled.BugReport),
@@ -185,22 +185,6 @@ private fun MainScadaShell(
         (uiState.connectionState as? ConnectionState.Error)?.isSimulated == true ||
         (uiState.connectionState is ConnectionState.Disconnected && uiState.savedConfig.mode == DataSourceMode.SIMULATION)
 
-    fun navigateTo(route: String) {
-        navController.navigate(route) {
-            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-            launchSingleTop = true
-            restoreState = true
-        }
-    }
-
-    fun openOperatorPermissions() {
-        if (user.role.canManageOperatorPermissions) {
-            navController.navigate(Destination.OPERATOR_PERMISSIONS.route) {
-                launchSingleTop = true
-            }
-        }
-    }
-
     val navEntries = remember(effectivePermissions) {
         buildList {
             add(Destination.DASHBOARD)
@@ -221,8 +205,43 @@ private fun MainScadaShell(
         } else {
             Destination.DIAGNOSTICS.route
         }
-        Destination.OPERATOR_PERMISSIONS.route -> Destination.CONTROL.route
+        Destination.OPERATOR_PERMISSIONS.route -> Destination.GATEWAY.route
         else -> currentRoute
+    }
+
+    fun navigateTo(route: String) {
+        // 1. Tapping the active parent tab while inside one of its sub-screens
+        //    (e.g. tapping «اتصال» while on «دسترسی های اپراتور» or «عیب‌یابی»)
+        //    pops directly back to that tab's root screen.
+        if (currentRoute != route && activeBottomRoute == route) {
+            if (navController.popBackStack(route, inclusive = false)) {
+                return
+            }
+        }
+        // 2. Already on the exact root destination -> nothing to do.
+        if (currentRoute == route) return
+
+        // 3. Leaving a transient sub-screen for a different tab -> pop the sub-screen first so
+        //    saveState stores the parent tab root rather than trapping the user in the sub-screen.
+        val isTransientSubScreen = currentRoute == Destination.OPERATOR_PERMISSIONS.route ||
+            (currentRoute == Destination.DIAGNOSTICS.route && effectivePermissions.canManageGateway)
+        if (isTransientSubScreen) {
+            navController.popBackStack()
+        }
+
+        navController.navigate(route) {
+            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
+    fun openOperatorPermissions() {
+        if (user.role.canManageOperatorPermissions) {
+            navController.navigate(Destination.OPERATOR_PERMISSIONS.route) {
+                launchSingleTop = true
+            }
+        }
     }
 
     if (showLogoutDialog) {
@@ -456,7 +475,6 @@ private fun MainScadaShell(
                     onDismissImportProgress = monitoringViewModel::clearImportProgress,
                     onResetPumpErrors = monitoringViewModel::resetPumpErrors,
                     onDismissWriteNotice = monitoringViewModel::clearLastWriteNotice,
-                    onOpenOperatorPermissions = ::openOperatorPermissions,
                 )
             }
             composable(Destination.GATEWAY.route) {

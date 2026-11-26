@@ -123,4 +123,44 @@ class Bpc02CatalogAndSchematicStateTest {
             scope.cancel()
         }
     }
+
+    @Test
+    fun hydraulicFlowSpeedScalesProportionallyWithDriveFrequencyAndActivePumps() {
+        fun snapshotFor(runningPumps: Int, driveHz: Double, lowWater: Boolean = false): ControllerSnapshot {
+            val bits = buildMap {
+                for (i in 1..4) {
+                    put(18 + i, i <= runningPumps)
+                    put(4096 + i, true)
+                }
+                put(4096, true)
+                put(32, !lowWater)
+                put(33, !lowWater)
+            }
+            val words = mapOf(
+                2 to 420,
+                25 to (driveHz * 100).toInt(),
+                4096 to 450,
+                4133 to 4,
+                4134 to 1,
+                4170 to 2,
+                4173 to 1,
+            )
+            return Bpc02Profile.decode(RawReadings(bits = bits, words = words), DataSourceMode.LIVE, timestampMillis = 1000L)
+        }
+
+        val idle = com.dgp.boosterpump.ui.components.computeHydraulicFlowSpeedFactor(snapshotFor(runningPumps = 0, driveHz = 0.0))
+        val lowWater = com.dgp.boosterpump.ui.components.computeHydraulicFlowSpeedFactor(snapshotFor(runningPumps = 2, driveHz = 45.0, lowWater = true))
+        val onePumpLowHz = com.dgp.boosterpump.ui.components.computeHydraulicFlowSpeedFactor(snapshotFor(runningPumps = 1, driveHz = 22.0))
+        val onePumpHighHz = com.dgp.boosterpump.ui.components.computeHydraulicFlowSpeedFactor(snapshotFor(runningPumps = 1, driveHz = 48.0))
+        val twoPumps = com.dgp.boosterpump.ui.components.computeHydraulicFlowSpeedFactor(snapshotFor(runningPumps = 2, driveHz = 45.0))
+        val threePumps = com.dgp.boosterpump.ui.components.computeHydraulicFlowSpeedFactor(snapshotFor(runningPumps = 3, driveHz = 50.0))
+
+        assertEquals(0f, idle, 1e-6f)
+        assertEquals(0f, lowWater, 1e-6f)
+        assertTrue("Active pump must produce positive flow speed", onePumpLowHz > 0.2f)
+        assertTrue("Higher drive frequency must increase flow speed ($onePumpLowHz -> $onePumpHighHz)", onePumpHighHz > onePumpLowHz)
+        assertTrue("Two running pumps must flow faster than one ($onePumpHighHz -> $twoPumps)", twoPumps > onePumpHighHz)
+        assertTrue("Three running pumps must flow fastest ($twoPumps -> $threePumps)", threePumps > twoPumps)
+        assertTrue("Speed factor must stay clamped <= 1.0", threePumps <= 1.0f)
+    }
 }

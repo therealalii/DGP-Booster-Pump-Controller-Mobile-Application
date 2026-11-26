@@ -107,17 +107,17 @@ fun PumpsAndIoScreen(uiState: MonitoringUiState) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         // Architectural 3-metric Station Summary Header
         item {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(RoundedCornerShape(18.dp))
                     .background(p.panel)
-                    .border(0.9.dp, p.panelBorder, RoundedCornerShape(16.dp))
-                    .padding(vertical = 12.dp, horizontal = 8.dp),
+                    .border(1.1.dp, p.panelBorder, RoundedCornerShape(18.dp))
+                    .padding(vertical = 13.dp, horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 StationStatCell("Running", "$activePumps / ${pumps.size}", if (activePumps > 0) p.ok else p.textSecondary, Modifier.weight(1f))
@@ -234,7 +234,7 @@ fun PumpsAndIoScreen(uiState: MonitoringUiState) {
                 accentColor = p.cyan,
             ) {
                 StatusLine(
-                    label = "Drive Service",
+                    label = "Drive Status",
                     value = snapshot.driveEnabled,
                     trueText = "Enable",
                     falseText = "Disable (S)",

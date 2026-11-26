@@ -41,7 +41,6 @@ import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.SettingsEthernet
-import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -84,12 +83,10 @@ import com.dgp.boosterpump.ui.components.LtrText
 import com.dgp.boosterpump.ui.components.NoticeBox
 import com.dgp.boosterpump.ui.components.ParameterHelpBottomSheet
 import com.dgp.boosterpump.ui.components.ParameterHelpIcon
-import com.dgp.boosterpump.ui.components.PressureArcGauge
 import com.dgp.boosterpump.ui.components.PressureTrendChart
 import com.dgp.boosterpump.ui.components.ScadaPanel
 import com.dgp.boosterpump.ui.components.StatusBadge
 import com.dgp.boosterpump.ui.components.ThreePhaseVoltageBars
-import com.dgp.boosterpump.ui.components.WaterTankIndicator
 import com.dgp.boosterpump.ui.theme.LocalScadaPalette
 import com.dgp.boosterpump.ui.theme.MonoStyle
 import com.dgp.boosterpump.viewmodel.MonitoringUiState
@@ -173,8 +170,8 @@ fun DashboardScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         if (conn is ConnectionState.Error) {
             item {
@@ -192,9 +189,9 @@ fun DashboardScreen(
             }
         }
 
-        // 1. Flagship Hero Overview Card (Wiring Mode, Drives, Gauge, Tank, 2x2 Metrics)
+        // 1. Unified Flagship Hero Card: System Overview + Dynamic Live Hydraulic Schematic
         item {
-            HeroTelemetryPanel(
+            HeroOverviewAndSchematicPanel(
                 snapshot = snapshot,
                 onShowHelp = { key, cur -> activeHelp = Bpc02Catalog.conceptHelp(key) to cur },
             )
@@ -211,30 +208,10 @@ fun DashboardScreen(
             }
         }
 
-        // 3. Dynamic Pump System Schematic (adapts live to Wiring Mode & 1..6 Pumps)
-        item {
-            ScadaPanel(
-                title = "System Schematic",
-                subtitle = "نمای زنده و پویا از مخزن، فلوتر، پمپ‌ها و فشار خروجی",
-                icon = Icons.Outlined.Hub,
-                accentColor = if (hasActiveAlarms) p.fault else p.gold,
-                trailing = {
-                    ParameterHelpIcon(
-                        onClick = {
-                            activeHelp = Bpc02Catalog.conceptHelp("floater_level") to
-                                "${Bpc02Catalog.wiringModeLabel(snapshot.wiringMode)} • ${snapshot.visiblePumps.size} Pumps"
-                        },
-                    )
-                },
-            ) {
-                DynamicBoosterSystemSchematic(snapshot = snapshot)
-            }
-        }
-
-        // 4. Station Pumps Quick Status Grid
+        // 3. Station Pumps Quick Status Grid
         item { BoosterStationPumpsPanel(snapshot.visiblePumps, canOpenPumps = canOpenPumps, onOpenPumps = onOpenPumps) }
 
-        // 5. Rolling Pressure Trend Chart
+        // 4. Rolling Pressure Trend Chart
         item {
             ScadaPanel(
                 title = "Pressure Trend",
@@ -246,7 +223,7 @@ fun DashboardScreen(
             }
         }
 
-        // 6. Healthy Protection Status Card (shown cleanly here when no faults are active)
+        // 5. Healthy Protection Status Card (shown cleanly here when no faults are active)
         if (!hasActiveAlarms) {
             item {
                 AlarmsPanel(
@@ -257,18 +234,25 @@ fun DashboardScreen(
             }
         }
 
-        // 7. 3-Phase Electrical Voltmeter
+        // 6. 3-Phase Electrical Voltmeter
         item { ElectricalAnalyzerPanel(snapshot) }
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun HeroTelemetryPanel(
+private fun HeroOverviewAndSchematicPanel(
     snapshot: ControllerSnapshot,
     onShowHelp: (String, String?) -> Unit,
 ) {
     val p = LocalScadaPalette.current
+    val visiblePumps = snapshot.visiblePumps
+    val pumpCount = visiblePumps.size
+    val runningCount = snapshot.runningPumpCount
+    val hasActiveAlarms = snapshot.alarms.isNotEmpty()
+    val lowWater = snapshot.floaterLowConnected == false
+    val isFlowing = runningCount > 0 && !lowWater
+
     val modeLabel = Bpc02Catalog.controlStatusLabel(snapshot.controlStatus)
     val modeTone = when (snapshot.controlStatus) {
         1, 2 -> BadgeTone.GOLD
@@ -281,28 +265,47 @@ private fun HeroTelemetryPanel(
         snapshot.driveFailed == false -> "Drive OK" to BadgeTone.OK
         else -> "Drive —" to BadgeTone.NEUTRAL
     }
-    val visiblePumps = snapshot.visiblePumps
+    val (stationStateText, stationStateTone) = when {
+        lowWater -> "Floater Error" to BadgeTone.FAULT
+        hasActiveAlarms -> "${snapshot.alarms.size} Error${if (snapshot.alarms.size > 1) "s" else ""}" to BadgeTone.FAULT
+        snapshot.controlStatus == 0 -> "System Stopped" to BadgeTone.WARNING
+        isFlowing -> "Pumping ($runningCount/$pumpCount)" to BadgeTone.OK
+        else -> "Standby" to BadgeTone.INFO
+    }
 
     ScadaPanel(
         title = "System Overview",
-        subtitle = "پایش زنده فشار، سطح مخزن، درایو و مد کاری کنترلر",
-        icon = Icons.Outlined.Speed,
-        accentColor = p.gold,
+        subtitle = "نمای زنده ایستگاه، شماتیک هیدرولیک، فشار، درایو و مد کاری کنترلر",
+        icon = Icons.Outlined.Hub,
+        accentColor = if (hasActiveAlarms || lowWater) p.fault else p.gold,
+        borderColor = if (hasActiveAlarms || lowWater) p.fault.copy(alpha = 0.55f) else p.gold.copy(alpha = 0.45f),
+        trailing = {
+            ParameterHelpIcon(
+                onClick = {
+                    onShowHelp(
+                        "floater_level",
+                        "${Bpc02Catalog.wiringModeLabel(snapshot.wiringMode)} • $pumpCount Pumps",
+                    )
+                },
+            )
+        },
         headerBadges = {
             FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 StatusBadge("Control: $modeLabel", modeTone)
                 StatusBadge(driveLabel, driveTone, pulsing = snapshot.driveFailed == true)
-                if (snapshot.alarms.isNotEmpty()) {
-                    StatusBadge("${snapshot.alarms.size} Error${if (snapshot.alarms.size > 1) "s" else ""}", BadgeTone.FAULT, pulsing = true)
-                }
+                StatusBadge(
+                    text = stationStateText,
+                    tone = stationStateTone,
+                    pulsing = hasActiveAlarms || lowWater || isFlowing,
+                )
             }
         },
     ) {
-        // Prominent Operating Mode + Connected/Configured Drivers Showcase Strip
+        // 1. Operating Mode + Connected/Configured Drivers Showcase Strip
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -310,13 +313,13 @@ private fun HeroTelemetryPanel(
                 .background(
                     Brush.horizontalGradient(
                         if (p.isDark) {
-                            listOf(Color(0xFF1A1E2B), Color(0xFF141824))
+                            listOf(Color(0xFF1D2638), Color(0xFF161E2E))
                         } else {
                             listOf(p.panelElevated, p.panelElevated)
                         },
                     ),
                 )
-                .border(0.9.dp, p.gold.copy(alpha = 0.34f), RoundedCornerShape(14.dp))
+                .border(0.95.dp, p.gold.copy(alpha = 0.36f), RoundedCornerShape(14.dp))
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -370,29 +373,13 @@ private fun HeroTelemetryPanel(
             }
         }
 
-        // Recessed Instrument Stage for Pressure Arc Gauge + Animated Water Tank
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(if (p.isDark) Color(0xFF0A0D14) else p.panelElevated)
-                .border(0.8.dp, p.panelBorder, RoundedCornerShape(16.dp))
-                .padding(horizontal = 10.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            PressureArcGauge(
-                pressureBar = snapshot.pressureBar,
-                setpointBar = snapshot.pressureSetpointBar,
-                drActive = snapshot.drStatus,
-            )
-            WaterTankIndicator(
-                floaterLow = snapshot.floaterLowConnected,
-                floaterHigh = snapshot.floaterHighConnected,
-            )
-        }
+        // 2. Unified Live Dynamic Booster Pump P&ID Schematic (Tank + Pumps + Continuous Blue Pipes + Circular Pressure Dial + Drive Hz)
+        DynamicBoosterSystemSchematic(
+            snapshot = snapshot,
+            showArchitectureBadges = false,
+        )
 
-        // Spacious 2x2 Architectural Live Metrics Grid (every card gets 50% width — ZERO truncation!)
+        // 3. Spacious 2x2 Architectural Live Metrics Grid (every card gets 50% width — ZERO truncation!)
         val driverCount = snapshot.variablePumpCount
         val (driveTitle, driveValue, driveCaption) = when {
             driverCount == 0 -> Triple("Drive", "0 Drives", "Fixed-Speed (DOL)")

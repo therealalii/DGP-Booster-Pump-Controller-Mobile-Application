@@ -175,7 +175,6 @@ fun ControlAndConfigScreen(
     onDismissImportProgress: () -> Unit,
     onResetPumpErrors: () -> Unit,
     onDismissWriteNotice: () -> Unit,
-    onOpenOperatorPermissions: () -> Unit = {},
 ) {
     val p = LocalScadaPalette.current
     val context = LocalContext.current
@@ -383,7 +382,7 @@ fun ControlAndConfigScreen(
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         // 0A. Write Result Notification Banner
         if (cfgSnap.lastWrite != null) {
@@ -421,16 +420,6 @@ fun ControlAndConfigScreen(
                         Icon(Icons.Outlined.Close, contentDescription = "بستن", tint = p.textSecondary, modifier = Modifier.size(16.dp))
                     }
                 }
-            }
-        }
-
-        // 0D. Admin-Only Section: «دسترسی های اپراتور»
-        if (userRole.canManageOperatorPermissions) {
-            item {
-                OperatorPermissionsAdminCard(
-                    permissions = operatorPermissions,
-                    onClick = onOpenOperatorPermissions,
-                )
             }
         }
 
@@ -667,100 +656,7 @@ fun ControlAndConfigScreen(
             }
         }
 
-        // 2. Portable Configuration Backup (Import / Export JSON)
-        item {
-            val loadedParamCount = valueByKey.count { (k, v) ->
-                v != null && Bpc02RegisterMap.configuration.any { it.key == k }
-            }
-            val roleCanExport = effectivePermissions.canExportConfig
-            val roleCanImport = effectivePermissions.canImportConfig
-            val canExport = roleCanExport && loadedParamCount > 0 && !cfgSnap.loading
-            val canImport = roleCanImport && isConnected && !isWriting
-
-            ScadaPanel(
-                title = "Configuration Import / Export",
-                subtitle = "ذخیره، اشتراک‌گذاری و بازیابی تنظیمات کنترلر با فایل استاندارد JSON",
-                icon = Icons.Outlined.UploadFile,
-                accentColor = p.gold,
-                trailing = {
-                    ParameterHelpIcon(
-                        onClick = {
-                            activeHelp = Bpc02Catalog.conceptHelp("config_transfer") to
-                                "${activeModel.label} • $loadedParamCount Params"
-                        },
-                    )
-                },
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    DgpGoldButton(
-                        text = "Export JSON",
-                        icon = Icons.Outlined.Download,
-                        enabled = canExport,
-                        onClick = {
-                            val now = System.currentTimeMillis()
-                            val json = ControllerConfigTransfer.exportToJson(
-                                model = activeModel,
-                                configReadings = cfgSnap.readings,
-                                liveSnapshot = liveSnap,
-                                timestampMillis = now,
-                            )
-                            val modeTxt = Bpc02Catalog.wiringModeLabel(liveSnap?.wiringMode ?: valueByKey["wiring_mode"])
-                            val pumpTxt = (liveSnap?.configuredPumpCount ?: valueByKey["number_of_pump"])?.let { "$it Pumps" } ?: "—"
-                            preparedExport = PreparedExportPayload(
-                                fileName = ControllerConfigTransfer.suggestedFileName(activeModel, now),
-                                jsonContent = json,
-                                parameterCount = loadedParamCount,
-                                modelLabel = activeModel.label,
-                                wiringSummary = "$modeTxt • $pumpTxt",
-                            )
-                        },
-                        height = 46.dp,
-                        modifier = Modifier.weight(1f),
-                    )
-                    DgpOutlinedButton(
-                        text = "Import JSON",
-                        icon = Icons.Outlined.FileOpen,
-                        accentColor = p.cyan,
-                        enabled = canImport,
-                        onClick = {
-                            openDocumentLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
-                        },
-                        height = 46.dp,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-
-                when {
-                    !roleCanExport && !roleCanImport -> NoticeBox(
-                        text = "خروجی گرفتن (Export) و وارد کردن فایل تنظیمات (Import) نیازمند مجوز مدیر سیستم است.",
-                        tone = BadgeTone.INFO,
-                    )
-                    !roleCanImport -> NoticeBox(
-                        text = "وارد کردن فایل تنظیمات (Import) نیازمند مجوز مدیر سیستم است؛ خروجی گرفتن (Export) پس از دریافت تنظیمات دستگاه فعال است.",
-                        tone = BadgeTone.INFO,
-                    )
-                    !roleCanExport -> NoticeBox(
-                        text = "خروجی گرفتن (Export) برای این حساب غیرفعال است؛ وارد کردن فایل تنظیمات (Import) با مجوزهای فعال مجاز است.",
-                        tone = BadgeTone.INFO,
-                    )
-                    loadedParamCount == 0 -> NoticeBox(
-                        text = "برای خروجی گرفتن از کل تنظیمات، ابتدا به کنترلر متصل شده و دکمه Refresh را بزنید.",
-                        tone = BadgeTone.WARNING,
-                    )
-                    else -> Text(
-                        text = "فایل خروجی شامل تمام $loadedParamCount پارامتر خوانده‌شده از ${activeModel.label} (به همراه نسخه فرمت و مدل دستگاه) است.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = p.textSecondary,
-                    )
-                }
-            }
-        }
-
-        // 3. Official BPC-02 Hardware Menu (All 6 English Categories + Ordered Pages On Click + Persian ? Help)
+        // 2. Official BPC-02 Hardware Menu (All 6 English Categories + Ordered Pages On Click + Persian ? Help)
         val canSeeHardwareMenu = effectivePermissions.canViewHardwareMenu || effectivePermissions.hasAnyHardwareMenuWrite
         if (!canSeeHardwareMenu) {
             item {
@@ -1173,6 +1069,99 @@ fun ControlAndConfigScreen(
                 }
             }
         }
+        }
+
+        // 3. Portable Configuration Backup (Import / Export JSON) — last option under Hardware Menu
+        item {
+            val loadedParamCount = valueByKey.count { (k, v) ->
+                v != null && Bpc02RegisterMap.configuration.any { it.key == k }
+            }
+            val roleCanExport = effectivePermissions.canExportConfig
+            val roleCanImport = effectivePermissions.canImportConfig
+            val canExport = roleCanExport && loadedParamCount > 0 && !cfgSnap.loading
+            val canImport = roleCanImport && isConnected && !isWriting
+
+            ScadaPanel(
+                title = "Configuration Import / Export",
+                subtitle = "ذخیره، اشتراک‌گذاری و بازیابی تنظیمات کنترلر با فایل استاندارد JSON",
+                icon = Icons.Outlined.UploadFile,
+                accentColor = p.gold,
+                trailing = {
+                    ParameterHelpIcon(
+                        onClick = {
+                            activeHelp = Bpc02Catalog.conceptHelp("config_transfer") to
+                                "${activeModel.label} • $loadedParamCount Params"
+                        },
+                    )
+                },
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    DgpGoldButton(
+                        text = "Export JSON",
+                        icon = Icons.Outlined.Download,
+                        enabled = canExport,
+                        onClick = {
+                            val now = System.currentTimeMillis()
+                            val json = ControllerConfigTransfer.exportToJson(
+                                model = activeModel,
+                                configReadings = cfgSnap.readings,
+                                liveSnapshot = liveSnap,
+                                timestampMillis = now,
+                            )
+                            val modeTxt = Bpc02Catalog.wiringModeLabel(liveSnap?.wiringMode ?: valueByKey["wiring_mode"])
+                            val pumpTxt = (liveSnap?.configuredPumpCount ?: valueByKey["number_of_pump"])?.let { "$it Pumps" } ?: "—"
+                            preparedExport = PreparedExportPayload(
+                                fileName = ControllerConfigTransfer.suggestedFileName(activeModel, now),
+                                jsonContent = json,
+                                parameterCount = loadedParamCount,
+                                modelLabel = activeModel.label,
+                                wiringSummary = "$modeTxt • $pumpTxt",
+                            )
+                        },
+                        height = 46.dp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    DgpOutlinedButton(
+                        text = "Import JSON",
+                        icon = Icons.Outlined.FileOpen,
+                        accentColor = p.cyan,
+                        enabled = canImport,
+                        onClick = {
+                            openDocumentLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                        },
+                        height = 46.dp,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                when {
+                    !roleCanExport && !roleCanImport -> NoticeBox(
+                        text = "خروجی گرفتن (Export) و وارد کردن فایل تنظیمات (Import) نیازمند مجوز مدیر سیستم است.",
+                        tone = BadgeTone.INFO,
+                    )
+                    !roleCanImport -> NoticeBox(
+                        text = "وارد کردن فایل تنظیمات (Import) نیازمند مجوز مدیر سیستم است؛ خروجی گرفتن (Export) پس از دریافت تنظیمات دستگاه فعال است.",
+                        tone = BadgeTone.INFO,
+                    )
+                    !roleCanExport -> NoticeBox(
+                        text = "خروجی گرفتن (Export) برای این حساب غیرفعال است؛ وارد کردن فایل تنظیمات (Import) با مجوزهای فعال مجاز است.",
+                        tone = BadgeTone.INFO,
+                    )
+                    loadedParamCount == 0 -> NoticeBox(
+                        text = "برای خروجی گرفتن از کل تنظیمات، ابتدا به کنترلر متصل شده و دکمه Refresh را بزنید.",
+                        tone = BadgeTone.WARNING,
+                    )
+                    else -> Text(
+                        text = "فایل خروجی شامل تمام $loadedParamCount پارامتر خوانده‌شده از ${activeModel.label} (به همراه نسخه فرمت و مدل دستگاه) است.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = p.textSecondary,
+                    )
+                }
+            }
         }
     }
 }

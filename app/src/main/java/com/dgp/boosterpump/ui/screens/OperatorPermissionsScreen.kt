@@ -185,7 +185,7 @@ fun OperatorPermissionsScreen(
                         modifier = Modifier.size(16.dp),
                     )
                     Text(
-                        text = "بازگشت",
+                        text = "بازگشت به اتصال",
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = p.textPrimary,
                     )
@@ -197,7 +197,7 @@ fun OperatorPermissionsScreen(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             // 1. Overview & Quick Presets Panel
             item {
