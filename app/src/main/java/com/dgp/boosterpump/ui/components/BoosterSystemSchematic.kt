@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -69,6 +70,7 @@ import com.dgp.boosterpump.ui.theme.MonoStyle
 import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
@@ -265,11 +267,17 @@ fun DynamicBoosterSystemSchematic(
         else -> "Standby" to BadgeTone.INFO
     }
 
-    val activeDriveFreqHz = snapshot.drive1FrequencyHz
-    val animatedDriveFrac by animateFloatAsState(
-        targetValue = ((activeDriveFreqHz ?: 0.0) / 50.0).toFloat().coerceIn(0f, 1f),
+    val drive1FreqHz = snapshot.drive1FrequencyHz
+    val drive2FreqHz = snapshot.drive2FrequencyHz
+    val animatedDrive1Frac by animateFloatAsState(
+        targetValue = ((drive1FreqHz ?: 0.0) / 50.0).toFloat().coerceIn(0f, 1f),
         animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
-        label = "schematic_drive_bar_frac",
+        label = "schematic_drive1_bar_frac",
+    )
+    val animatedDrive2Frac by animateFloatAsState(
+        targetValue = ((drive2FreqHz ?: 0.0) / 50.0).toFloat().coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+        label = "schematic_drive2_bar_frac",
     )
 
     Column(
@@ -1076,150 +1084,61 @@ fun DynamicBoosterSystemSchematic(
                         )
                     }
 
-                    // Center (53%): Dynamic Pump Tags (P1..PN) + Continuous Drive Frequency Directly Below!
-                    Column(
+                    // Center (53%): Dynamic Pump Tags (P1..PN) aligned cleanly under each pump
+                    Row(
                         modifier = Modifier.weight(0.53f),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(5.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.Top,
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.Top,
-                        ) {
-                            pumps.forEach { pump ->
-                                val isFault = pump.failed == true
-                                val isDisabled = pump.enabled == false && !isFault
-                                val isRunning = !isFault && !isDisabled && pump.running == true
-                                val isReady = !isFault && !isDisabled && !isRunning && pump.enabled == true
-                                val tagColor = when {
-                                    isFault -> p.fault
-                                    isDisabled -> p.warning
-                                    isRunning -> p.ok
-                                    else -> Color(0xFFF1F5F9)
-                                }
-                                val subTag = when {
-                                    isFault -> "ERR"
-                                    isDisabled -> "S"
-                                    isRunning -> "RUN"
-                                    isReady -> "RDY"
-                                    else -> "RDY"
-                                }
-                                val subColor = when {
-                                    isFault -> p.fault
-                                    isDisabled -> p.warning
-                                    isRunning -> p.ok
-                                    else -> Color(0xFF38BDF8)
-                                }
-                                Column(
-                                    modifier = Modifier.weight(1f),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(0.dp),
-                                ) {
-                                    Text(
-                                        text = "P${pump.number}",
-                                        style = MonoStyle.copy(
-                                            fontSize = if (pumpCount >= 5) 9.sp else 10.sp,
-                                            lineHeight = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                        ),
-                                        color = tagColor,
-                                        textAlign = TextAlign.Center,
-                                    )
-                                    Text(
-                                        text = subTag,
-                                        style = MonoStyle.copy(
-                                            fontSize = if (pumpCount >= 5) 7.5.sp else 8.5.sp,
-                                            lineHeight = 10.5.sp,
-                                            fontWeight = FontWeight.Bold,
-                                        ),
-                                        color = subColor,
-                                        textAlign = TextAlign.Center,
-                                    )
-                                }
+                        pumps.forEach { pump ->
+                            val isFault = pump.failed == true
+                            val isDisabled = pump.enabled == false && !isFault
+                            val isRunning = !isFault && !isDisabled && pump.running == true
+                            val isReady = !isFault && !isDisabled && !isRunning && pump.enabled == true
+                            val tagColor = when {
+                                isFault -> p.fault
+                                isDisabled -> p.warning
+                                isRunning -> p.ok
+                                else -> Color(0xFFF1F5F9)
                             }
-                        }
-
-                        // Continuous Live Drive Frequency Pill Directly Under the Pumps (as annotated!)
-                        val driveLabel = when {
-                            driveCount == 0 -> "Fixed-Speed (DOL)"
-                            driveCount >= 2 && snapshot.drive1FrequencyHz != null && snapshot.drive2FrequencyHz != null ->
-                                String.format(
-                                    Locale.US,
-                                    "D1: %.1f Hz  •  D2: %.1f Hz",
-                                    snapshot.drive1FrequencyHz,
-                                    snapshot.drive2FrequencyHz,
-                                )
-                            snapshot.drive1FrequencyHz != null ->
-                                String.format(Locale.US, "Drive: %.1f Hz", snapshot.drive1FrequencyHz)
-                            else -> "Drive: — Hz"
-                        }
-                        val driveActive = driveCount > 0 && (snapshot.drStatus == true || (activeDriveFreqHz ?: 0.0) > 0.1)
-                        val driveAccent = when {
-                            snapshot.driveFailed == true -> p.fault
-                            snapshot.driveEnabled == false -> p.warning
-                            driveActive -> p.gold
-                            else -> Color(0xFF94A3B8)
-                        }
-
-                        Surface(
-                            color = Color(0xFF141B29),
-                            shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(0.8.dp, driveAccent.copy(alpha = 0.48f)),
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
+                            val subTag = when {
+                                isFault -> "ERR"
+                                isDisabled -> "S"
+                                isRunning -> "RUN"
+                                isReady -> "RDY"
+                                else -> "RDY"
+                            }
+                            val subColor = when {
+                                isFault -> p.fault
+                                isDisabled -> p.warning
+                                isRunning -> p.ok
+                                else -> Color(0xFF38BDF8)
+                            }
                             Column(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.weight(1f),
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(3.dp),
+                                verticalArrangement = Arrangement.spacedBy(0.dp),
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally),
-                                ) {
-                                    if (driveActive) {
-                                        LivePulseDot(color = driveAccent, modifier = Modifier.size(7.dp))
-                                    } else {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(5.5.dp)
-                                                .clip(CircleShape)
-                                                .background(driveAccent),
-                                        )
-                                    }
-                                    Text(
-                                        text = driveLabel,
-                                        style = MonoStyle.copy(
-                                            fontSize = 9.5.sp,
-                                            lineHeight = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                        ),
-                                        color = driveAccent,
-                                        textAlign = TextAlign.Center,
-                                    )
-                                }
-                                if (driveCount > 0) {
-                                    // Smooth continuous frequency progress micro-bar (0..50 Hz)
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(3.dp)
-                                            .clip(RoundedCornerShape(999.dp))
-                                            .background(Color(0xFF1E293B)),
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth(animatedDriveFrac)
-                                                .fillMaxHeight()
-                                                .clip(RoundedCornerShape(999.dp))
-                                                .background(
-                                                    Brush.horizontalGradient(
-                                                        listOf(Color(0xFF38BDF8), driveAccent),
-                                                    ),
-                                                ),
-                                        )
-                                    }
-                                }
+                                Text(
+                                    text = "P${pump.number}",
+                                    style = MonoStyle.copy(
+                                        fontSize = if (pumpCount >= 5) 9.sp else 10.sp,
+                                        lineHeight = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                    ),
+                                    color = tagColor,
+                                    textAlign = TextAlign.Center,
+                                )
+                                Text(
+                                    text = subTag,
+                                    style = MonoStyle.copy(
+                                        fontSize = if (pumpCount >= 5) 7.5.sp else 8.5.sp,
+                                        lineHeight = 10.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                    ),
+                                    color = subColor,
+                                    textAlign = TextAlign.Center,
+                                )
                             }
                         }
                     }
@@ -1252,6 +1171,18 @@ fun DynamicBoosterSystemSchematic(
                         )
                     }
                 }
+
+                // 2B. Full-Width Precision VFD Drive Frequency Meter Strip (1 bar for 1 Drive; 2 separated bars for 2 Drives!)
+                DriveFrequencyTelemetryStrip(
+                    driveCount = driveCount,
+                    drive1FreqHz = drive1FreqHz,
+                    drive2FreqHz = drive2FreqHz,
+                    animatedDrive1Frac = animatedDrive1Frac,
+                    animatedDrive2Frac = animatedDrive2Frac,
+                    drStatus = snapshot.drStatus,
+                    driveEnabled = snapshot.driveEnabled,
+                    driveFailed = snapshot.driveFailed,
+                )
             }
         }
 
@@ -1267,6 +1198,271 @@ fun DynamicBoosterSystemSchematic(
                 SchematicLegendDot(color = p.warning, code = "S", label = "Service (Off)")
                 SchematicLegendDot(color = p.fault, code = "ERR", label = "Fault")
             }
+        }
+    }
+}
+
+/**
+ * Full-width precision VFD frequency bar display inside the schematic stage:
+ * - 0 Drives: compact Fixed-Speed (DOL) pill.
+ * - 1 Drive: single wide continuous frequency bar (`Drive`).
+ * - 2 Drives: two clearly separated, vertically aligned precision bars (`Drive 1` & `Drive 2`)
+ *   with independent live frequencies, statuses, percentages, and zero text clipping.
+ */
+@Composable
+private fun DriveFrequencyTelemetryStrip(
+    driveCount: Int,
+    drive1FreqHz: Double?,
+    drive2FreqHz: Double?,
+    animatedDrive1Frac: Float,
+    animatedDrive2Frac: Float,
+    drStatus: Boolean?,
+    driveEnabled: Boolean?,
+    driveFailed: Boolean?,
+) {
+    val p = LocalScadaPalette.current
+    val isFault = driveFailed == true
+    val isServiceOff = driveEnabled == false && !isFault
+
+    if (driveCount <= 0) {
+        Surface(
+            color = Color(0xFF111827),
+            shape = RoundedCornerShape(10.dp),
+            border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.12f)),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF94A3B8)),
+                )
+                Text(
+                    text = "  Fixed-Speed (DOL) • 0 Drives",
+                    style = MonoStyle.copy(fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold),
+                    color = Color(0xFF94A3B8),
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+        return
+    }
+
+    val drive1Active = !isFault && !isServiceOff && (
+        (drive1FreqHz ?: 0.0) > 0.1 || (driveCount == 1 && drStatus == true)
+        )
+    val drive2Active = !isFault && !isServiceOff && (drive2FreqHz ?: 0.0) > 0.1
+    val anyActive = drive1Active || (driveCount >= 2 && drive2Active)
+
+    val containerBorder = when {
+        isFault -> p.fault.copy(alpha = 0.55f)
+        isServiceOff -> p.warning.copy(alpha = 0.48f)
+        anyActive -> p.gold.copy(alpha = 0.42f)
+        else -> Color.White.copy(alpha = 0.14f)
+    }
+
+    Surface(
+        color = Color(0xFF111827),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(0.85.dp, containerBorder),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 5.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 7.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            DriveFrequencyMeterRow(
+                title = if (driveCount >= 2) "Drive 1" else "Drive",
+                frequencyHz = drive1FreqHz,
+                animatedFraction = animatedDrive1Frac,
+                active = drive1Active,
+                isFault = isFault,
+                isServiceOff = isServiceOff,
+                barStartColor = Color(0xFF38BDF8),
+                barEndColor = p.gold,
+                accentColor = p.gold,
+            )
+
+            if (driveCount >= 2) {
+                HorizontalDivider(color = Color.White.copy(alpha = 0.09f), thickness = 0.75.dp)
+                DriveFrequencyMeterRow(
+                    title = "Drive 2",
+                    frequencyHz = drive2FreqHz,
+                    animatedFraction = animatedDrive2Frac,
+                    active = drive2Active,
+                    isFault = isFault,
+                    isServiceOff = isServiceOff,
+                    barStartColor = Color(0xFF0284C7),
+                    barEndColor = Color(0xFF38BDF8),
+                    accentColor = Color(0xFF38BDF8),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DriveFrequencyMeterRow(
+    title: String,
+    frequencyHz: Double?,
+    animatedFraction: Float,
+    active: Boolean,
+    isFault: Boolean,
+    isServiceOff: Boolean,
+    barStartColor: Color,
+    barEndColor: Color,
+    accentColor: Color,
+) {
+    val p = LocalScadaPalette.current
+    val resolvedAccent = when {
+        isFault -> p.fault
+        isServiceOff -> p.warning
+        active -> accentColor
+        else -> Color(0xFF94A3B8)
+    }
+    val statusText = when {
+        isFault -> "Fault"
+        isServiceOff -> "Service (S)"
+        active -> "Running"
+        else -> "Standby"
+    }
+    val statusColor = when {
+        isFault -> p.fault
+        isServiceOff -> p.warning
+        active -> p.ok
+        else -> Color(0xFF64748B)
+    }
+    val freqText = frequencyHz?.let { String.format(Locale.US, "%.1f Hz", it) } ?: "— Hz"
+    val pctText = frequencyHz?.let { "${((it / 50.0).coerceIn(0.0, 1.0) * 100.0).roundToInt()}%" } ?: "—"
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        // Header row: [● Drive N]  [Running/Standby]    [47.5 Hz]
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (active) {
+                    LivePulseDot(color = resolvedAccent, modifier = Modifier.size(8.dp))
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(resolvedAccent),
+                    )
+                }
+                Text(
+                    text = title,
+                    style = MonoStyle.copy(
+                        fontSize = 10.sp,
+                        lineHeight = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                    color = Color(0xFFF1F5F9),
+                )
+                Surface(
+                    color = statusColor.copy(alpha = 0.14f),
+                    shape = RoundedCornerShape(999.dp),
+                    border = BorderStroke(0.6.dp, statusColor.copy(alpha = 0.35f)),
+                ) {
+                    Text(
+                        text = statusText,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 8.5.sp,
+                            lineHeight = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        ),
+                        color = statusColor,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+                    )
+                }
+            }
+            Text(
+                text = freqText,
+                style = MonoStyle.copy(
+                    fontSize = 10.5.sp,
+                    lineHeight = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                ),
+                color = resolvedAccent,
+                textAlign = TextAlign.End,
+            )
+        }
+
+        // Precision Recessed VFD Progress Bar + Percentage Readout
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(6.5.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(Color(0xFF070B14))
+                    .border(0.65.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(999.dp)),
+            ) {
+                if (animatedFraction > 0.005f) {
+                    val fillBrush = when {
+                        isFault -> Brush.horizontalGradient(listOf(p.fault.copy(alpha = 0.7f), p.fault))
+                        isServiceOff -> Brush.horizontalGradient(listOf(p.warning.copy(alpha = 0.65f), p.warning))
+                        else -> Brush.horizontalGradient(listOf(barStartColor, barEndColor))
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(animatedFraction)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(fillBrush),
+                    )
+                }
+                // Delicate 25% / 50% / 75% VFD scale calibration ticks
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val tickColor = Color.White.copy(alpha = 0.18f)
+                    for (step in 1..3) {
+                        val x = size.width * (step / 4f)
+                        drawLine(
+                            color = tickColor,
+                            start = Offset(x, 0f),
+                            end = Offset(x, size.height),
+                            strokeWidth = 0.8.dp.toPx(),
+                        )
+                    }
+                }
+            }
+            Text(
+                text = pctText,
+                style = MonoStyle.copy(
+                    fontSize = 8.5.sp,
+                    lineHeight = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                ),
+                color = Color(0xFF94A3B8),
+                textAlign = TextAlign.End,
+            )
         }
     }
 }
