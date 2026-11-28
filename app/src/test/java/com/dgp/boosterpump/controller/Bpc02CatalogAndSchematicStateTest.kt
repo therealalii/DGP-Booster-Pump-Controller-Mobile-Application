@@ -215,8 +215,8 @@ class Bpc02CatalogAndSchematicStateTest {
     }
 
     @Test
-    fun measuredThreePhaseKinematicsComputesDynamicAnglesAndPeriodFromLiveVoltagesAndFrequency() {
-        // 1. Unbalanced live 3-phase grid at 49.80 Hz — angles come from Law of Cosines & period from 1000 / f_live (never hardcoded 20 ms)
+    fun measuredThreePhaseKinematicsComputesDynamicCyclePeriodAndPerPhaseOffsets() {
+        // 1. Unbalanced live 3-phase grid at 49.80 Hz — shared Cycle Period = 1000 / 49.80, per-phase angles & offsets via Law of Cosines
         val unbalanced = PhaseVoltages(rn = 231, sn = 229, tn = 230, rs = 400, st = 399, tr = 401)
         val kin = com.dgp.boosterpump.ui.components.computeMeasuredThreePhaseKinematics(
             voltages = unbalanced,
@@ -224,52 +224,51 @@ class Bpc02CatalogAndSchematicStateTest {
             phaseSequenceReversed = false,
         )
         val expected4980PeriodMs = 1000.0 / 49.80 // 20.080321...
-        assertEquals(0.0, kin.rn.angleDeg!!, 1e-6)
         assertEquals(expected4980PeriodMs, kin.mainsPeriodMs!!, 1e-6)
-        assertEquals(expected4980PeriodMs, kin.rn.periodMs!!, 1e-6)
+        assertEquals(0.0, kin.rn.angleDeg!!, 1e-6)
+        assertEquals(0.0, kin.rn.offsetMs!!, 1e-6)
         // cos(Δθ_RS) = (231² + 229² - 400²) / (2 * 231 * 229) => ~120.816°
         assertEquals(120.816, kin.sn.angleDeg!!, 0.02)
-        assertEquals(expected4980PeriodMs, kin.sn.periodMs!!, 1e-6)
+        assertEquals((kin.sn.angleDeg!! / 360.0) * expected4980PeriodMs, kin.sn.offsetMs!!, 1e-4)
         // cos(Δθ_TR) = (230² + 231² - 401²) / (2 * 230 * 231) => Δθ_TR ~120.882° => θ_T = 360 - 120.882 = ~239.118°
         assertEquals(239.118, kin.tn.angleDeg!!, 0.02)
-        assertEquals(expected4980PeriodMs, kin.tn.periodMs!!, 1e-6)
+        assertEquals((kin.tn.angleDeg!! / 360.0) * expected4980PeriodMs, kin.tn.offsetMs!!, 1e-4)
 
-        // 2. Reversed phase sequence (Word 80 bit 6) at 50.20 Hz: S and T angles swap, period matches 1000 / 50.20 = 19.920 mS
+        // 2. Reversed phase sequence (Word 80 bit 6) at 50.20 Hz: shared Cycle Period = 19.920 mS, S & T phase offsets swap
         val reversed = com.dgp.boosterpump.ui.components.computeMeasuredThreePhaseKinematics(
             voltages = unbalanced,
             mainsFrequencyHz = 50.20,
             phaseSequenceReversed = true,
         )
         val expected5020PeriodMs = 1000.0 / 50.20 // 19.920318...
+        assertEquals(expected5020PeriodMs, reversed.mainsPeriodMs!!, 1e-6)
         assertEquals(360.0 - 120.816, reversed.sn.angleDeg!!, 0.02)
         assertEquals(120.882, reversed.tn.angleDeg!!, 0.02)
-        assertEquals(expected5020PeriodMs, reversed.rn.periodMs!!, 1e-6)
-        assertEquals(expected5020PeriodMs, reversed.sn.periodMs!!, 1e-6)
-        assertEquals(expected5020PeriodMs, reversed.tn.periodMs!!, 1e-6)
+        assertEquals((reversed.sn.angleDeg!! / 360.0) * expected5020PeriodMs, reversed.sn.offsetMs!!, 1e-4)
+        assertEquals((reversed.tn.angleDeg!! / 360.0) * expected5020PeriodMs, reversed.tn.offsetMs!!, 1e-4)
 
-        // 3. Bench test with 0 V on all phases and live FRQ (51.80 Hz): reports live 1000 / 51.80 = 19.305 mS like physical BPC-02 LCD
+        // 3. Bench test with 0 V on all phases and live FRQ (51.80 Hz): shared Cycle Period still reports 19.305 mS while per-phase offsets stay null
         val zeroVoltBench = PhaseVoltages(rn = 0, sn = 0, tn = 0, rs = 0, st = 0, tr = 0)
         val benchKin = com.dgp.boosterpump.ui.components.computeMeasuredThreePhaseKinematics(zeroVoltBench, 51.80)
-        val expected5180PeriodMs = 1000.0 / 51.80
+        assertEquals(1000.0 / 51.80, benchKin.mainsPeriodMs!!, 1e-6)
         assertEquals(null, benchKin.rn.angleDeg)
-        assertEquals(null, benchKin.sn.angleDeg)
-        assertEquals(null, benchKin.tn.angleDeg)
-        assertEquals(expected5180PeriodMs, benchKin.rn.periodMs!!, 1e-6)
-        assertEquals(expected5180PeriodMs, benchKin.sn.periodMs!!, 1e-6)
-        assertEquals(expected5180PeriodMs, benchKin.tn.periodMs!!, 1e-6)
+        assertEquals(null, benchKin.rn.offsetMs)
+        assertEquals(null, benchKin.sn.offsetMs)
+        assertEquals(null, benchKin.tn.offsetMs)
 
-        // 4. Phase S lost while R & T energized: R & T report live period, dead S reports null
-        val lostPhaseS = PhaseVoltages(rn = 230, sn = 0, tn = 230, rs = 230, st = 230, tr = 398)
-        val lostKin = com.dgp.boosterpump.ui.components.computeMeasuredThreePhaseKinematics(lostPhaseS, 50.10)
-        assertEquals(1000.0 / 50.10, lostKin.rn.periodMs!!, 1e-6)
-        assertEquals(null, lostKin.sn.periodMs)
-        assertEquals(1000.0 / 50.10, lostKin.tn.periodMs!!, 1e-6)
+        // 4. Single-phase jumpered supply (R=S=T=230V, VRS=VST=VTR=0V): must measure 0.0° and 0.00 ms offset (never hardcoded 120°/6.67 ms)
+        val inPhase = PhaseVoltages(rn = 230, sn = 230, tn = 230, rs = 0, st = 0, tr = 0)
+        val inPhaseKin = com.dgp.boosterpump.ui.components.computeMeasuredThreePhaseKinematics(inPhase, 50.0)
+        assertEquals(20.0, inPhaseKin.mainsPeriodMs!!, 1e-6)
+        assertEquals(0.0, inPhaseKin.rn.offsetMs!!, 1e-6)
+        assertEquals(0.0, inPhaseKin.sn.offsetMs!!, 1e-6)
+        assertEquals(0.0, inPhaseKin.tn.offsetMs!!, 1e-6)
 
-        // 5. Missing or zero live mains frequency: never falls back to hardcoded 20 ms -> periodMs stays null
+        // 5. Missing or zero live mains frequency: never falls back to hardcoded 20 ms -> mainsPeriodMs & all offsetMs stay null
         val noFreq = com.dgp.boosterpump.ui.components.computeMeasuredThreePhaseKinematics(unbalanced, null)
         assertEquals(null, noFreq.mainsPeriodMs)
-        assertEquals(null, noFreq.rn.periodMs)
-        assertEquals(null, noFreq.sn.periodMs)
-        assertEquals(null, noFreq.tn.periodMs)
+        assertEquals(null, noFreq.rn.offsetMs)
+        assertEquals(null, noFreq.sn.offsetMs)
+        assertEquals(null, noFreq.tn.offsetMs)
     }
 }
