@@ -747,12 +747,12 @@ fun AnimatedImpellerIcon(
 }
 
 /**
- * Measured phase angle (degrees) and time offset (milliseconds) for one phase channel,
- * derived dynamically from live measured voltages and live mains frequency.
+ * Measured phase angle (degrees) and live AC cycle period (milliseconds) for one phase channel,
+ * derived dynamically from live measured voltages (`Words 3–8`) and live mains frequency (`Word 9`).
  */
 data class MeasuredPhaseChannel(
     val angleDeg: Double?,
-    val offsetMs: Double?,
+    val periodMs: Double?,
 )
 
 /**
@@ -762,18 +762,23 @@ data class MeasuredThreePhaseKinematics(
     val rn: MeasuredPhaseChannel,
     val sn: MeasuredPhaseChannel,
     val tn: MeasuredPhaseChannel,
+    val mainsPeriodMs: Double?,
 )
 
 /**
- * Computes actual measured phase angles (°) and live Phase Offsets (ms) for `VRN`, `VSN`, and `VTN`
- * dynamically from the measured 6-voltage phasor triangles via the Law of Cosines:
+ * Computes actual measured phase angles (°) and live AC cycle Period (`mS`) for `VRN`, `VSN`,
+ * and `VTN` dynamically from the measured 6-voltage phasor triangles via the Law of Cosines and
+ * live mains frequency (`Word 9`):
  *
  *   cos(Δθ_ab) = (V_a² + V_b² − V_ab²) / (2 · V_a · V_b)
- *   offsetMs   = (θ_deg / 360.0) · (1000.0 / mainsFrequencyHz)
+ *   periodMs   = 1000.0 / mainsFrequencyHz
  *
  * Strictly dynamic — never assumes fixed 0°/120°/240° angles or a hardcoded 20 ms cycle period:
- * - Returns `null` angle/offset for any phase lacking valid live voltage readings.
- * - Returns `null` `offsetMs` whenever live [mainsFrequencyHz] is absent or `<= 1.0 Hz`.
+ * - Returns `null` `angleDeg` for any phase lacking valid live voltage readings.
+ * - Returns `null` `periodMs` whenever live [mainsFrequencyHz] is absent or `<= 1.0 Hz`.
+ * - When one or more phases are energized, lost/0V phases report `null` `periodMs`; when all
+ *   voltages are 0 V (e.g. bench test with live `FRQ`), reports the live `1000 / f_live` period
+ *   on each channel matching the physical BPC-02 LCD.
  * - Honors [phaseSequenceReversed] (`Word 80 bit 6`, `CP_SQUENCY_ERROR`) for R→S→T vs R→T→S order.
  */
 fun computeMeasuredThreePhaseKinematics(
@@ -852,22 +857,26 @@ fun computeMeasuredThreePhaseKinematics(
     }
 
     val validFreqHz = mainsFrequencyHz?.takeIf { it > 1.0 }
-    fun toOffsetMs(angleDeg: Double?): Double? {
-        if (angleDeg == null || validFreqHz == null) return null
-        return (angleDeg / 360.0) * (1000.0 / validFreqHz)
+    val mainsPeriodMs = validFreqHz?.let { 1000.0 / it }
+    val hasAnyPhaseVoltage = rnActive || snActive || tnActive
+
+    fun channelPeriodMs(phaseActive: Boolean): Double? {
+        if (mainsPeriodMs == null) return null
+        return if (!hasAnyPhaseVoltage || phaseActive) mainsPeriodMs else null
     }
 
     return MeasuredThreePhaseKinematics(
-        rn = MeasuredPhaseChannel(angleDeg = angleR, offsetMs = toOffsetMs(angleR)),
-        sn = MeasuredPhaseChannel(angleDeg = angleS, offsetMs = toOffsetMs(angleS)),
-        tn = MeasuredPhaseChannel(angleDeg = angleT, offsetMs = toOffsetMs(angleT)),
+        rn = MeasuredPhaseChannel(angleDeg = angleR, periodMs = channelPeriodMs(rnActive)),
+        sn = MeasuredPhaseChannel(angleDeg = angleS, periodMs = channelPeriodMs(snActive)),
+        tn = MeasuredPhaseChannel(angleDeg = angleT, periodMs = channelPeriodMs(tnActive)),
+        mainsPeriodMs = mainsPeriodMs,
     )
 }
 
 /**
  * Compact SCADA 3-phase AC sine waveform oscilloscope (`شکل موج`) plotting live sine waves for
  * `VRN`, `VSN`, and `VTN` at their actual measured phase angles, followed directly by
- * Phase–Neutral (`VRN`, `VSN`, `VTN`) cards with live measured angles & Phase Offsets (`ms`),
+ * Phase–Neutral (`VRN`, `VSN`, `VTN`) cards with live measured angles & wave Period (`mS`),
  * and Phase–Phase (`VRS`, `VST`, `VTR`, 400V Nominal) cards last at the bottom.
  */
 @Composable
@@ -946,8 +955,8 @@ fun ThreePhaseWaveformGraph(
     fun formatAngleDeg(angleDeg: Double?): String =
         angleDeg?.let { String.format(Locale.US, "%.1f°", it) } ?: "—°"
 
-    fun formatOffsetMs(offsetMs: Double?): String =
-        offsetMs?.let { String.format(Locale.US, "%.2f ms", it) } ?: "— ms"
+    fun formatPeriodMs(periodMs: Double?): String =
+        periodMs?.let { String.format(Locale.US, "%.3f mS", it) } ?: "— mS"
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -1088,10 +1097,10 @@ fun ThreePhaseWaveformGraph(
             }
         }
 
-        // 2. Phase–Neutral (230V Nominal) with Measured Angle & Live Phase Offset (ms) directly under the graph
+        // 2. Phase–Neutral (230V Nominal) with Measured Angle & Live Period (mS) directly under the graph
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             LtrText(
-                text = "Phase–Neutral (230V) • Phase Offset (ms)",
+                text = "Phase–Neutral (230V) • Period (mS)",
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                 color = palette.textSecondary,
             )
@@ -1103,7 +1112,8 @@ fun ThreePhaseWaveformGraph(
                     PhaseWaveformPill(
                         label = "VRN",
                         angleTag = formatAngleDeg(kinematics.rn.angleDeg),
-                        offsetMsTag = formatOffsetMs(kinematics.rn.offsetMs),
+                        periodMsTag = formatPeriodMs(kinematics.rn.periodMs),
+                        hasLivePeriod = kinematics.rn.periodMs != null,
                         volts = voltages.rn,
                         accentColor = rnColor,
                         modifier = Modifier.weight(1f),
@@ -1111,7 +1121,8 @@ fun ThreePhaseWaveformGraph(
                     PhaseWaveformPill(
                         label = "VSN",
                         angleTag = formatAngleDeg(kinematics.sn.angleDeg),
-                        offsetMsTag = formatOffsetMs(kinematics.sn.offsetMs),
+                        periodMsTag = formatPeriodMs(kinematics.sn.periodMs),
+                        hasLivePeriod = kinematics.sn.periodMs != null,
                         volts = voltages.sn,
                         accentColor = snColor,
                         modifier = Modifier.weight(1f),
@@ -1119,7 +1130,8 @@ fun ThreePhaseWaveformGraph(
                     PhaseWaveformPill(
                         label = "VTN",
                         angleTag = formatAngleDeg(kinematics.tn.angleDeg),
-                        offsetMsTag = formatOffsetMs(kinematics.tn.offsetMs),
+                        periodMsTag = formatPeriodMs(kinematics.tn.periodMs),
+                        hasLivePeriod = kinematics.tn.periodMs != null,
                         volts = voltages.tn,
                         accentColor = tnColor,
                         modifier = Modifier.weight(1f),
@@ -1213,7 +1225,8 @@ private fun LineVoltagePill(
 private fun PhaseWaveformPill(
     label: String,
     angleTag: String,
-    offsetMsTag: String,
+    periodMsTag: String,
+    hasLivePeriod: Boolean,
     volts: Int?,
     accentColor: Color,
     modifier: Modifier = Modifier,
@@ -1247,32 +1260,48 @@ private fun PhaseWaveformPill(
                     text = label,
                     style = MonoStyle.copy(fontSize = 10.5.sp, fontWeight = FontWeight.Bold),
                     color = palette.textPrimary,
+                    maxLines = 1,
+                    softWrap = false,
                 )
             }
             Text(
                 text = angleTag,
                 style = MonoStyle.copy(fontSize = 8.5.sp),
                 color = palette.textMuted,
+                maxLines = 1,
+                softWrap = false,
             )
         }
         Text(
             text = volts?.let { "$it V" } ?: "— V",
             style = MonoStyle.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold),
             color = if (active) accentColor else palette.textSecondary,
+            maxLines = 1,
+            softWrap = false,
         )
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(7.dp))
                 .background(palette.panel)
-                .border(0.7.dp, accentColor.copy(alpha = if (active) 0.30f else 0.16f), RoundedCornerShape(7.dp))
-                .padding(horizontal = 6.dp, vertical = 3.dp),
+                .border(
+                    width = 0.7.dp,
+                    color = accentColor.copy(alpha = when {
+                        active -> 0.30f
+                        hasLivePeriod -> 0.24f
+                        else -> 0.16f
+                    }),
+                    shape = RoundedCornerShape(7.dp),
+                )
+                .padding(horizontal = 4.dp, vertical = 3.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = offsetMsTag,
+                text = periodMsTag,
                 style = MonoStyle.copy(fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold),
-                color = if (active) palette.textPrimary else palette.textMuted,
+                color = if (active || hasLivePeriod) palette.textPrimary else palette.textMuted,
+                maxLines = 1,
+                softWrap = false,
             )
         }
     }
