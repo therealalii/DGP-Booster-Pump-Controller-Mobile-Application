@@ -213,4 +213,20 @@ class Bpc02CatalogAndSchematicStateTest {
         assertTrue("Three running pumps must flow fastest ($twoPumps -> $threePumps)", threePumps > twoPumps)
         assertTrue("Speed factor must stay clamped <= 1.0", threePumps <= 1.0f)
     }
+
+    @Test
+    fun threePhaseOffsetsMsComputesExactTimeDelayFromMainsFrequency() {
+        val at50Hz = com.dgp.boosterpump.ui.components.computeThreePhaseOffsetsMs(50.0)!!
+        assertEquals(0.0, at50Hz.first, 1e-6)
+        assertEquals(20.0 / 3.0, at50Hz.second, 1e-4)
+        assertEquals(40.0 / 3.0, at50Hz.third, 1e-4)
+
+        val at60Hz = com.dgp.boosterpump.ui.components.computeThreePhaseOffsetsMs(60.0)!!
+        assertEquals(0.0, at60Hz.first, 1e-6)
+        assertEquals(1000.0 / 180.0, at60Hz.second, 1e-4)
+        assertEquals(2000.0 / 180.0, at60Hz.third, 1e-4)
+
+        assertEquals(null, com.dgp.boosterpump.ui.components.computeThreePhaseOffsetsMs(null))
+        assertEquals(null, com.dgp.boosterpump.ui.components.computeThreePhaseOffsetsMs(0.0))
+    }
 }

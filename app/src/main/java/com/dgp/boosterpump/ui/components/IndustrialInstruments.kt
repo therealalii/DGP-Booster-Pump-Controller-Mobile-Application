@@ -52,6 +52,7 @@ import com.dgp.boosterpump.controller.PhaseVoltages
 import com.dgp.boosterpump.session.PressureSample
 import com.dgp.boosterpump.ui.theme.LocalScadaPalette
 import com.dgp.boosterpump.ui.theme.MonoStyle
+import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -745,9 +746,20 @@ fun AnimatedImpellerIcon(
 }
 
 /**
+ * Computes exact 3-phase time offsets (in milliseconds) for `VRN` (0°), `VSN` (120°), and
+ * `VTN` (240°) from the live mains frequency `f` (Hz): `0`, `T/3`, and `2T/3` where `T = 1000 / f` ms
+ * (at 50.00 Hz: `0.00 ms`, `6.67 ms`, `13.33 ms`). Returns null if frequency is unavailable or <= 1 Hz.
+ */
+fun computeThreePhaseOffsetsMs(mainsFrequencyHz: Double?): Triple<Double, Double, Double>? {
+    val hz = mainsFrequencyHz?.takeIf { it > 1.0 } ?: return null
+    val periodMs = 1000.0 / hz
+    return Triple(0.0, periodMs / 3.0, periodMs * 2.0 / 3.0)
+}
+
+/**
  * Compact SCADA 3-phase AC sine waveform oscilloscope (`شکل موج`) plotting live 120°-phase-shifted
- * waveforms exclusively for the three phase-to-neutral channels (`VRN`, `VSN`, `VTN`), with real-time
- * amplitude scaling, ±230V nominal guides, and full-width channel readouts underneath.
+ * waveforms for `VRN`, `VSN`, and `VTN`, followed directly by Phase–Phase (`VRS`, `VST`, `VTR`)
+ * cards and Phase–Neutral (`VRN`, `VSN`, `VTN`) cards with live angle & Phase Offset (ms).
  */
 @Composable
 fun ThreePhaseWaveformGraph(
@@ -795,21 +807,41 @@ fun ThreePhaseWaveformGraph(
     val snBaseColor = Color(0xFF38BDF8) // Electric Cyan (Phase S)
     val tnBaseColor = Color(0xFF34D399) // Emerald Green (Phase T)
 
-    fun channelColor(volts: Int?, base: Color): Color = when {
+    fun phaseNeutralColor(volts: Int?, base: Color): Color = when {
         volts == null || volts == 0 -> palette.standby
         volts < 190 || volts > 253 -> palette.fault
         else -> base
     }
 
-    val rnColor = channelColor(voltages.rn, rnBaseColor)
-    val snColor = channelColor(voltages.sn, snBaseColor)
-    val tnColor = channelColor(voltages.tn, tnBaseColor)
+    fun phasePhaseColor(volts: Int?): Color = when {
+        volts == null || volts == 0 -> palette.standby
+        volts < 340 || volts > 440 -> palette.fault
+        volts < 365 || volts > 425 -> palette.warning
+        else -> palette.ok
+    }
+
+    val rnColor = phaseNeutralColor(voltages.rn, rnBaseColor)
+    val snColor = phaseNeutralColor(voltages.sn, snBaseColor)
+    val tnColor = phaseNeutralColor(voltages.tn, tnBaseColor)
+
+    val offsetsMs = remember(mainsFrequencyHz) { computeThreePhaseOffsetsMs(mainsFrequencyHz) }
+    val periodLabel = remember(mainsFrequencyHz) {
+        val hz = mainsFrequencyHz?.takeIf { it > 1.0 }
+        if (hz != null) String.format(Locale.US, "T: %.2f ms", 1000.0 / hz) else "T: — ms"
+    }
+
+    fun formatOffsetMs(volts: Int?, offsetMs: Double?): String =
+        if (volts != null && volts > 0 && offsetMs != null) {
+            String.format(Locale.US, "%.2f ms", offsetMs)
+        } else {
+            "— ms"
+        }
 
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        // Mini SCADA Oscilloscope Viewport
+        // 1. Mini SCADA Oscilloscope Viewport (VRN, VSN, VTN)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -934,44 +966,144 @@ fun ThreePhaseWaveformGraph(
                             color = Color(0xFF94A3B8).copy(alpha = 0.75f),
                         )
                     }
-                    Text(
-                        "-230V",
-                        style = MonoStyle.copy(fontSize = 8.5.sp, fontWeight = FontWeight.SemiBold),
-                        color = Color(0xFFE5B55C).copy(alpha = 0.72f),
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "-230V",
+                            style = MonoStyle.copy(fontSize = 8.5.sp, fontWeight = FontWeight.SemiBold),
+                            color = Color(0xFFE5B55C).copy(alpha = 0.72f),
+                        )
+                        Text(
+                            periodLabel,
+                            style = MonoStyle.copy(fontSize = 8.5.sp, fontWeight = FontWeight.SemiBold),
+                            color = Color(0xFF94A3B8).copy(alpha = 0.82f),
+                        )
+                    }
+                }
+            }
+        }
+
+        // 2. Phase–Phase (400V Nominal): VRS, VST, VTR directly below the waveform graph
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            LtrText(
+                text = "Phase–Phase (400V Nominal)",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = palette.textSecondary,
+            )
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    LineVoltagePill(
+                        label = "VRS",
+                        pairTag = "R–S",
+                        volts = voltages.rs,
+                        accentColor = phasePhaseColor(voltages.rs),
+                        modifier = Modifier.weight(1f),
+                    )
+                    LineVoltagePill(
+                        label = "VST",
+                        pairTag = "S–T",
+                        volts = voltages.st,
+                        accentColor = phasePhaseColor(voltages.st),
+                        modifier = Modifier.weight(1f),
+                    )
+                    LineVoltagePill(
+                        label = "VTR",
+                        pairTag = "T–R",
+                        volts = voltages.tr,
+                        accentColor = phasePhaseColor(voltages.tr),
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
         }
 
-        // 3 Equal-Width Full-Text Phase Readout Cards (VRN, VSN, VTN)
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                PhaseWaveformPill(
-                    label = "VRN",
-                    angleTag = "0°",
-                    volts = voltages.rn,
-                    accentColor = rnColor,
-                    modifier = Modifier.weight(1f),
-                )
-                PhaseWaveformPill(
-                    label = "VSN",
-                    angleTag = "120°",
-                    volts = voltages.sn,
-                    accentColor = snColor,
-                    modifier = Modifier.weight(1f),
-                )
-                PhaseWaveformPill(
-                    label = "VTN",
-                    angleTag = "240°",
-                    volts = voltages.tn,
-                    accentColor = tnColor,
-                    modifier = Modifier.weight(1f),
-                )
+        // 3. Phase–Neutral (230V Nominal) with Angle & Live Phase Offset (ms) underneath all of this
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            LtrText(
+                text = "Phase–Neutral (230V) • Phase Offset (ms)",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = palette.textSecondary,
+            )
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    PhaseWaveformPill(
+                        label = "VRN",
+                        angleTag = "0°",
+                        offsetMsTag = formatOffsetMs(voltages.rn, offsetsMs?.first),
+                        volts = voltages.rn,
+                        accentColor = rnColor,
+                        modifier = Modifier.weight(1f),
+                    )
+                    PhaseWaveformPill(
+                        label = "VSN",
+                        angleTag = "120°",
+                        offsetMsTag = formatOffsetMs(voltages.sn, offsetsMs?.second),
+                        volts = voltages.sn,
+                        accentColor = snColor,
+                        modifier = Modifier.weight(1f),
+                    )
+                    PhaseWaveformPill(
+                        label = "VTN",
+                        angleTag = "240°",
+                        offsetMsTag = formatOffsetMs(voltages.tn, offsetsMs?.third),
+                        volts = voltages.tn,
+                        accentColor = tnColor,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun LineVoltagePill(
+    label: String,
+    pairTag: String,
+    volts: Int?,
+    accentColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    val palette = LocalScadaPalette.current
+    val active = volts != null && volts > 0
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(palette.panelElevated)
+            .border(0.9.dp, accentColor.copy(alpha = if (active) 0.38f else 0.24f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 9.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = label,
+                style = MonoStyle.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
+                color = palette.textPrimary,
+            )
+            Text(
+                text = pairTag,
+                style = MonoStyle.copy(fontSize = 9.sp),
+                color = palette.textMuted,
+            )
+        }
+        Text(
+            text = volts?.let { "$it V" } ?: "— V",
+            style = MonoStyle.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold),
+            color = if (active) accentColor else palette.textSecondary,
+        )
     }
 }
 
@@ -979,17 +1111,19 @@ fun ThreePhaseWaveformGraph(
 private fun PhaseWaveformPill(
     label: String,
     angleTag: String,
+    offsetMsTag: String,
     volts: Int?,
     accentColor: Color,
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalScadaPalette.current
+    val active = volts != null && volts > 0
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
             .background(palette.panelElevated)
-            .border(0.9.dp, accentColor.copy(alpha = if (volts != null && volts > 0) 0.42f else 0.25f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 9.dp, vertical = 8.dp),
+            .border(0.9.dp, accentColor.copy(alpha = if (active) 0.42f else 0.25f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Row(
@@ -999,17 +1133,17 @@ private fun PhaseWaveformPill(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Box(
                     modifier = Modifier
-                        .size(8.dp)
+                        .size(7.dp)
                         .clip(CircleShape)
                         .background(accentColor),
                 )
                 Text(
                     text = label,
-                    style = MonoStyle.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
+                    style = MonoStyle.copy(fontSize = 10.5.sp, fontWeight = FontWeight.Bold),
                     color = palette.textPrimary,
                 )
             }
@@ -1022,8 +1156,23 @@ private fun PhaseWaveformPill(
         Text(
             text = volts?.let { "$it V" } ?: "— V",
             style = MonoStyle.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold),
-            color = if (volts != null && volts > 0) accentColor else palette.textSecondary,
+            color = if (active) accentColor else palette.textSecondary,
         )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(7.dp))
+                .background(palette.panel)
+                .border(0.7.dp, accentColor.copy(alpha = if (active) 0.30f else 0.16f), RoundedCornerShape(7.dp))
+                .padding(horizontal = 6.dp, vertical = 3.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = offsetMsTag,
+                style = MonoStyle.copy(fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold),
+                color = if (active) palette.textPrimary else palette.textMuted,
+            )
+        }
     }
 }
 
