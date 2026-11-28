@@ -65,7 +65,7 @@ enum class OperatorPermission(
         group = PermissionGroup.VIEW,
         titleFa = "مشاهده منوی تنظیمات کنترلر",
         titleEn = "Hardware Menu BPC-02 (Read-Only)",
-        descriptionFa = "مشاهده مقادیر ۶ بخش منوی کنترلر و راهنمای فارسی بدون امکان تغییر",
+        descriptionFa = "مشاهده مقادیر منوی تنظیمات کنترلر و راهنمای فارسی بدون امکان تغییر",
         isWriteOperation = false,
         defaultGranted = true,
     ),

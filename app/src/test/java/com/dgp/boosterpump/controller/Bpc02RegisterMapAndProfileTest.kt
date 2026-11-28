@@ -41,6 +41,7 @@ class Bpc02RegisterMapAndProfileTest {
             ReadBlock(VendorTable.WORD, 4133, 2), // Number Of Pump & Variable Pump (Drivers)
             ReadBlock(VendorTable.WORD, 4170, 1), // Wiring / Operating Mode (1..3)
             ReadBlock(VendorTable.WORD, 4173, 1), // Control Status (0=Disable, 1=PID, 2=ON/OFF)
+            ReadBlock(VendorTable.WORD, 4180, 8), // MFI1..4 & MFO1..4 configured types
         )
         assertEquals(expected, Bpc02RegisterMap.pollBlocks)
         assertEquals(
@@ -176,6 +177,10 @@ class Bpc02RegisterMapAndProfileTest {
                 4134 to 1, // 1 connected driver (variable pump)
                 4170 to 2, // Wiring Mode 2
                 4173 to 1, // Control Status = PID
+                4180 to 6, // MFI1 = FL
+                4181 to 4, // MFI2 = EMG
+                4184 to 5, // MFO1 = Alarm
+                4185 to 7, // MFO2 = P.Run
             ),
         )
 
@@ -187,6 +192,8 @@ class Bpc02RegisterMapAndProfileTest {
         assertEquals(2, snap.wiringMode)
         assertEquals(4, snap.configuredPumpCount)
         assertEquals(1, snap.variablePumpCount)
+        assertEquals(listOf(6, 4, null, null), snap.mfiTypes)
+        assertEquals(listOf(5, 7, null, null), snap.mfoTypes)
         assertEquals(50.02, snap.mainsFrequencyHz!!, 1e-6)
         assertEquals(38.50, snap.drive1FrequencyHz!!, 1e-6)
         assertEquals(24.00, snap.drive2FrequencyHz!!, 1e-6)

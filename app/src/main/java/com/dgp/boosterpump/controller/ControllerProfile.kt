@@ -126,6 +126,8 @@ object Bpc02Profile : ControllerProfile {
             outputs = (0 until Bpc02RegisterMap.OUTPUT_COUNT).map { bit(map.outputKey(it)) },
             prInputs = (1..Bpc02RegisterMap.PR_INPUT_COUNT).map { bit(map.prKey(it)) },
             mfiInputs = (1..Bpc02RegisterMap.MFI_INPUT_COUNT).map { bit(map.mfiKey(it)) },
+            mfiTypes = Bpc02RegisterMap.mfiTypeDefs.map { raw(it) },
+            mfoTypes = Bpc02RegisterMap.mfoTypeDefs.map { raw(it) },
             floaterLowConnected = bit(Bpc02RegisterMap.FLOATER_LOW),
             floaterHighConnected = bit(Bpc02RegisterMap.FLOATER_HIGH),
             systemErrorWord = raw(Bpc02RegisterMap.SYSTEM_ERROR),

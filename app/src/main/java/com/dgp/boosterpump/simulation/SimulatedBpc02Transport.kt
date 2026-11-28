@@ -147,14 +147,14 @@ class SimulatedBpc02Transport(
         put(4177, 159) // Auto Service Off Time = 159 h (RW)
         put(4178, 33) // Auto Service On Time = 3.3 s (RW)
         put(4179, 11) // Auto Service Interval = 11 min (RW)
-        put(4180, 0) // MFI1..4 (R)
-        put(4181, 0)
-        put(4182, 0)
-        put(4183, 0)
-        put(4184, 5) // MFO1 = ALARM (R)
-        put(4185, 7) // MFO2 = RUN (R)
-        put(4186, 0)
-        put(4187, 0)
+        put(4180, 6) // MFI1 = FL (External Floater, R)
+        put(4181, 4) // MFI2 = EMG (Emergency Stop, R)
+        put(4182, 0) // MFI3 = Disable (R)
+        put(4183, 0) // MFI4 = Disable (R)
+        put(4184, 5) // MFO1 (OUT 7) = Alarm (R)
+        put(4185, 7) // MFO2 (OUT 8) = P.Run (R)
+        put(4186, 4) // MFO3 (OUT 9) = Fan (R)
+        put(4187, 0) // MFO4 (OUT 10) = Disable (R)
         put(4188, 24081) // Serial Number (R)
         put(4189, 2500) // Start Frequency = 25.00 Hz (R)
         put(4190, 1) // Full Load Status = Enable (R)
@@ -360,6 +360,7 @@ class SimulatedBpc02Transport(
                 words[26] = 0
                 bits[19] = p1Run
                 bits[0] = p1Run
+                bits[7] = p1Run // OUT 8 = MFO2 (P.Run)
                 bits[11] = p1Run
                 setRunTime(1, 2, 44, 40, running = p1Run)
                 setRunTime(2, 2, 42, 57, running = false)
@@ -385,6 +386,8 @@ class SimulatedBpc02Transport(
                     if (idx < 6) bits[idx] = run
                     if (idx < 4) bits[11 + idx] = run
                 }
+                bits[7] = runningFlags.any { it } // OUT 8 = MFO2 (P.Run)
+                bits[8] = true // OUT 9 = MFO3 (Fan)
                 bits[33] = false
                 setRunTime(1, 2, 44, 40, running = runningFlags[0])
                 setRunTime(2, 2, 42, 57, running = runningFlags[1])
@@ -402,6 +405,7 @@ class SimulatedBpc02Transport(
                 bits[32] = false
                 bits[33] = false
                 bits[15] = true
+                bits[6] = !cleared // OUT 7 = MFO1 (Alarm)
                 setRunTime(1, 2, 44, 40, running = false)
                 setRunTime(2, 2, 42, 57, running = false)
                 setRunTime(3, 2, 41, 53, running = false)
@@ -420,6 +424,8 @@ class SimulatedBpc02Transport(
                 words[26] = 0
                 bits[19] = p1Run
                 bits[0] = p1Run
+                bits[6] = !cleared // OUT 7 = MFO1 (Alarm)
+                bits[7] = p1Run // OUT 8 = MFO2 (P.Run)
                 bits[11] = p1Run
                 bits[25] = !cleared && hasDrive // Drive fail
                 bits[25 + faultPump] = !cleared // Faulted pump bit

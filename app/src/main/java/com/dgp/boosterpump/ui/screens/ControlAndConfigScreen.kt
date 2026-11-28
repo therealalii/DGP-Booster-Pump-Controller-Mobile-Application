@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Input
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Bolt
@@ -48,13 +49,18 @@ import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.FileOpen
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Save
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Sensors
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.SettingsEthernet
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material.icons.outlined.Tag
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material.icons.outlined.WarningAmber
@@ -104,6 +110,7 @@ import com.dgp.boosterpump.controller.Bpc02Catalog
 import com.dgp.boosterpump.controller.ControllerModel
 import com.dgp.boosterpump.controller.ControllerSnapshot
 import com.dgp.boosterpump.controller.RegisterReading
+import com.dgp.boosterpump.controller.SystemErrorBit2
 import com.dgp.boosterpump.controller.register.Bpc02RegisterMap
 import com.dgp.boosterpump.controller.register.RegisterDefinition
 import com.dgp.boosterpump.controller.register.VendorTable
@@ -119,6 +126,7 @@ import com.dgp.boosterpump.ui.components.LtrText
 import com.dgp.boosterpump.ui.components.NoticeBox
 import com.dgp.boosterpump.ui.components.ParameterHelpBottomSheet
 import com.dgp.boosterpump.ui.components.ParameterHelpIcon
+import com.dgp.boosterpump.ui.components.PlcLedBead
 import com.dgp.boosterpump.ui.components.PumpPowerToggle
 import com.dgp.boosterpump.ui.components.ScadaPanel
 import com.dgp.boosterpump.ui.components.StatusBadge
@@ -150,19 +158,28 @@ private data class PreparedExportPayload(
     val wiringSummary: String,
 )
 
+private fun mainMenuIcon(section: Bpc02Catalog.MainMenuSection): ImageVector = when (section) {
+    Bpc02Catalog.MainMenuSection.SYSTEM -> Icons.Outlined.Settings
+    Bpc02Catalog.MainMenuSection.INPUT -> Icons.AutoMirrored.Outlined.Input
+    Bpc02Catalog.MainMenuSection.TIME_DATE -> Icons.Outlined.Schedule
+    Bpc02Catalog.MainMenuSection.HARDWARE -> Icons.Outlined.Memory
+}
+
 private fun categoryIcon(category: Bpc02Catalog.MenuCategory): ImageVector = when (category) {
     Bpc02Catalog.MenuCategory.CONTROL_PHASE -> Icons.Outlined.Bolt
     Bpc02Catalog.MenuCategory.FLOATER -> Icons.Outlined.WaterDrop
     Bpc02Catalog.MenuCategory.SENSOR -> Icons.Outlined.Sensors
     Bpc02Catalog.MenuCategory.CONTROL -> Icons.Outlined.Speed
     Bpc02Catalog.MenuCategory.MFX -> Icons.Outlined.DeveloperBoard
-    Bpc02Catalog.MenuCategory.SYSTEM_NETWORK -> Icons.Outlined.Info
+    Bpc02Catalog.MenuCategory.SERIAL_NUMBER -> Icons.Outlined.Tag
+    Bpc02Catalog.MenuCategory.NETWORK -> Icons.Outlined.SettingsEthernet
+    Bpc02Catalog.MenuCategory.RESET_TO_FACTORY -> Icons.Outlined.RestartAlt
 }
 
 /**
- * Operational Control, Portable JSON Configuration Transfer (Import/Export), and Official
- * BPC-02 Hardware Menu screen with exact English catalog terminology and interactive `?`
- * Persian help explanations for every parameter.
+ * Operational Control, Exact Physical Controller Menu (1.System, 2.Input, 3.Time/Date,
+ * 4.Hardware with categories 1–8 and mode-aware ON/OFF & PID pages), and Portable JSON
+ * Configuration Transfer (Import/Export).
  */
 @Composable
 fun ControlAndConfigScreen(
@@ -188,8 +205,10 @@ fun ControlAndConfigScreen(
 
     var pendingEdit by remember { mutableStateOf<PendingEdit?>(null) }
     var activeHelp by remember { mutableStateOf<Pair<Bpc02Catalog.ParameterHelp, String?>?>(null) }
+    var expandedMainSection by remember { mutableStateOf<Bpc02Catalog.MainMenuSection?>(Bpc02Catalog.MainMenuSection.HARDWARE) }
     var expandedCategory by remember { mutableStateOf<Bpc02Catalog.MenuCategory?>(null) }
     var expandedPageNumber by remember { mutableStateOf<Int?>(null) }
+    var showAllControlPages by remember { mutableStateOf(false) }
 
     // Import/Export workflow states
     var preparedExport by remember { mutableStateOf<PreparedExportPayload?>(null) }
@@ -656,12 +675,12 @@ fun ControlAndConfigScreen(
             }
         }
 
-        // 2. Official BPC-02 Hardware Menu (All 6 English Categories + Ordered Pages On Click + Persian ? Help)
+        // 2. Official BPC-02 Controller Menu (Exact 1.System, 2.Input, 3.Time/Date, 4.Hardware [1..8] from controller LCD)
         val canSeeHardwareMenu = effectivePermissions.canViewHardwareMenu || effectivePermissions.hasAnyHardwareMenuWrite
         if (!canSeeHardwareMenu) {
             item {
                 ScadaPanel(
-                    title = "Hardware Menu (BPC-02)",
+                    title = "Controller Menu (BPC-02)",
                     subtitle = "ساختار منوی تنظیمات کنترلر BPC-02",
                     icon = Icons.Outlined.Tune,
                     accentColor = p.cyan,
@@ -675,8 +694,8 @@ fun ControlAndConfigScreen(
         } else {
             item {
                 ScadaPanel(
-                    title = "Hardware Menu (BPC-02)",
-                    subtitle = "ساختار دقیق منوی کنترلر — برای دیدن صفحات روی هر بخش و برای راهنمای فارسی روی ؟ ضربه بزنید",
+                    title = "Controller Menu (BPC-02)",
+                    subtitle = "ساختار و ترتیب دقیق منوی کنترلر — روی هر بخش و آیکون ؟ برای راهنمای فارسی ضربه بزنید",
                     icon = Icons.Outlined.Tune,
                     accentColor = p.cyan,
                     trailing = {
@@ -720,341 +739,573 @@ fun ControlAndConfigScreen(
                             text = if (anyMenuWritable) {
                                 "پارامترهای دارای دکمه Edit/Select توسط مدیر سیستم برای حساب اپراتور فعال شده‌اند؛ سایر موارد فقط خواندنی هستند."
                             } else {
-                                "در سطح دسترسی فعلی اپراتور، منوی Hardware Menu فقط قابل مشاهده (Read-Only) است."
+                                "در سطح دسترسی فعلی اپراتور، منوی تنظیمات کنترلر فقط قابل مشاهده (Read-Only) است."
                             },
                             tone = BadgeTone.INFO,
                         )
                     }
 
-                if (!isConnected && cfgSnap.readings.isEmpty() && liveSnap == null) {
-                    NoticeBox(
-                        text = "برای مشاهده مقادیر واقعی دستگاه، ابتدا به کنترلر متصل شوید.",
-                        tone = BadgeTone.WARNING,
-                    )
-                } else if (cfgSnap.timestampMillis != null) {
-                    LtrText(
-                        "Last Sync: ${formatTime(cfgSnap.timestampMillis)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = p.cyan,
-                    )
-                }
-
-                if (cfgSnap.errors.isNotEmpty()) {
-                    NoticeBox(
-                        text = "دریافت برخی تنظیمات با تاخیر مواجه شد؛ دکمه Refresh را بزنید.",
-                        tone = BadgeTone.WARNING,
-                    )
-                }
-
-                // All 6 BPC-02 Hardware Categories stacked vertically — 100% visible, calm & uncluttered
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Bpc02Catalog.MenuCategory.entries.forEach { category ->
-                        val isCategoryOpen = expandedCategory == category
-                        val catChevronAngle by animateFloatAsState(
-                            targetValue = if (isCategoryOpen) 180f else 0f,
-                            animationSpec = tween(220),
-                            label = "cat_chevron_${category.index}",
+                    if (!isConnected && cfgSnap.readings.isEmpty() && liveSnap == null) {
+                        NoticeBox(
+                            text = "برای مشاهده مقادیر واقعی دستگاه، ابتدا به کنترلر متصل شوید.",
+                            tone = BadgeTone.WARNING,
                         )
-                        val borderColor = if (isCategoryOpen) p.gold.copy(alpha = 0.52f) else p.panelBorder
-                        val headerBg = if (isCategoryOpen) {
-                            if (p.isDark) Color(0xFF171B26) else p.panelElevated
-                        } else {
-                            p.panelElevated
-                        }
+                    } else if (cfgSnap.timestampMillis != null) {
+                        LtrText(
+                            "Last Sync: ${formatTime(cfgSnap.timestampMillis)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = p.cyan,
+                        )
+                    }
 
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(15.dp))
-                                .background(headerBg)
-                                .border(0.9.dp, borderColor, RoundedCornerShape(15.dp)),
-                        ) {
-                            // Category Row Header (1..6, Official English Title)
-                            Row(
+                    if (cfgSnap.errors.isNotEmpty()) {
+                        NoticeBox(
+                            text = "دریافت برخی تنظیمات با تاخیر مواجه شد؛ دکمه Refresh را بزنید.",
+                            tone = BadgeTone.WARNING,
+                        )
+                    }
+
+                    // Top-Level Controller Menu matching physical LCD (`photo_6`):
+                    // 1. System  |  2. Input  |  3. Time/Date  |  4. Hardware
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Bpc02Catalog.MainMenuSection.entries.forEach { mainSection ->
+                            val isSectionOpen = expandedMainSection == mainSection
+                            val secChevronAngle by animateFloatAsState(
+                                targetValue = if (isSectionOpen) 180f else 0f,
+                                animationSpec = tween(220),
+                                label = "main_sec_chevron_${mainSection.index}",
+                            )
+                            val isHardware = mainSection == Bpc02Catalog.MainMenuSection.HARDWARE
+                            val secAccent = if (isHardware) p.gold else p.cyan
+                            val secBorder = if (isSectionOpen) secAccent.copy(alpha = 0.52f) else p.panelBorder
+
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable {
-                                        if (isCategoryOpen) {
-                                            expandedCategory = null
-                                            expandedPageNumber = null
-                                        } else {
-                                            expandedCategory = category
-                                            expandedPageNumber = if (category.pages.size == 1) 1 else null
-                                        }
-                                    }
-                                    .padding(horizontal = 13.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(11.dp),
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(if (isSectionOpen && p.isDark) Color(0xFF151C2B) else p.panelElevated)
+                                    .border(1.dp, secBorder, RoundedCornerShape(16.dp)),
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(38.dp)
-                                        .clip(RoundedCornerShape(11.dp))
-                                        .background(if (isCategoryOpen) p.goldSoft else p.panel)
-                                        .border(
-                                            width = 0.9.dp,
-                                            color = if (isCategoryOpen) p.gold.copy(alpha = 0.60f) else p.panelBorder,
-                                            shape = RoundedCornerShape(11.dp),
-                                        ),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Text(
-                                        text = "${category.index}",
-                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                        color = if (isCategoryOpen) p.gold else p.textPrimary,
-                                    )
-                                }
-
-                                Column(
-                                    modifier = Modifier.weight(1f),
-                                    verticalArrangement = Arrangement.spacedBy(3.dp),
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    ) {
-                                        Icon(
-                                            imageVector = categoryIcon(category),
-                                            contentDescription = null,
-                                            tint = if (isCategoryOpen) p.gold else p.cyan,
-                                            modifier = Modifier.size(16.dp),
-                                        )
-                                        LtrText(
-                                            text = category.title,
-                                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                            color = if (isCategoryOpen) p.gold else p.textPrimary,
-                                        )
-                                    }
-                                    LtrText(
-                                        text = category.subtitleEn,
-                                        style = MaterialTheme.typography.labelSmall.copy(lineHeight = 16.sp),
-                                        color = p.textSecondary,
-                                    )
-                                }
-
-                                Column(
-                                    horizontalAlignment = Alignment.End,
-                                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                                ) {
-                                    Surface(
-                                        color = if (isCategoryOpen) p.goldSoft else p.panel,
-                                        shape = RoundedCornerShape(999.dp),
-                                        border = BorderStroke(
-                                            0.7.dp,
-                                            if (isCategoryOpen) p.gold.copy(alpha = 0.45f) else p.panelBorder,
-                                        ),
-                                    ) {
-                                        val pageLabel = if (category.pages.size == 1) "1 Page" else "${category.pages.size} Pages"
-                                        LtrText(
-                                            text = pageLabel,
-                                            style = MaterialTheme.typography.labelSmall.copy(
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                            ),
-                                            color = if (isCategoryOpen) p.gold else p.textSecondary,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                        )
-                                    }
-                                    Icon(
-                                        imageVector = Icons.Outlined.ExpandMore,
-                                        contentDescription = if (isCategoryOpen) "Collapse" else "Expand",
-                                        tint = if (isCategoryOpen) p.gold else p.textSecondary,
-                                        modifier = Modifier
-                                            .size(20.dp)
-                                            .rotate(catChevronAngle),
-                                    )
-                                }
-                            }
-
-                            // Expandable Body: Direct Parameters (1-page) OR Ordered Page Directory (multi-page)
-                            AnimatedVisibility(
-                                visible = isCategoryOpen,
-                                enter = expandVertically(tween(240)) + fadeIn(tween(200)),
-                                exit = shrinkVertically(tween(200)) + fadeOut(tween(150)),
-                            ) {
-                                Column(
+                                Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(start = 8.dp, end = 8.dp, bottom = 10.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        .clickable {
+                                            expandedMainSection = if (isSectionOpen) null else mainSection
+                                        }
+                                        .padding(horizontal = 13.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(11.dp),
                                 ) {
-                                    HorizontalDivider(color = p.hairline)
-
-                                    if (category.pages.size == 1) {
-                                        ControllerPageParameters(
-                                            page = category.pages.first(),
-                                            valueByKey = valueByKey,
-                                            userRole = userRole,
-                                            operatorPermissions = operatorPermissions,
-                                            liveSnap = liveSnap,
-                                            writingKey = cfgSnap.writingKey,
-                                            isConnected = isConnected,
-                                            isWriting = isWriting,
-                                            hasDrivers = hasDrivers,
-                                            visiblePumpNumbers = visiblePumpNumbers,
-                                            onRequestPendingEdit = { pendingEdit = it },
-                                            onRequestHelp = { def, raw ->
-                                                val cur = raw?.let { Bpc02Catalog.formatValue(def, it) }
-                                                activeHelp = Bpc02Catalog.helpFor(def) to cur
-                                            },
-                                        )
-                                    } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(if (isSectionOpen) secAccent.copy(alpha = 0.16f) else p.panel)
+                                            .border(
+                                                0.9.dp,
+                                                if (isSectionOpen) secAccent.copy(alpha = 0.58f) else p.panelBorder,
+                                                RoundedCornerShape(10.dp),
+                                            ),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
                                         Text(
-                                            text = "صفحات بخش ${category.title} (برای مشاهده گزینه‌ها ضربه بزنید):",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = p.textSecondary,
-                                            modifier = Modifier.padding(horizontal = 2.dp, vertical = 2.dp),
+                                            text = "${mainSection.index}",
+                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                            color = if (isSectionOpen) secAccent else p.textPrimary,
                                         )
+                                    }
 
-                                        category.pages.forEachIndexed { pageIdx, page ->
-                                            val isPageOpen = expandedPageNumber == page.number
-                                            val pageChevronAngle by animateFloatAsState(
-                                                targetValue = if (isPageOpen) 180f else 0f,
-                                                animationSpec = tween(200),
-                                                label = "page_chevron_${category.index}_${page.number}",
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        ) {
+                                            Icon(
+                                                imageVector = mainMenuIcon(mainSection),
+                                                contentDescription = null,
+                                                tint = if (isSectionOpen) secAccent else p.textSecondary,
+                                                modifier = Modifier.size(16.dp),
                                             )
-                                            val hasEditableForUser = remember(page, userRole, operatorPermissions) {
-                                                page.registerKeys.any { key ->
-                                                    userRole.canWriteRegister(Bpc02RegisterMap.byKey(key), operatorPermissions)
-                                                }
+                                            LtrText(
+                                                text = mainSection.title,
+                                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                                color = if (isSectionOpen) secAccent else p.textPrimary,
+                                            )
+                                        }
+                                        LtrText(
+                                            text = mainSection.subtitleEn,
+                                            style = MaterialTheme.typography.labelSmall.copy(lineHeight = 15.sp),
+                                            color = p.textSecondary,
+                                        )
+                                    }
+
+                                    Icon(
+                                        imageVector = Icons.Outlined.ExpandMore,
+                                        contentDescription = if (isSectionOpen) "Collapse" else "Expand",
+                                        tint = if (isSectionOpen) secAccent else p.textSecondary,
+                                        modifier = Modifier
+                                            .size(20.dp)
+                                            .rotate(secChevronAngle),
+                                    )
+                                }
+
+                                AnimatedVisibility(
+                                    visible = isSectionOpen,
+                                    enter = expandVertically(tween(240)) + fadeIn(tween(200)),
+                                    exit = shrinkVertically(tween(200)) + fadeOut(tween(150)),
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(start = 10.dp, end = 10.dp, bottom = 12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(9.dp),
+                                    ) {
+                                        HorizontalDivider(color = p.hairline)
+
+                                        when (mainSection) {
+                                            Bpc02Catalog.MainMenuSection.SYSTEM -> {
+                                                SystemMenuSectionBody(
+                                                    contrastRaw = valueByKey["lcd_contrast"],
+                                                    onRequestHelp = { def, raw ->
+                                                        val cur = raw?.let { Bpc02Catalog.formatValue(def, it) }
+                                                        activeHelp = Bpc02Catalog.helpFor(def) to cur
+                                                    },
+                                                )
                                             }
-
-                                            Column(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .clip(RoundedCornerShape(12.dp))
-                                                    .background(p.panel)
-                                                    .border(
-                                                        width = 0.85.dp,
-                                                        color = if (isPageOpen) p.cyan.copy(alpha = 0.55f) else p.panelBorder,
-                                                        shape = RoundedCornerShape(12.dp),
-                                                    ),
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .clickable {
-                                                            expandedPageNumber = if (isPageOpen) null else page.number
+                                            Bpc02Catalog.MainMenuSection.INPUT -> {
+                                                InputMenuSectionBody(
+                                                    snapshot = liveSnap,
+                                                    onRequestDriveInputHelp = {
+                                                        val cur = when (liveSnap?.drStatus) {
+                                                            true -> "ON"
+                                                            false -> "OFF"
+                                                            null -> null
                                                         }
-                                                        .padding(horizontal = 11.dp, vertical = 10.dp),
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                                ) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(28.dp)
-                                                            .clip(RoundedCornerShape(8.dp))
-                                                            .background(if (isPageOpen) p.cyanSoft else p.panelElevated)
-                                                            .border(
-                                                                0.8.dp,
-                                                                if (isPageOpen) p.cyan.copy(alpha = 0.55f) else p.panelBorder,
-                                                                RoundedCornerShape(8.dp),
-                                                            ),
-                                                        contentAlignment = Alignment.Center,
-                                                    ) {
-                                                        Text(
-                                                            text = "${page.number}",
-                                                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                                            color = if (isPageOpen) p.cyan else p.textSecondary,
+                                                        activeHelp = Bpc02Catalog.conceptHelp("dr_status") to cur
+                                                    },
+                                                )
+                                            }
+                                            Bpc02Catalog.MainMenuSection.TIME_DATE -> {
+                                                TimeDateMenuSectionBody(snapshot = liveSnap)
+                                            }
+                                            Bpc02Catalog.MainMenuSection.HARDWARE -> {
+                                                // Exact 8 Physical Hardware Categories (`photo_9` & `photo_10`)
+                                                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                                                    Bpc02Catalog.MenuCategory.entries.forEach { category ->
+                                                        val isCategoryOpen = expandedCategory == category
+                                                        val catChevronAngle by animateFloatAsState(
+                                                            targetValue = if (isCategoryOpen) 180f else 0f,
+                                                            animationSpec = tween(220),
+                                                            label = "cat_chevron_${category.index}",
                                                         )
-                                                    }
+                                                        val borderColor = if (isCategoryOpen) p.gold.copy(alpha = 0.55f) else p.panelBorder
+                                                        val headerBg = if (isCategoryOpen && p.isDark) Color(0xFF1A2233) else p.panel
 
-                                                    Column(
-                                                        modifier = Modifier.weight(1f),
-                                                        verticalArrangement = Arrangement.spacedBy(1.dp),
-                                                    ) {
-                                                        LtrText(
-                                                            text = "Page ${page.number} — ${page.title}",
-                                                            style = MaterialTheme.typography.bodyMedium.copy(
-                                                                fontWeight = if (isPageOpen) FontWeight.Bold else FontWeight.SemiBold,
-                                                            ),
-                                                            color = if (isPageOpen) p.cyan else p.textPrimary,
-                                                        )
-                                                        LtrText(
-                                                            text = if (hasEditableForUser) "Editable" else "Read-Only",
-                                                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                                            color = if (hasEditableForUser) p.gold.copy(alpha = 0.88f) else p.textMuted,
-                                                        )
-                                                    }
+                                                        val effectivePages = remember(
+                                                            category,
+                                                            liveControlStatus,
+                                                            showAllControlPages,
+                                                            visiblePumpNumbers,
+                                                        ) {
+                                                            if (category != Bpc02Catalog.MenuCategory.CONTROL) {
+                                                                category.pages
+                                                            } else {
+                                                                category.pages.filter { page ->
+                                                                    when {
+                                                                        showAllControlPages -> true
+                                                                        liveControlStatus == 2 -> when (page.controlMode) {
+                                                                            Bpc02Catalog.ControlPageMode.ALWAYS -> true
+                                                                            Bpc02Catalog.ControlPageMode.ON_OFF_ONLY -> {
+                                                                                val pumpNum = page.title.removePrefix("Pump ").toIntOrNull()
+                                                                                val maxVisible = (visiblePumpNumbers.maxOrNull() ?: 4).coerceAtMost(4)
+                                                                                pumpNum == null || pumpNum <= maxVisible
+                                                                            }
+                                                                            Bpc02Catalog.ControlPageMode.PID_ONLY -> false
+                                                                        }
+                                                                        liveControlStatus == 1 ->
+                                                                            page.controlMode != Bpc02Catalog.ControlPageMode.ON_OFF_ONLY
+                                                                        else -> true
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
 
-                                                    Icon(
-                                                        imageVector = Icons.Outlined.ExpandMore,
-                                                        contentDescription = if (isPageOpen) "Collapse" else "Expand",
-                                                        tint = if (isPageOpen) p.cyan else p.textSecondary,
-                                                        modifier = Modifier
-                                                            .size(19.dp)
-                                                            .rotate(pageChevronAngle),
-                                                    )
-                                                }
-
-                                                AnimatedVisibility(
-                                                    visible = isPageOpen,
-                                                    enter = expandVertically(tween(220)) + fadeIn(tween(180)),
-                                                    exit = shrinkVertically(tween(180)) + fadeOut(tween(140)),
-                                                ) {
-                                                    Column(
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .padding(start = 9.dp, end = 9.dp, bottom = 10.dp),
-                                                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                                                    ) {
-                                                        HorizontalDivider(color = p.hairline)
-
-                                                        ControllerPageParameters(
-                                                            page = page,
-                                                            valueByKey = valueByKey,
-                                                            userRole = userRole,
-                                                            operatorPermissions = operatorPermissions,
-                                                            liveSnap = liveSnap,
-                                                            writingKey = cfgSnap.writingKey,
-                                                            isConnected = isConnected,
-                                                            isWriting = isWriting,
-                                                            hasDrivers = hasDrivers,
-                                                            visiblePumpNumbers = visiblePumpNumbers,
-                                                            onRequestPendingEdit = { pendingEdit = it },
-                                                            onRequestHelp = { def, raw ->
-                                                                val cur = raw?.let { Bpc02Catalog.formatValue(def, it) }
-                                                                activeHelp = Bpc02Catalog.helpFor(def) to cur
-                                                            },
-                                                        )
-
-                                                        // Sequential page stepper (< Prev | X / Y | Next >)
-                                                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                                                        Column(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .clip(RoundedCornerShape(14.dp))
+                                                                .background(headerBg)
+                                                                .border(0.9.dp, borderColor, RoundedCornerShape(14.dp)),
+                                                        ) {
+                                                            // Category Row Header (1..8, Exact Official English Title)
                                                             Row(
                                                                 modifier = Modifier
                                                                     .fillMaxWidth()
-                                                                    .padding(top = 4.dp),
+                                                                    .clickable {
+                                                                        if (isCategoryOpen) {
+                                                                            expandedCategory = null
+                                                                            expandedPageNumber = null
+                                                                        } else {
+                                                                            expandedCategory = category
+                                                                            expandedPageNumber = if (effectivePages.size == 1) {
+                                                                                effectivePages.first().number
+                                                                            } else {
+                                                                                null
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    .padding(horizontal = 12.dp, vertical = 11.dp),
                                                                 verticalAlignment = Alignment.CenterVertically,
-                                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                                horizontalArrangement = Arrangement.spacedBy(10.dp),
                                                             ) {
-                                                                PageArrowButton(
-                                                                    icon = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
-                                                                    label = "Prev",
-                                                                    iconBeforeLabel = true,
-                                                                    enabled = pageIdx > 0,
-                                                                    onClick = {
-                                                                        if (pageIdx > 0) {
-                                                                            expandedPageNumber = category.pages[pageIdx - 1].number
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .size(34.dp)
+                                                                        .clip(RoundedCornerShape(10.dp))
+                                                                        .background(if (isCategoryOpen) p.goldSoft else p.panelElevated)
+                                                                        .border(
+                                                                            width = 0.85.dp,
+                                                                            color = if (isCategoryOpen) p.gold.copy(alpha = 0.60f) else p.panelBorder,
+                                                                            shape = RoundedCornerShape(10.dp),
+                                                                        ),
+                                                                    contentAlignment = Alignment.Center,
+                                                                ) {
+                                                                    Text(
+                                                                        text = "${category.index}",
+                                                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                                                        color = if (isCategoryOpen) p.gold else p.textPrimary,
+                                                                    )
+                                                                }
+
+                                                                Column(
+                                                                    modifier = Modifier.weight(1f),
+                                                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                                                ) {
+                                                                    Row(
+                                                                        verticalAlignment = Alignment.CenterVertically,
+                                                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                                    ) {
+                                                                        Icon(
+                                                                            imageVector = categoryIcon(category),
+                                                                            contentDescription = null,
+                                                                            tint = if (isCategoryOpen) p.gold else p.cyan,
+                                                                            modifier = Modifier.size(15.dp),
+                                                                        )
+                                                                        LtrText(
+                                                                            text = category.title,
+                                                                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                                                            color = if (isCategoryOpen) p.gold else p.textPrimary,
+                                                                        )
+                                                                    }
+                                                                    LtrText(
+                                                                        text = category.subtitleEn,
+                                                                        style = MaterialTheme.typography.labelSmall.copy(lineHeight = 15.sp),
+                                                                        color = p.textSecondary,
+                                                                    )
+                                                                }
+
+                                                                Column(
+                                                                    horizontalAlignment = Alignment.End,
+                                                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                                                ) {
+                                                                    Surface(
+                                                                        color = if (isCategoryOpen) p.goldSoft else p.panelElevated,
+                                                                        shape = RoundedCornerShape(999.dp),
+                                                                        border = BorderStroke(
+                                                                            0.7.dp,
+                                                                            if (isCategoryOpen) p.gold.copy(alpha = 0.45f) else p.panelBorder,
+                                                                        ),
+                                                                    ) {
+                                                                        val pageLabel = when {
+                                                                            category == Bpc02Catalog.MenuCategory.RESET_TO_FACTORY -> "Keypad"
+                                                                            effectivePages.size == 1 -> "1 Page"
+                                                                            else -> "${effectivePages.size} Pages"
                                                                         }
-                                                                    },
-                                                                )
-                                                                Text(
-                                                                    text = "${page.number} / ${category.pages.size}",
-                                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                                                    color = p.gold,
-                                                                    textAlign = TextAlign.Center,
-                                                                )
-                                                                PageArrowButton(
-                                                                    icon = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                                                                    label = "Next",
-                                                                    iconBeforeLabel = false,
-                                                                    enabled = pageIdx < category.pages.lastIndex,
-                                                                    onClick = {
-                                                                        if (pageIdx < category.pages.lastIndex) {
-                                                                            expandedPageNumber = category.pages[pageIdx + 1].number
+                                                                        LtrText(
+                                                                            text = pageLabel,
+                                                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                                                fontSize = 10.sp,
+                                                                                fontWeight = FontWeight.SemiBold,
+                                                                            ),
+                                                                            color = if (isCategoryOpen) p.gold else p.textSecondary,
+                                                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                                                        )
+                                                                    }
+                                                                    Icon(
+                                                                        imageVector = Icons.Outlined.ExpandMore,
+                                                                        contentDescription = if (isCategoryOpen) "Collapse" else "Expand",
+                                                                        tint = if (isCategoryOpen) p.gold else p.textSecondary,
+                                                                        modifier = Modifier
+                                                                            .size(19.dp)
+                                                                            .rotate(catChevronAngle),
+                                                                    )
+                                                                }
+                                                            }
+
+                                                            // Expandable Category Body
+                                                            AnimatedVisibility(
+                                                                visible = isCategoryOpen,
+                                                                enter = expandVertically(tween(240)) + fadeIn(tween(200)),
+                                                                exit = shrinkVertically(tween(200)) + fadeOut(tween(150)),
+                                                            ) {
+                                                                Column(
+                                                                    modifier = Modifier
+                                                                        .fillMaxWidth()
+                                                                        .padding(start = 8.dp, end = 8.dp, bottom = 10.dp),
+                                                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                                                ) {
+                                                                    HorizontalDivider(color = p.hairline)
+
+                                                                    if (category == Bpc02Catalog.MenuCategory.RESET_TO_FACTORY) {
+                                                                        ResetFactorySectionBody(
+                                                                            onRequestHelp = {
+                                                                                activeHelp = Bpc02Catalog.conceptHelp("reset_to_factory") to null
+                                                                            },
+                                                                        )
+                                                                    } else if (effectivePages.size == 1) {
+                                                                        ControllerPageParameters(
+                                                                            page = effectivePages.first(),
+                                                                            valueByKey = valueByKey,
+                                                                            liveControlStatus = liveControlStatus,
+                                                                            userRole = userRole,
+                                                                            operatorPermissions = operatorPermissions,
+                                                                            liveSnap = liveSnap,
+                                                                            writingKey = cfgSnap.writingKey,
+                                                                            isConnected = isConnected,
+                                                                            isWriting = isWriting,
+                                                                            hasDrivers = hasDrivers,
+                                                                            visiblePumpNumbers = visiblePumpNumbers,
+                                                                            onRequestPendingEdit = { pendingEdit = it },
+                                                                            onRequestHelp = { def, raw ->
+                                                                                val cur = raw?.let { Bpc02Catalog.formatValue(def, it) }
+                                                                                activeHelp = Bpc02Catalog.helpFor(def) to cur
+                                                                            },
+                                                                        )
+                                                                    } else {
+                                                                        // Mode awareness bar inside `4. Control` (PID vs ON/OFF pages)
+                                                                        if (category == Bpc02Catalog.MenuCategory.CONTROL) {
+                                                                            Row(
+                                                                                modifier = Modifier
+                                                                                    .fillMaxWidth()
+                                                                                    .clip(RoundedCornerShape(10.dp))
+                                                                                    .background(p.panelElevated)
+                                                                                    .border(0.8.dp, p.panelBorder, RoundedCornerShape(10.dp))
+                                                                                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                                            ) {
+                                                                                LtrText(
+                                                                                    text = "Mode: ${Bpc02Catalog.controlStatusLabel(liveControlStatus)}",
+                                                                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                                                    color = p.gold,
+                                                                                )
+                                                                                if (liveControlStatus == 1 || liveControlStatus == 2) {
+                                                                                    Surface(
+                                                                                        onClick = { showAllControlPages = !showAllControlPages },
+                                                                                        color = if (showAllControlPages) p.cyanSoft else p.panel,
+                                                                                        shape = RoundedCornerShape(8.dp),
+                                                                                        border = BorderStroke(
+                                                                                            0.8.dp,
+                                                                                            if (showAllControlPages) p.cyan.copy(alpha = 0.55f) else p.panelBorder,
+                                                                                        ),
+                                                                                    ) {
+                                                                                        Text(
+                                                                                            text = if (showAllControlPages) "فقط مد فعلی" else "نمایش همه صفحات",
+                                                                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                                                                            color = if (showAllControlPages) p.cyan else p.textSecondary,
+                                                                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                                                        )
+                                                                                    }
+                                                                                }
+                                                                            }
                                                                         }
-                                                                    },
-                                                                )
+
+                                                                        effectivePages.forEachIndexed { pageIdx, page ->
+                                                                            val displayNum = pageIdx + 1
+                                                                            val isPageOpen = expandedPageNumber == page.number
+                                                                            val pageChevronAngle by animateFloatAsState(
+                                                                                targetValue = if (isPageOpen) 180f else 0f,
+                                                                                animationSpec = tween(200),
+                                                                                label = "page_chevron_${category.index}_${page.number}",
+                                                                            )
+                                                                            val hasEditableForUser = remember(page, userRole, operatorPermissions) {
+                                                                                page.displayRegisterKeys.any { key ->
+                                                                                    userRole.canWriteRegister(Bpc02RegisterMap.byKey(key), operatorPermissions)
+                                                                                }
+                                                                            }
+
+                                                                            Column(
+                                                                                modifier = Modifier
+                                                                                    .fillMaxWidth()
+                                                                                    .clip(RoundedCornerShape(12.dp))
+                                                                                    .background(p.panelElevated)
+                                                                                    .border(
+                                                                                        width = 0.85.dp,
+                                                                                        color = if (isPageOpen) p.cyan.copy(alpha = 0.55f) else p.panelBorder,
+                                                                                        shape = RoundedCornerShape(12.dp),
+                                                                                    ),
+                                                                            ) {
+                                                                                Row(
+                                                                                    modifier = Modifier
+                                                                                        .fillMaxWidth()
+                                                                                        .clickable {
+                                                                                            expandedPageNumber = if (isPageOpen) null else page.number
+                                                                                        }
+                                                                                        .padding(horizontal = 11.dp, vertical = 10.dp),
+                                                                                    verticalAlignment = Alignment.CenterVertically,
+                                                                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                                                                ) {
+                                                                                    Box(
+                                                                                        modifier = Modifier
+                                                                                            .size(28.dp)
+                                                                                            .clip(RoundedCornerShape(8.dp))
+                                                                                            .background(if (isPageOpen) p.cyanSoft else p.panel)
+                                                                                            .border(
+                                                                                                0.8.dp,
+                                                                                                if (isPageOpen) p.cyan.copy(alpha = 0.55f) else p.panelBorder,
+                                                                                                RoundedCornerShape(8.dp),
+                                                                                            ),
+                                                                                        contentAlignment = Alignment.Center,
+                                                                                    ) {
+                                                                                        Text(
+                                                                                            text = "$displayNum",
+                                                                                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                                                            color = if (isPageOpen) p.cyan else p.textSecondary,
+                                                                                        )
+                                                                                    }
+
+                                                                                    Column(
+                                                                                        modifier = Modifier.weight(1f),
+                                                                                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                                                                                    ) {
+                                                                                        LtrText(
+                                                                                            text = page.title,
+                                                                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                                                                fontWeight = if (isPageOpen) FontWeight.Bold else FontWeight.SemiBold,
+                                                                                            ),
+                                                                                            color = if (isPageOpen) p.cyan else p.textPrimary,
+                                                                                        )
+                                                                                        Row(
+                                                                                            verticalAlignment = Alignment.CenterVertically,
+                                                                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                                                        ) {
+                                                                                            LtrText(
+                                                                                                text = if (hasEditableForUser) "Editable" else "Read-Only",
+                                                                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                                                                                color = if (hasEditableForUser) p.gold.copy(alpha = 0.88f) else p.textMuted,
+                                                                                            )
+                                                                                            if (page.controlMode == Bpc02Catalog.ControlPageMode.ON_OFF_ONLY) {
+                                                                                                LtrText(
+                                                                                                    text = "• ON/OFF",
+                                                                                                    style = MaterialTheme.typography.labelSmall.copy(
+                                                                                                        fontSize = 10.sp,
+                                                                                                        fontWeight = FontWeight.Bold,
+                                                                                                    ),
+                                                                                                    color = p.cyan,
+                                                                                                )
+                                                                                            } else if (page.controlMode == Bpc02Catalog.ControlPageMode.PID_ONLY) {
+                                                                                                LtrText(
+                                                                                                    text = "• PID",
+                                                                                                    style = MaterialTheme.typography.labelSmall.copy(
+                                                                                                        fontSize = 10.sp,
+                                                                                                        fontWeight = FontWeight.Bold,
+                                                                                                    ),
+                                                                                                    color = p.ok,
+                                                                                                )
+                                                                                            }
+                                                                                        }
+                                                                                    }
+
+                                                                                    Icon(
+                                                                                        imageVector = Icons.Outlined.ExpandMore,
+                                                                                        contentDescription = if (isPageOpen) "Collapse" else "Expand",
+                                                                                        tint = if (isPageOpen) p.cyan else p.textSecondary,
+                                                                                        modifier = Modifier
+                                                                                            .size(19.dp)
+                                                                                            .rotate(pageChevronAngle),
+                                                                                    )
+                                                                                }
+
+                                                                                AnimatedVisibility(
+                                                                                    visible = isPageOpen,
+                                                                                    enter = expandVertically(tween(220)) + fadeIn(tween(180)),
+                                                                                    exit = shrinkVertically(tween(180)) + fadeOut(tween(140)),
+                                                                                ) {
+                                                                                    Column(
+                                                                                        modifier = Modifier
+                                                                                            .fillMaxWidth()
+                                                                                            .padding(start = 9.dp, end = 9.dp, bottom = 10.dp),
+                                                                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                                                                    ) {
+                                                                                        HorizontalDivider(color = p.hairline)
+
+                                                                                        ControllerPageParameters(
+                                                                                            page = page,
+                                                                                            valueByKey = valueByKey,
+                                                                                            liveControlStatus = liveControlStatus,
+                                                                                            userRole = userRole,
+                                                                                            operatorPermissions = operatorPermissions,
+                                                                                            liveSnap = liveSnap,
+                                                                                            writingKey = cfgSnap.writingKey,
+                                                                                            isConnected = isConnected,
+                                                                                            isWriting = isWriting,
+                                                                                            hasDrivers = hasDrivers,
+                                                                                            visiblePumpNumbers = visiblePumpNumbers,
+                                                                                            onRequestPendingEdit = { pendingEdit = it },
+                                                                                            onRequestHelp = { def, raw ->
+                                                                                                val cur = raw?.let { Bpc02Catalog.formatValue(def, it) }
+                                                                                                activeHelp = Bpc02Catalog.helpFor(def) to cur
+                                                                                            },
+                                                                                        )
+
+                                                                                        // Sequential page stepper (< Prev | X / Y | Next >)
+                                                                                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                                                                                            Row(
+                                                                                                modifier = Modifier
+                                                                                                    .fillMaxWidth()
+                                                                                                    .padding(top = 4.dp),
+                                                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                                                            ) {
+                                                                                                PageArrowButton(
+                                                                                                    icon = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+                                                                                                    label = "Prev",
+                                                                                                    iconBeforeLabel = true,
+                                                                                                    enabled = pageIdx > 0,
+                                                                                                    onClick = {
+                                                                                                        if (pageIdx > 0) {
+                                                                                                            expandedPageNumber = effectivePages[pageIdx - 1].number
+                                                                                                        }
+                                                                                                    },
+                                                                                                )
+                                                                                                Text(
+                                                                                                    text = "$displayNum / ${effectivePages.size}",
+                                                                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                                                                    color = p.gold,
+                                                                                                    textAlign = TextAlign.Center,
+                                                                                                )
+                                                                                                PageArrowButton(
+                                                                                                    icon = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                                                                                                    label = "Next",
+                                                                                                    iconBeforeLabel = false,
+                                                                                                    enabled = pageIdx < effectivePages.lastIndex,
+                                                                                                    onClick = {
+                                                                                                        if (pageIdx < effectivePages.lastIndex) {
+                                                                                                            expandedPageNumber = effectivePages[pageIdx + 1].number
+                                                                                                        }
+                                                                                                    },
+                                                                                                )
+                                                                                            }
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -1068,7 +1319,6 @@ fun ControlAndConfigScreen(
                     }
                 }
             }
-        }
         }
 
         // 3. Portable Configuration Backup (Import / Export JSON) — last option under Hardware Menu
@@ -1167,9 +1417,258 @@ fun ControlAndConfigScreen(
 }
 
 @Composable
+private fun SystemMenuSectionBody(
+    contrastRaw: Int?,
+    onRequestHelp: (RegisterDefinition, Int?) -> Unit,
+) {
+    val p = LocalScadaPalette.current
+    val contrastDef = remember { Bpc02RegisterMap.byKey("lcd_contrast") }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(p.panel)
+            .border(0.85.dp, p.panelBorder, RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+    ) {
+        // Exact order from physical controller `photo_5` (1. System):
+        // Password Setting, Blight, Contrast, Beep On Click, Beep On Error
+        LcdOnlyMenuRow(title = "Password Setting", value = "Keypad Only")
+        HorizontalDivider(color = p.hairline)
+        LcdOnlyMenuRow(title = "Blight", value = "Keypad Only")
+        HorizontalDivider(color = p.hairline)
+        ReadOnlyParameterRow(
+            reading = RegisterReading(contrastDef, contrastRaw),
+            onClickHelp = { onRequestHelp(contrastDef, contrastRaw) },
+        )
+        HorizontalDivider(color = p.hairline)
+        LcdOnlyMenuRow(title = "Beep On Click", value = "Keypad Only")
+        HorizontalDivider(color = p.hairline)
+        LcdOnlyMenuRow(title = "Beep On Error", value = "Keypad Only")
+    }
+    Text(
+        text = "مقدار Contrast به‌صورت زنده از کنترلر خوانده می‌شود؛ سایر گزینه‌های بخش System صرفاً روی نمایشگر خود دستگاه تنظیم می‌شوند.",
+        style = MaterialTheme.typography.labelSmall.copy(lineHeight = 16.sp),
+        color = p.textSecondary,
+    )
+}
+
+@Composable
+private fun InputMenuSectionBody(
+    snapshot: ControllerSnapshot?,
+    onRequestDriveInputHelp: () -> Unit,
+) {
+    val p = LocalScadaPalette.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(p.panel)
+            .border(0.85.dp, p.panelBorder, RoundedCornerShape(12.dp))
+            .padding(11.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        // Exact physical `Inputs` LCD layout (`photo_11`): Drive | PR1..4 | MFI1..4
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                LtrText(
+                    text = "Inputs (Live Mirror)",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    color = p.cyan,
+                )
+                ParameterHelpIcon(onClick = onRequestDriveInputHelp)
+            }
+            StatusBadge(
+                text = if (snapshot?.drStatus == true) "Drive: ON" else if (snapshot?.drStatus == false) "Drive: OFF" else "Drive: —",
+                tone = if (snapshot?.drStatus == true) BadgeTone.OK else BadgeTone.NEUTRAL,
+            )
+        }
+
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (rowIdx in 0 until 4) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        // Col 1: Drive (row 0 only, matching photo_11)
+                        if (rowIdx == 0) {
+                            MiniLcdInputPill(
+                                label = "Drive",
+                                active = snapshot?.drStatus,
+                                activeColor = p.ok,
+                                modifier = Modifier.weight(1f),
+                            )
+                        } else {
+                            Spacer(Modifier.weight(1f))
+                        }
+                        // Col 2: PR1..PR4
+                        MiniLcdInputPill(
+                            label = "PR${rowIdx + 1}",
+                            active = snapshot?.prInputs?.getOrNull(rowIdx),
+                            activeColor = p.cyan,
+                            modifier = Modifier.weight(1f),
+                        )
+                        // Col 3: MFI1..MFI4
+                        MiniLcdInputPill(
+                            label = "MFI${rowIdx + 1}",
+                            active = snapshot?.mfiInputs?.getOrNull(rowIdx),
+                            activeColor = p.gold,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MiniLcdInputPill(
+    label: String,
+    active: Boolean?,
+    activeColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    val p = LocalScadaPalette.current
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(9.dp))
+            .background(if (active == true) activeColor.copy(alpha = 0.14f) else p.panelElevated)
+            .border(0.8.dp, if (active == true) activeColor.copy(alpha = 0.52f) else p.panelBorder, RoundedCornerShape(9.dp))
+            .padding(horizontal = 8.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        PlcLedBead(active = active, size = 8.dp, activeColor = activeColor)
+        Text(
+            text = label,
+            style = MonoStyle.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
+            color = if (active == true) activeColor else p.textPrimary,
+        )
+    }
+}
+
+@Composable
+private fun TimeDateMenuSectionBody(snapshot: ControllerSnapshot?) {
+    val p = LocalScadaPalette.current
+    val batteryFault = snapshot?.activeSystemErrors2?.contains(SystemErrorBit2.BATTERY_VOLTAGE) == true
+    val hasWord2 = snapshot?.systemErrorWord2 != null
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(p.panel)
+            .border(0.85.dp, p.panelBorder, RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 9.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            LtrText("VBat (Backup Battery)", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold), color = p.textPrimary)
+            StatusBadge(
+                text = when {
+                    !hasWord2 -> "Unknown"
+                    batteryFault -> "Low Voltage!"
+                    else -> "Normal"
+                },
+                tone = when {
+                    !hasWord2 -> BadgeTone.NEUTRAL
+                    batteryFault -> BadgeTone.FAULT
+                    else -> BadgeTone.OK
+                },
+                pulsing = batteryFault,
+            )
+        }
+        HorizontalDivider(color = p.hairline)
+        LcdOnlyMenuRow(title = "Time", value = "LCD Local")
+        HorizontalDivider(color = p.hairline)
+        LcdOnlyMenuRow(title = "Date", value = "LCD Local")
+    }
+    Text(
+        text = "ساعت و تاریخ داخلی کنترلر (Time/Date) در نقشه ModBus ارائه نشده و مستقیماً از نمایشگر دستگاه تنظیم می‌شود؛ سلامت باتری پشتیبان (VBat) به‌صورت خودکار پایش می‌گردد.",
+        style = MaterialTheme.typography.labelSmall.copy(lineHeight = 16.sp),
+        color = p.textSecondary,
+    )
+}
+
+@Composable
+private fun ResetFactorySectionBody(onRequestHelp: () -> Unit) {
+    val p = LocalScadaPalette.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(p.warningBg)
+            .border(0.85.dp, p.warning.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Icon(Icons.Outlined.Lock, contentDescription = null, tint = p.warning, modifier = Modifier.size(16.dp))
+                LtrText(
+                    text = "Reset to Factory — Keypad Only",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    color = p.warning,
+                )
+            }
+            ParameterHelpIcon(onClick = onRequestHelp)
+        }
+        Text(
+            text = "به دلایل ایمنی، دستور بازگشت به تنظیمات کارخانه از طریق ModBus غیرفعال است و تنها به‌صورت حضوری از صفحه‌کلید روی کنترلر (Menu › 4. Hardware › 8. Reset to Factory) قابل انجام است.",
+            style = MaterialTheme.typography.labelSmall.copy(lineHeight = 17.sp),
+            color = p.textPrimary,
+        )
+    }
+}
+
+@Composable
+private fun LcdOnlyMenuRow(title: String, value: String) {
+    val p = LocalScadaPalette.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 9.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        LtrText(
+            text = title,
+            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+            color = p.textPrimary,
+        )
+        LtrText(
+            text = value,
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+            color = p.textMuted,
+        )
+    }
+}
+
+@Composable
 private fun ControllerPageParameters(
     page: Bpc02Catalog.MenuPage,
     valueByKey: Map<String, Int?>,
+    liveControlStatus: Int?,
     userRole: UserRole,
     operatorPermissions: OperatorPermissions,
     liveSnap: ControllerSnapshot?,
@@ -1182,7 +1681,7 @@ private fun ControllerPageParameters(
     onRequestHelp: (RegisterDefinition, Int?) -> Unit,
 ) {
     val p = LocalScadaPalette.current
-    val keysToShow = page.registerKeys.filter { key ->
+    val keysToShow = page.displayRegisterKeys.filter { key ->
         if (key == Bpc02RegisterMap.DRIVE_ACTIVATION) {
             hasDrivers
         } else if (key.startsWith("pump_") && key.endsWith("_activation")) {
@@ -1201,6 +1700,13 @@ private fun ControllerPageParameters(
             val roleCanWrite = userRole.canWriteRegister(def, operatorPermissions)
             val canEditParam = roleCanWrite && isConnected && !isWriting
             val isAdminRestricted = def.isWritable && !roleCanWrite
+
+            // Contextual exact LCD label: on `Pump 1` page Word 4096 is shown as "On Pressure" (`photo_2`, `photo_7`)
+            val labelOverride = when {
+                def.key == Bpc02RegisterMap.SYSTEM_PRESSURE_SETPOINT && page.title == "Pump 1" -> "On Pressure"
+                def.key == Bpc02RegisterMap.SYSTEM_PRESSURE_SETPOINT && liveControlStatus == 2 -> "On Pressure (P1)"
+                else -> null
+            }
 
             when {
                 def.table == VendorTable.BIT && def.isWritable -> {
@@ -1223,18 +1729,56 @@ private fun ControllerPageParameters(
                         onClickHelp = { onRequestHelp(def, raw) },
                     )
                 }
+                // Inline radio-option selector matching `photo_4` (1. Status : Disable / PID / ON/OFF)
                 def.key == Bpc02RegisterMap.CONTROL_STATUS -> {
-                    ParameterRow(
-                        reading = reading,
-                        actionLabel = "Select",
-                        canEdit = canEditParam,
-                        isAdminRestricted = isAdminRestricted,
-                        isWritingThis = writingKey == key,
-                        onClickEdit = {
-                            onRequestPendingEdit(PendingEdit.EnumEdit(def, raw))
-                        },
-                        onClickHelp = { onRequestHelp(def, raw) },
-                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                LtrText(
+                                    text = "1. Status",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = p.textPrimary,
+                                )
+                                ParameterHelpIcon(onClick = { onRequestHelp(def, raw) })
+                            }
+                            if (writingKey == key) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = p.gold)
+                            } else {
+                                StatusBadge(
+                                    text = Bpc02Catalog.controlStatusLabel(raw),
+                                    tone = when (raw) {
+                                        1, 2 -> BadgeTone.OK
+                                        0 -> BadgeTone.WARNING
+                                        else -> BadgeTone.NEUTRAL
+                                    },
+                                )
+                            }
+                        }
+                        DgpSegmentedControl(
+                            items = listOf(0, 1, 2),
+                            selected = raw ?: -1,
+                            label = { mode -> Bpc02Catalog.controlStatusLabel(mode) },
+                            onSelect = { target ->
+                                if (raw != target) {
+                                    onRequestPendingEdit(PendingEdit.ControlModeConfirm(raw, target))
+                                }
+                            },
+                            enabled = canEditParam && raw != null,
+                            height = 38.dp,
+                        )
+                    }
                 }
                 def.isWritable -> {
                     val isEnum = def.enumLabels.isNotEmpty()
@@ -1254,13 +1798,50 @@ private fun ControllerPageParameters(
                             )
                         },
                         onClickHelp = { onRequestHelp(def, raw) },
+                        labelOverride = labelOverride,
                     )
                 }
                 else -> {
                     ReadOnlyParameterRow(
                         reading = reading,
                         onClickHelp = { onRequestHelp(def, raw) },
+                        labelOverride = labelOverride,
                     )
+                }
+            }
+        }
+
+        // Physical `PID` screen live monitor footer mirroring `photo_3` (Slp Fq, Counter, Pressure Bar)
+        if (page.title == "PID") {
+            val slpFqRaw = valueByKey["sleep_frequency"]
+            val counterRaw = valueByKey["sleep_off_delay"]
+            val slpFqTxt = slpFqRaw?.let { Bpc02Catalog.formatValue(Bpc02RegisterMap.byKey("sleep_frequency"), it) } ?: "—"
+            val counterTxt = counterRaw?.let { Bpc02Catalog.formatValue(Bpc02RegisterMap.byKey("sleep_off_delay"), it) } ?: "—"
+            val pressureTxt = liveSnap?.pressureBar?.let { "%.2f Bar".format(Locale.US, it) } ?: "— Bar"
+            HorizontalDivider(color = p.hairline, modifier = Modifier.padding(vertical = 4.dp))
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(p.panel)
+                        .border(0.8.dp, p.cyan.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Slp Fq", style = MaterialTheme.typography.labelSmall, color = p.textMuted)
+                        Text(slpFqTxt, style = MonoStyle.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Bold), color = p.cyan)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Counter", style = MaterialTheme.typography.labelSmall, color = p.textMuted)
+                        Text(counterTxt, style = MonoStyle.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Bold), color = p.gold)
+                    }
+                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Pressure", style = MaterialTheme.typography.labelSmall, color = p.textMuted)
+                        Text(pressureTxt, style = MonoStyle.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Bold), color = p.ok)
+                    }
                 }
             }
         }
@@ -1851,6 +2432,7 @@ private fun ParameterRow(
     isWritingThis: Boolean,
     onClickEdit: () -> Unit,
     onClickHelp: () -> Unit,
+    labelOverride: String? = null,
 ) {
     val p = LocalScadaPalette.current
     val def = reading.definition
@@ -1868,7 +2450,7 @@ private fun ParameterRow(
                 horizontalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 LtrText(
-                    text = Bpc02Catalog.lcdParameterName(def),
+                    text = labelOverride ?: Bpc02Catalog.lcdParameterName(def),
                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                     color = p.textPrimary,
                 )
@@ -1935,6 +2517,7 @@ private fun ParameterRow(
 private fun ReadOnlyParameterRow(
     reading: RegisterReading,
     onClickHelp: () -> Unit,
+    labelOverride: String? = null,
 ) {
     val p = LocalScadaPalette.current
     val def = reading.definition
@@ -1952,7 +2535,7 @@ private fun ReadOnlyParameterRow(
                 horizontalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 LtrText(
-                    text = Bpc02Catalog.lcdParameterName(def),
+                    text = labelOverride ?: Bpc02Catalog.lcdParameterName(def),
                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                     color = p.textPrimary,
                 )

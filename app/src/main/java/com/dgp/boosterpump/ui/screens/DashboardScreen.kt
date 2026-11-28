@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,7 +40,6 @@ import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.SettingsEthernet
-import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -70,11 +68,8 @@ import androidx.compose.ui.unit.sp
 import com.dgp.boosterpump.controller.AlarmSeverity
 import com.dgp.boosterpump.controller.Bpc02Catalog
 import com.dgp.boosterpump.controller.ControllerSnapshot
-import com.dgp.boosterpump.controller.PumpState
 import com.dgp.boosterpump.gateway.DataSourceMode
 import com.dgp.boosterpump.session.ConnectionState
-import com.dgp.boosterpump.ui.PersianLabels
-import com.dgp.boosterpump.ui.components.AnimatedImpellerIcon
 import com.dgp.boosterpump.ui.components.BadgeTone
 import com.dgp.boosterpump.ui.components.DgpGoldButton
 import com.dgp.boosterpump.ui.components.DgpOutlinedButton
@@ -86,7 +81,7 @@ import com.dgp.boosterpump.ui.components.ParameterHelpIcon
 import com.dgp.boosterpump.ui.components.PressureTrendChart
 import com.dgp.boosterpump.ui.components.ScadaPanel
 import com.dgp.boosterpump.ui.components.StatusBadge
-import com.dgp.boosterpump.ui.components.ThreePhaseVoltageBars
+import com.dgp.boosterpump.ui.components.ThreePhaseWaveformGraph
 import com.dgp.boosterpump.ui.theme.LocalScadaPalette
 import com.dgp.boosterpump.ui.theme.MonoStyle
 import com.dgp.boosterpump.viewmodel.MonitoringUiState
@@ -96,11 +91,9 @@ fun DashboardScreen(
     uiState: MonitoringUiState,
     canResetErrors: Boolean,
     canOpenGatewaySettings: Boolean,
-    canOpenPumps: Boolean = true,
     onConnect: () -> Unit,
     onResetPumpErrors: () -> Unit,
     onOpenGatewaySettings: () -> Unit,
-    onOpenPumps: () -> Unit,
 ) {
     val p = LocalScadaPalette.current
     val snapshot = uiState.snapshot
@@ -208,10 +201,7 @@ fun DashboardScreen(
             }
         }
 
-        // 3. Station Pumps Quick Status Grid
-        item { BoosterStationPumpsPanel(snapshot.visiblePumps, canOpenPumps = canOpenPumps, onOpenPumps = onOpenPumps) }
-
-        // 4. Rolling Pressure Trend Chart
+        // 3. Rolling Pressure Trend Chart
         item {
             ScadaPanel(
                 title = "Pressure Trend",
@@ -223,7 +213,7 @@ fun DashboardScreen(
             }
         }
 
-        // 5. Healthy Protection Status Card (shown cleanly here when no faults are active)
+        // 4. Healthy Protection Status Card (shown cleanly here when no faults are active)
         if (!hasActiveAlarms) {
             item {
                 AlarmsPanel(
@@ -234,7 +224,7 @@ fun DashboardScreen(
             }
         }
 
-        // 6. 3-Phase Electrical Voltmeter
+        // 5. 3-Phase Electrical Voltmeter (Mini 3-Phase Waveform Oscilloscope — VRN, VSN, VTN)
         item { ElectricalAnalyzerPanel(snapshot) }
     }
 }
@@ -305,8 +295,10 @@ private fun HeroOverviewAndSchematicPanel(
             }
         },
     ) {
-        // 1. Operating Mode + Connected/Configured Drivers Showcase Strip
-        Row(
+        // 1. Station Architecture Strip: Mode X  تعداد پمپ N / تعداد درایو D
+        val configuredPumps = snapshot.configuredPumpCount ?: pumpCount
+        val configuredDrives = snapshot.variablePumpCount
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
@@ -321,54 +313,69 @@ private fun HeroOverviewAndSchematicPanel(
                 )
                 .border(0.95.dp, p.gold.copy(alpha = 0.36f), RoundedCornerShape(14.dp))
                 .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Column(modifier = Modifier.weight(1.35f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     LtrText("Wiring Mode", style = MaterialTheme.typography.labelSmall, color = p.textSecondary)
                     ParameterHelpIcon(
-                        onClick = { onShowHelp("wiring_mode", Bpc02Catalog.wiringModeLabel(snapshot.wiringMode)) },
-                    )
-                }
-                LtrText(
-                    text = Bpc02Catalog.wiringModeArchitecture(snapshot.wiringMode),
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                    color = p.gold,
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .width(0.8.dp)
-                    .height(34.dp)
-                    .background(p.hairline),
-            )
-            Column(
-                modifier = Modifier.weight(0.65f),
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    LtrText("Drives", style = MaterialTheme.typography.labelSmall, color = p.textSecondary)
-                    ParameterHelpIcon(
                         onClick = {
                             onShowHelp(
-                                "number_of_variable_pump",
-                                Bpc02Catalog.driverCountLabel(snapshot.variablePumpCount),
+                                "wiring_mode",
+                                Bpc02Catalog.wiringModeArchitecture(
+                                    snapshot.wiringMode,
+                                    configuredPumps,
+                                    configuredDrives,
+                                ),
                             )
                         },
                     )
                 }
-                LtrText(
-                    text = Bpc02Catalog.driverCountLabel(snapshot.variablePumpCount),
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    LtrText("Main / Drive", style = MaterialTheme.typography.labelSmall, color = p.textSecondary)
+                    ParameterHelpIcon(
+                        onClick = {
+                            onShowHelp(
+                                "number_of_variable_pump",
+                                Bpc02Catalog.driverCountLabel(configuredDrives),
+                            )
+                        },
+                    )
+                }
+            }
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Surface(
+                    color = p.goldSoft,
+                    shape = RoundedCornerShape(9.dp),
+                    border = BorderStroke(0.85.dp, p.gold.copy(alpha = 0.52f)),
+                    modifier = Modifier.align(Alignment.CenterVertically),
+                ) {
+                    LtrText(
+                        text = Bpc02Catalog.wiringModeLabel(snapshot.wiringMode),
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        color = p.gold,
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
+                    )
+                }
+                Text(
+                    text = "تعداد پمپ: $configuredPumps  /  تعداد درایو: ${configuredDrives ?: "—"}",
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                     color = p.cyan,
+                    modifier = Modifier.align(Alignment.CenterVertically),
                 )
             }
         }
@@ -377,127 +384,6 @@ private fun HeroOverviewAndSchematicPanel(
         DynamicBoosterSystemSchematic(
             snapshot = snapshot,
             showArchitectureBadges = false,
-        )
-
-        // 3. Spacious 2x2 Architectural Live Metrics Grid (every card gets 50% width — ZERO truncation!)
-        val driverCount = snapshot.variablePumpCount
-        val (driveTitle, driveValue, driveCaption) = when {
-            driverCount == 0 -> Triple("Drive", "0 Drives", "Fixed-Speed (DOL)")
-            driverCount != null && driverCount >= 2 -> Triple(
-                "Drive 1 FRQ",
-                snapshot.drive1FrequencyHz?.let { "%.2f Hz".format(it) } ?: "—",
-                snapshot.drive2FrequencyHz?.let { "Drive 2: %.2f Hz".format(it) } ?: "2 Drives",
-            )
-            else -> Triple(
-                "Drive FRQ",
-                snapshot.drive1FrequencyHz?.let { "%.2f Hz".format(it) } ?: "—",
-                when {
-                    snapshot.driveEnabled == false -> "Disabled (S)"
-                    snapshot.drStatus == true -> "Running"
-                    else -> "Standby"
-                },
-            )
-        }
-        val enabledCount = snapshot.enabledPumpCount
-        val pumpCaption = when {
-            snapshot.disabledPumpCount > 0 -> "$enabledCount Ready • ${snapshot.disabledPumpCount} Service (S)"
-            enabledCount > 0 -> "$enabledCount Ready"
-            else -> "${visiblePumps.size} Configured"
-        }
-
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                HomeMetricTile(
-                    title = driveTitle,
-                    value = driveValue,
-                    caption = driveCaption,
-                    accent = p.warning,
-                    onHelpClick = { onShowHelp("drive_frequency", driveValue) },
-                    modifier = Modifier.weight(1f),
-                )
-                val spDisplay = snapshot.pressureSetpointBar?.let { "%.2f Bar".format(it) } ?: "—"
-                HomeMetricTile(
-                    title = "Setpoint",
-                    value = spDisplay,
-                    caption = "Target Pressure",
-                    accent = p.gold,
-                    onHelpClick = { onShowHelp("setpoint", spDisplay) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                HomeMetricTile(
-                    title = "Active Pumps",
-                    value = "${snapshot.runningPumpCount} / ${visiblePumps.size}",
-                    caption = pumpCaption,
-                    accent = when {
-                        snapshot.disabledPumpCount > 0 && snapshot.runningPumpCount == 0 -> p.warning
-                        snapshot.runningPumpCount > 0 -> p.ok
-                        else -> p.gold
-                    },
-                    onHelpClick = { onShowHelp("number_of_pump", "${visiblePumps.size} Pumps") },
-                    modifier = Modifier.weight(1f),
-                )
-                val mainsDisplay = snapshot.mainsFrequencyHz?.let { "%.2f Hz".format(it) } ?: "—"
-                HomeMetricTile(
-                    title = "Mains FRQ",
-                    value = mainsDisplay,
-                    caption = "Input Supply",
-                    accent = p.cyan,
-                    onHelpClick = { onShowHelp("mains_frequency", mainsDisplay) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun HomeMetricTile(
-    title: String,
-    value: String,
-    caption: String,
-    accent: Color,
-    onHelpClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val p = LocalScadaPalette.current
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(p.panelElevated)
-            .border(0.8.dp, p.panelBorder, RoundedCornerShape(14.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            LtrText(
-                text = title,
-                style = MaterialTheme.typography.labelSmall,
-                color = p.textSecondary,
-                modifier = Modifier.weight(1f),
-            )
-            ParameterHelpIcon(onClick = onHelpClick)
-        }
-        LtrText(
-            text = value,
-            style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp, fontWeight = FontWeight.Bold),
-            color = accent,
-        )
-        LtrText(
-            text = caption,
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
-            color = p.textMuted,
         )
     }
 }
@@ -568,144 +454,11 @@ private fun AlarmsPanel(
 }
 
 @Composable
-private fun BoosterStationPumpsPanel(
-    pumps: List<PumpState>,
-    canOpenPumps: Boolean,
-    onOpenPumps: () -> Unit,
-) {
-    val p = LocalScadaPalette.current
-    val running = pumps.count { it.running == true && it.enabled != false }
-    val enabled = pumps.count { it.enabled == true }
-    val failed = pumps.count { it.failed == true }
-    val disabled = pumps.count { it.enabled == false }
-    val subtitle = buildString {
-        append("$running/${pumps.size} Running")
-        if (failed > 0) append(" • $failed Fault")
-        if (enabled > 0) append(" • $enabled Ready")
-        if (disabled > 0) append(" • $disabled Service (S)")
-    }
-    ScadaPanel(
-        title = "Pump Status",
-        subtitle = subtitle,
-        icon = Icons.Outlined.WaterDrop,
-        accentColor = when {
-            failed > 0 -> p.fault
-            disabled > 0 -> p.warning
-            else -> p.ok
-        },
-        trailing = if (canOpenPumps) {
-            {
-                Surface(
-                    onClick = onOpenPumps,
-                    color = p.panelElevated,
-                    shape = RoundedCornerShape(999.dp),
-                    border = BorderStroke(0.8.dp, p.gold.copy(alpha = 0.35f)),
-                ) {
-                    Text(
-                        "جزئیات",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = p.gold,
-                        softWrap = false,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    )
-                }
-            }
-        } else {
-            null
-        },
-    ) {
-        pumps.chunked(2).forEach { row ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                row.forEach { pump ->
-                    PumpHmiTile(pump = pump, modifier = Modifier.weight(1f))
-                }
-                if (row.size == 1) {
-                    Spacer(Modifier.weight(1f))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PumpHmiTile(pump: PumpState, modifier: Modifier = Modifier) {
-    val p = LocalScadaPalette.current
-    val isDisabled = pump.enabled == false
-    val isRunning = !isDisabled && pump.running == true
-    val isReady = !isDisabled && pump.failed != true && !isRunning && pump.enabled == true
-    val borderColor = when {
-        pump.failed == true -> p.fault.copy(alpha = 0.55f)
-        isDisabled -> p.panelBorder
-        isRunning -> p.ok.copy(alpha = 0.52f)
-        isReady -> p.cyan.copy(alpha = 0.38f)
-        else -> p.panelBorder
-    }
-    val (label, tone) = when {
-        pump.failed == true -> "Fault" to BadgeTone.FAULT
-        isDisabled -> "Service (S)" to BadgeTone.NEUTRAL
-        isRunning -> "Running" to BadgeTone.OK
-        isReady -> "Standby" to BadgeTone.INFO
-        pump.running == false -> "Standby" to BadgeTone.NEUTRAL
-        else -> "Unknown" to BadgeTone.NEUTRAL
-    }
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(p.panelElevated)
-            .border(0.9.dp, borderColor, RoundedCornerShape(14.dp))
-            .padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(9.dp),
-        ) {
-            AnimatedImpellerIcon(
-                running = isRunning,
-                failed = pump.failed,
-                disabled = isDisabled,
-                ready = isReady,
-                size = 38.dp,
-            )
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                LtrText(
-                    "Pump ${pump.number}",
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                    color = p.textPrimary,
-                )
-                LtrText(
-                    text = when {
-                        pump.runTime != null -> PersianLabels.formatRunTimeCompact(pump.runTime)
-                        pump.hasRunTimeRegisters -> "--:--:--"
-                        else -> "—"
-                    },
-                    style = MonoStyle.copy(fontSize = 10.5.sp),
-                    color = p.textSecondary,
-                )
-            }
-        }
-        StatusBadge(
-            text = label,
-            tone = tone,
-            pulsing = pump.failed == true || isRunning,
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-}
-
-@Composable
 private fun ElectricalAnalyzerPanel(snapshot: ControllerSnapshot) {
     val p = LocalScadaPalette.current
     ScadaPanel(
         title = "Voltmeter (Control Phase)",
-        subtitle = "ولتاژ فازها و فرکانس برق ورودی",
+        subtitle = "شکل موج ولتاژ سه‌فاز (VRN • VSN • VTN) و فرکانس برق ورودی",
         icon = Icons.Outlined.Bolt,
         accentColor = p.cyan,
         trailing = {
@@ -716,7 +469,10 @@ private fun ElectricalAnalyzerPanel(snapshot: ControllerSnapshot) {
             )
         },
     ) {
-        ThreePhaseVoltageBars(voltages = snapshot.voltages)
+        ThreePhaseWaveformGraph(
+            voltages = snapshot.voltages,
+            mainsFrequencyHz = snapshot.mainsFrequencyHz,
+        )
     }
 }
 

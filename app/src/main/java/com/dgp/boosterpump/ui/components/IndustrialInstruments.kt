@@ -27,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,6 +37,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -283,7 +285,7 @@ fun WaterTankIndicator(
 
     val (waterColor, statusLabel, statusTone) = when {
         floaterLow == true && floaterHigh == true -> Triple(palette.cyan, "Full", BadgeTone.OK)
-        floaterLow == true && floaterHigh == false -> Triple(palette.warning, "Mid Level", BadgeTone.WARNING)
+        floaterLow == true && floaterHigh == false -> Triple(palette.cyan, "Mid Level", BadgeTone.INFO)
         floaterLow == false && floaterHigh == false -> Triple(palette.fault, "Low Water!", BadgeTone.FAULT)
         floaterLow == false && floaterHigh == true -> Triple(palette.fault, "Floater Fault", BadgeTone.FAULT)
         else -> Triple(palette.standby, "Unknown", BadgeTone.NEUTRAL)
@@ -742,95 +744,286 @@ fun AnimatedImpellerIcon(
     }
 }
 
-/** Visual 3-phase Voltmeter analyzer with nominal 230 V / 400 V reference lines (BPC-02.pdf p.10). */
+/**
+ * Compact SCADA 3-phase AC sine waveform oscilloscope (`شکل موج`) plotting live 120°-phase-shifted
+ * waveforms exclusively for the three phase-to-neutral channels (`VRN`, `VSN`, `VTN`), with real-time
+ * amplitude scaling, ±230V nominal guides, and full-width channel readouts underneath.
+ */
 @Composable
-fun ThreePhaseVoltageBars(voltages: PhaseVoltages) {
+fun ThreePhaseWaveformGraph(
+    voltages: PhaseVoltages,
+    mainsFrequencyHz: Double? = null,
+    modifier: Modifier = Modifier,
+) {
     val palette = LocalScadaPalette.current
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        LtrText("Phase–Neutral (230V Nominal)", style = MaterialTheme.typography.labelMedium, color = palette.textSecondary)
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            VoltageBarTile("VRN", voltages.rn, nominal = 230, maxScale = 280, modifier = Modifier.weight(1f))
-            VoltageBarTile("VSN", voltages.sn, nominal = 230, maxScale = 280, modifier = Modifier.weight(1f))
-            VoltageBarTile("VTN", voltages.tn, nominal = 230, maxScale = 280, modifier = Modifier.weight(1f))
+    val maxScaleV = 285f
+    val nominalV = 230f
+
+    val rnAmp by animateFloatAsState(
+        targetValue = ((voltages.rn ?: 0).toFloat() / maxScaleV).coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 480, easing = FastOutSlowInEasing),
+        label = "wf_rn_amp",
+    )
+    val snAmp by animateFloatAsState(
+        targetValue = ((voltages.sn ?: 0).toFloat() / maxScaleV).coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 480, easing = FastOutSlowInEasing),
+        label = "wf_sn_amp",
+    )
+    val tnAmp by animateFloatAsState(
+        targetValue = ((voltages.tn ?: 0).toFloat() / maxScaleV).coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 480, easing = FastOutSlowInEasing),
+        label = "wf_tn_amp",
+    )
+
+    val hasAnyVoltage = (voltages.rn ?: 0) > 0 || (voltages.sn ?: 0) > 0 || (voltages.tn ?: 0) > 0
+    val cycleDurationMs = remember(mainsFrequencyHz) {
+        val hz = (mainsFrequencyHz ?: 50.0).coerceIn(40.0, 65.0)
+        // Smooth, pleasant visual drift scaled subtly with live mains frequency
+        (2600.0 * (50.0 / hz)).toInt().coerceIn(1900, 3400)
+    }
+    val waveTransition = rememberInfiniteTransition(label = "three_phase_scope")
+    val animatedPhase by waveTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = (2.0 * PI).toFloat(),
+        animationSpec = infiniteRepeatable(tween(durationMillis = cycleDurationMs, easing = LinearEasing)),
+        label = "three_phase_shift",
+    )
+    val phaseShift = if (hasAnyVoltage) animatedPhase else 0f
+
+    // Distinct high-contrast oscilloscope phosphor colors for R-N, S-N, T-N
+    val rnBaseColor = Color(0xFFF5B73B) // Gold / Amber (Phase R)
+    val snBaseColor = Color(0xFF38BDF8) // Electric Cyan (Phase S)
+    val tnBaseColor = Color(0xFF34D399) // Emerald Green (Phase T)
+
+    fun channelColor(volts: Int?, base: Color): Color = when {
+        volts == null || volts == 0 -> palette.standby
+        volts < 190 || volts > 253 -> palette.fault
+        else -> base
+    }
+
+    val rnColor = channelColor(voltages.rn, rnBaseColor)
+    val snColor = channelColor(voltages.sn, snBaseColor)
+    val tnColor = channelColor(voltages.tn, tnBaseColor)
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        // Mini SCADA Oscilloscope Viewport
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(114.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color(0xFF070C15), Color(0xFF0D1524), Color(0xFF070C15)),
+                    ),
+                )
+                .border(
+                    width = 1.dp,
+                    color = if (palette.isDark) Color(0xFF263652) else Color(0xFF1E2D44),
+                    shape = RoundedCornerShape(14.dp),
+                ),
+        ) {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 10.dp, vertical = 10.dp),
+            ) {
+                val w = size.width
+                val h = size.height
+                val midY = h / 2f
+                val maxAmpPx = (h * 0.44f).coerceAtLeast(1f)
+                val nomYOffset = maxAmpPx * (nominalV / maxScaleV)
+                val gridColor = Color(0xFF283A56).copy(alpha = 0.55f)
+                val dashEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
+
+                // Vertical phase division lines (90° intervals across 2 cycles)
+                for (i in 1..7) {
+                    val x = w * i / 8f
+                    drawLine(
+                        color = gridColor.copy(alpha = if (i == 4) 0.50f else 0.28f),
+                        start = Offset(x, 0f),
+                        end = Offset(x, h),
+                        strokeWidth = 0.9.dp.toPx(),
+                    )
+                }
+
+                // Nominal ±230V dashed reference bands
+                val nomLineColor = Color(0xFFE5B55C).copy(alpha = 0.34f)
+                drawLine(
+                    color = nomLineColor,
+                    start = Offset(0f, midY - nomYOffset),
+                    end = Offset(w, midY - nomYOffset),
+                    strokeWidth = 1.dp.toPx(),
+                    pathEffect = dashEffect,
+                )
+                drawLine(
+                    color = nomLineColor,
+                    start = Offset(0f, midY + nomYOffset),
+                    end = Offset(w, midY + nomYOffset),
+                    strokeWidth = 1.dp.toPx(),
+                    pathEffect = dashEffect,
+                )
+
+                // Center 0V axis
+                drawLine(
+                    color = Color(0xFF64748B).copy(alpha = 0.55f),
+                    start = Offset(0f, midY),
+                    end = Offset(w, midY),
+                    strokeWidth = 1.dp.toPx(),
+                )
+
+                fun drawSineChannel(amplitudeFrac: Float, phaseOffsetRad: Double, color: Color) {
+                    val samples = 96
+                    val cycles = 2.0
+                    val path = Path()
+                    val ampPx = maxAmpPx * amplitudeFrac
+                    for (i in 0..samples) {
+                        val frac = i.toFloat() / samples.toFloat()
+                        val x = frac * w
+                        val theta = frac * cycles * 2.0 * PI - phaseShift + phaseOffsetRad
+                        val y = midY - (sin(theta).toFloat() * ampPx)
+                        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                    }
+
+                    // Soft luminous phosphor glow pass
+                    if (amplitudeFrac > 0.02f) {
+                        drawPath(
+                            path = path,
+                            color = color.copy(alpha = 0.22f),
+                            style = Stroke(width = 5.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
+                        )
+                    }
+                    // Razor-crisp waveform trace
+                    drawPath(
+                        path = path,
+                        color = color.copy(alpha = if (amplitudeFrac > 0.02f) 0.96f else 0.45f),
+                        style = Stroke(width = 2.0.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
+                    )
+                }
+
+                // Draw VTN (-240°), VSN (-120°), VRN (0°) — 3-phase 120° symmetrical sine waves
+                drawSineChannel(tnAmp, -4.0 * PI / 3.0, tnColor)
+                drawSineChannel(snAmp, -2.0 * PI / 3.0, snColor)
+                drawSineChannel(rnAmp, 0.0, rnColor)
+            }
+
+            // Subtle compact scope scale labels (LTR)
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 8.dp, vertical = 5.dp),
+                    verticalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "+230V",
+                            style = MonoStyle.copy(fontSize = 8.5.sp, fontWeight = FontWeight.SemiBold),
+                            color = Color(0xFFE5B55C).copy(alpha = 0.72f),
+                        )
+                        Text(
+                            "3-Phase Sine (120°)",
+                            style = MonoStyle.copy(fontSize = 8.5.sp),
+                            color = Color(0xFF94A3B8).copy(alpha = 0.75f),
+                        )
+                    }
+                    Text(
+                        "-230V",
+                        style = MonoStyle.copy(fontSize = 8.5.sp, fontWeight = FontWeight.SemiBold),
+                        color = Color(0xFFE5B55C).copy(alpha = 0.72f),
+                    )
+                }
+            }
         }
-        LtrText("Phase–Phase (400V Nominal)", style = MaterialTheme.typography.labelMedium, color = palette.textSecondary)
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            VoltageBarTile("VRS", voltages.rs, nominal = 400, maxScale = 480, modifier = Modifier.weight(1f))
-            VoltageBarTile("VST", voltages.st, nominal = 400, maxScale = 480, modifier = Modifier.weight(1f))
-            VoltageBarTile("VTR", voltages.tr, nominal = 400, maxScale = 480, modifier = Modifier.weight(1f))
+
+        // 3 Equal-Width Full-Text Phase Readout Cards (VRN, VSN, VTN)
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                PhaseWaveformPill(
+                    label = "VRN",
+                    angleTag = "0°",
+                    volts = voltages.rn,
+                    accentColor = rnColor,
+                    modifier = Modifier.weight(1f),
+                )
+                PhaseWaveformPill(
+                    label = "VSN",
+                    angleTag = "120°",
+                    volts = voltages.sn,
+                    accentColor = snColor,
+                    modifier = Modifier.weight(1f),
+                )
+                PhaseWaveformPill(
+                    label = "VTN",
+                    angleTag = "240°",
+                    volts = voltages.tn,
+                    accentColor = tnColor,
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun VoltageBarTile(
+private fun PhaseWaveformPill(
     label: String,
+    angleTag: String,
     volts: Int?,
-    nominal: Int,
-    maxScale: Int,
+    accentColor: Color,
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalScadaPalette.current
-    val targetFraction = ((volts ?: 0).toFloat() / maxScale).coerceIn(0f, 1f)
-    val fraction by animateFloatAsState(
-        targetValue = targetFraction,
-        animationSpec = tween(durationMillis = 480, easing = FastOutSlowInEasing),
-        label = "volt_bar_fill",
-    )
-    val nominalFraction = (nominal.toFloat() / maxScale).coerceIn(0f, 1f)
-    val barColor = when {
-        volts == null || volts == 0 -> palette.standby
-        volts < (nominal * 0.88) || volts > (nominal * 1.10) -> palette.fault
-        volts < (nominal * 0.93) || volts > (nominal * 1.06) -> palette.warning
-        else -> palette.ok
-    }
-
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
             .background(palette.panelElevated)
-            .border(0.8.dp, palette.panelBorder, RoundedCornerShape(12.dp))
-            .padding(horizontal = 10.dp, vertical = 9.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+            .border(0.9.dp, accentColor.copy(alpha = if (volts != null && volts > 0) 0.42f else 0.25f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 9.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
             ) {
-                Text(label, style = MonoStyle.copy(fontSize = 10.sp), color = palette.textSecondary)
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(accentColor),
+                )
                 Text(
-                    volts?.let { "$it V" } ?: "—",
-                    style = MonoStyle.copy(fontSize = 12.5.sp, fontWeight = FontWeight.Bold),
+                    text = label,
+                    style = MonoStyle.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
                     color = palette.textPrimary,
                 )
             }
-        }
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(6.dp),
-        ) {
-            drawRoundRect(
-                color = palette.panelBorder,
-                cornerRadius = CornerRadius(4.dp.toPx()),
-            )
-            if (fraction > 0f) {
-                drawRoundRect(
-                    brush = Brush.horizontalGradient(listOf(barColor.copy(alpha = 0.72f), barColor)),
-                    size = Size(size.width * fraction, size.height),
-                    cornerRadius = CornerRadius(4.dp.toPx()),
-                )
-            }
-            val tickX = size.width * nominalFraction
-            drawLine(
-                color = palette.gold.copy(alpha = 0.75f),
-                start = Offset(tickX, 0f),
-                end = Offset(tickX, size.height),
-                strokeWidth = 1.4.dp.toPx(),
+            Text(
+                text = angleTag,
+                style = MonoStyle.copy(fontSize = 9.sp),
+                color = palette.textMuted,
             )
         }
+        Text(
+            text = volts?.let { "$it V" } ?: "— V",
+            style = MonoStyle.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold),
+            color = if (volts != null && volts > 0) accentColor else palette.textSecondary,
+        )
     }
 }
 

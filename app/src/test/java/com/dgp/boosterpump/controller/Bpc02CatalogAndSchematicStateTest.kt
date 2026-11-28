@@ -20,8 +20,7 @@ class Bpc02CatalogAndSchematicStateTest {
 
     @Test
     fun catalogMenuCoversAll82ConfigurationRegistersWithEnglishNamesAndPersianHelp() {
-        val allMenuKeys = Bpc02Catalog.MenuCategory.entries
-            .flatMap { cat -> cat.pages.flatMap { it.registerKeys } }
+        val allMenuKeys = Bpc02Catalog.allMenuRegisterKeys
 
         val configKeys = Bpc02RegisterMap.configuration.map { it.key }.toSet()
         assertEquals("Every config register must appear once without duplicates", configKeys.size, allMenuKeys.size)
@@ -45,6 +44,57 @@ class Bpc02CatalogAndSchematicStateTest {
                 help.helpFa.length >= 25,
             )
         }
+    }
+
+    @Test
+    fun physicalControllerMenuOrderOnOffPagesModeTitleAndMfxOptionsMatchSpec() {
+        // Exact top-level Menu order from controller-pics-new/photo_6
+        assertEquals(
+            listOf("System", "Input", "Time/Date", "Hardware"),
+            Bpc02Catalog.MainMenuSection.entries.map { it.title },
+        )
+
+        // Exact 8 Hardware categories from controller-pics-new/photo_9 & photo_10
+        assertEquals(
+            listOf(
+                "Control Phase",
+                "Floater",
+                "Sensor",
+                "Control",
+                "MFx",
+                "Serial Number",
+                "Network",
+                "Reset to Factory",
+            ),
+            Bpc02Catalog.MenuCategory.entries.map { it.title },
+        )
+
+        // Exact ON/OFF Pump 1..4 pages & field order from photo_1, photo_2, photo_7:
+        // On Delay -> Off Delay -> On Pressure -> Off Pressure
+        val onOffPages = Bpc02Catalog.MenuCategory.CONTROL.pages
+            .filter { it.controlMode == Bpc02Catalog.ControlPageMode.ON_OFF_ONLY }
+        assertEquals(listOf("Pump 1", "Pump 2", "Pump 3", "Pump 4"), onOffPages.map { it.title })
+        assertEquals(
+            listOf("pump_1_on_delay", "pump_1_off_delay", Bpc02RegisterMap.SYSTEM_PRESSURE_SETPOINT, "pump_1_off_pressure"),
+            onOffPages[0].displayRegisterKeys,
+        )
+        assertEquals(
+            listOf("pump_4_on_delay", "pump_4_off_delay", "pump_4_on_pressure", "pump_4_off_pressure"),
+            onOffPages[3].displayRegisterKeys,
+        )
+
+        // Mode 1 title includes pump & drive counts instead of old "(Independent VFD / DOL)"
+        val mode1Title = Bpc02Catalog.wiringModeArchitecture(1, pumpCount = 4, driveCount = 2)
+        assertTrue(mode1Title.contains("Mode 1"))
+        assertTrue(mode1Title.contains("تعداد پمپ"))
+        assertTrue(mode1Title.contains("تعداد درایو"))
+
+        // Allowed MFI (11) & MFO (14) read-only options
+        assertEquals(11, Bpc02Catalog.mfiAllowedOptions.size)
+        assertEquals(14, Bpc02Catalog.mfoAllowedOptions.size)
+        assertEquals("FL", Bpc02Catalog.mfiOptionLabel(6))
+        assertEquals("Alarm", Bpc02Catalog.mfoOptionLabel(5))
+        assertEquals("P.Run", Bpc02Catalog.mfoOptionLabel(7))
     }
 
     @Test

@@ -27,21 +27,48 @@ object Bpc02Catalog {
         val isWritable: Boolean = false,
     )
 
+    /** Mode relevance for pages inside `Hardware › 4. Control`. */
+    enum class ControlPageMode {
+        ALWAYS,
+        PID_ONLY,
+        ON_OFF_ONLY,
+    }
+
+    /** Top-level physical BPC-02 `Menu` entries matching `controller-pics-new/photo_6`. */
+    enum class MainMenuSection(
+        val index: Int,
+        val title: String,
+        val subtitleEn: String,
+    ) {
+        SYSTEM(1, "System", "Password Setting, Blight, Contrast, Beep On Click / Error"),
+        INPUT(2, "Input", "Drive, PR1–PR4, MFI1–MFI4 Live Inputs"),
+        TIME_DATE(3, "Time/Date", "Clock, Date, Backup Battery (VBat)"),
+        HARDWARE(4, "Hardware", "Control Phase, Floater, Sensor, Control, MFx, Serial, Network, Reset"),
+    }
+
+    /** Configuration registers belonging to top-level `Menu › 1. System` (`photo_5`). */
+    val systemRegisterKeys: List<String> = listOf("lcd_contrast")
+
     /** One page inside a physical DGP BPC-02 Hardware menu category. */
     data class MenuPage(
         val number: Int,
         val title: String,
         val registerKeys: List<String>,
+        val controlMode: ControlPageMode = ControlPageMode.ALWAYS,
+        val displayRegisterKeys: List<String> = registerKeys,
     )
 
     /**
-     * Exact physical DGP BPC-02 Hardware menu categories mirroring `BPC-02.pdf` (pages 13–21):
-     *  1. Control Phase (2 pages)
-     *  2. Floater (1 page)
-     *  3. Sensor (3 pages)
-     *  4. Control (13 pages)
-     *  5. MFx (3 page groups: MFI 1–4, MFO 5–8, AO 9–10)
-     *  6. System & Network (Serial Number, Network Address, LCD Contrast)
+     * Exact physical DGP BPC-02 `4. Hardware` menu categories matching `controller-pics-new`
+     * (`photo_9` & `photo_10`) and `BPC-02.pdf`:
+     *  1. Control Phase
+     *  2. Floater
+     *  3. Sensor
+     *  4. Control (with mode-specific ON/OFF Pump 1–4 pages & PID pages)
+     *  5. MFx
+     *  6. Serial Number
+     *  7. Network
+     *  8. Reset to Factory
      */
     enum class MenuCategory(
         val index: Int,
@@ -118,7 +145,7 @@ object Bpc02Catalog {
         CONTROL(
             index = 4,
             title = "Control",
-            subtitleEn = "Pump, Wiring, Status, Control, Sleep, Wake Up, Auto Service, PID",
+            subtitleEn = "Pump, Wiring, Status, Control (Disable / PID / ON-OFF), Pump 1–4, Sleep, Wake Up, PID",
             pages = listOf(
                 MenuPage(
                     number = 1,
@@ -145,30 +172,66 @@ object Bpc02Catalog {
                 ),
                 MenuPage(
                     number = 4,
-                    title = "Control & Setpoint",
+                    title = "Control",
                     registerKeys = listOf(
                         Bpc02RegisterMap.CONTROL_STATUS,
                         "control_direction",
                         Bpc02RegisterMap.SYSTEM_PRESSURE_SETPOINT,
+                    ),
+                ),
+                // Exact ON/OFF Pump 1..4 pages matching controller-pics-new/photo_1, photo_2, photo_7:
+                // On Delay -> Off Delay -> On Pressure -> Off Pressure
+                MenuPage(
+                    number = 5,
+                    title = "Pump 1",
+                    registerKeys = listOf(
                         "pump_1_on_delay",
-                        "pump_1_off_pressure",
                         "pump_1_off_delay",
-                        "pump_2_on_pressure",
-                        "pump_2_on_delay",
-                        "pump_2_off_pressure",
-                        "pump_2_off_delay",
-                        "pump_3_on_pressure",
-                        "pump_3_on_delay",
-                        "pump_3_off_pressure",
-                        "pump_3_off_delay",
-                        "pump_4_on_pressure",
-                        "pump_4_on_delay",
-                        "pump_4_off_pressure",
-                        "pump_4_off_delay",
+                        "pump_1_off_pressure",
+                    ),
+                    controlMode = ControlPageMode.ON_OFF_ONLY,
+                    displayRegisterKeys = listOf(
+                        "pump_1_on_delay",
+                        "pump_1_off_delay",
+                        Bpc02RegisterMap.SYSTEM_PRESSURE_SETPOINT,
+                        "pump_1_off_pressure",
                     ),
                 ),
                 MenuPage(
-                    number = 5,
+                    number = 6,
+                    title = "Pump 2",
+                    registerKeys = listOf(
+                        "pump_2_on_delay",
+                        "pump_2_off_delay",
+                        "pump_2_on_pressure",
+                        "pump_2_off_pressure",
+                    ),
+                    controlMode = ControlPageMode.ON_OFF_ONLY,
+                ),
+                MenuPage(
+                    number = 7,
+                    title = "Pump 3",
+                    registerKeys = listOf(
+                        "pump_3_on_delay",
+                        "pump_3_off_delay",
+                        "pump_3_on_pressure",
+                        "pump_3_off_pressure",
+                    ),
+                    controlMode = ControlPageMode.ON_OFF_ONLY,
+                ),
+                MenuPage(
+                    number = 8,
+                    title = "Pump 4",
+                    registerKeys = listOf(
+                        "pump_4_on_delay",
+                        "pump_4_off_delay",
+                        "pump_4_on_pressure",
+                        "pump_4_off_pressure",
+                    ),
+                    controlMode = ControlPageMode.ON_OFF_ONLY,
+                ),
+                MenuPage(
+                    number = 9,
                     title = "Add Remove Pump",
                     registerKeys = listOf(
                         "constant_pump_percent",
@@ -176,18 +239,20 @@ object Bpc02Catalog {
                         "remove_delay",
                         "mode3_switch_time",
                     ),
+                    controlMode = ControlPageMode.PID_ONLY,
                 ),
                 MenuPage(
-                    number = 6,
+                    number = 10,
                     title = "Sleep",
                     registerKeys = listOf(
                         "sleep_frequency",
                         "sleep_off_delay",
                         "sleep_gap",
                     ),
+                    controlMode = ControlPageMode.PID_ONLY,
                 ),
                 MenuPage(
-                    number = 7,
+                    number = 11,
                     title = "Wake Up",
                     registerKeys = listOf(
                         "wakeup_differential",
@@ -195,9 +260,10 @@ object Bpc02Catalog {
                         "start_frequency",
                         "stop_frequency",
                     ),
+                    controlMode = ControlPageMode.PID_ONLY,
                 ),
                 MenuPage(
-                    number = 8,
+                    number = 12,
                     title = "Off Changing",
                     registerKeys = listOf(
                         "off_changing_activation",
@@ -205,7 +271,7 @@ object Bpc02Catalog {
                     ),
                 ),
                 MenuPage(
-                    number = 9,
+                    number = 13,
                     title = "Time Changing",
                     registerKeys = listOf(
                         "time_changing_activation",
@@ -213,7 +279,7 @@ object Bpc02Catalog {
                     ),
                 ),
                 MenuPage(
-                    number = 10,
+                    number = 14,
                     title = "Reserve Automatic",
                     registerKeys = listOf(
                         "reserve_auto_activation",
@@ -221,7 +287,7 @@ object Bpc02Catalog {
                     ),
                 ),
                 MenuPage(
-                    number = 11,
+                    number = 15,
                     title = "Full Load",
                     registerKeys = listOf(
                         "full_load_status",
@@ -230,7 +296,7 @@ object Bpc02Catalog {
                     ),
                 ),
                 MenuPage(
-                    number = 12,
+                    number = 16,
                     title = "Auto Service",
                     registerKeys = listOf(
                         "auto_service_off_time",
@@ -239,13 +305,14 @@ object Bpc02Catalog {
                     ),
                 ),
                 MenuPage(
-                    number = 13,
+                    number = 17,
                     title = "PID",
                     registerKeys = listOf(
                         "pid_p_value",
                         "pid_i_value",
                         "pid_d_value",
                     ),
+                    controlMode = ControlPageMode.PID_ONLY,
                 ),
             ),
         ),
@@ -271,18 +338,86 @@ object Bpc02Catalog {
                 ),
             ),
         ),
-        SYSTEM_NETWORK(
+        SERIAL_NUMBER(
             index = 6,
-            title = "Serial Number & Network",
-            subtitleEn = "Serial Number, Network Address, LCD Contrast",
+            title = "Serial Number",
+            subtitleEn = "Controller Serial Number",
             pages = listOf(
                 MenuPage(
                     number = 1,
-                    title = "Serial Number, Network & System",
-                    registerKeys = listOf("serial_number", "modbus_address", "lcd_contrast"),
+                    title = "Serial Number",
+                    registerKeys = listOf("serial_number"),
                 ),
             ),
         ),
+        NETWORK(
+            index = 7,
+            title = "Network",
+            subtitleEn = "ModBus-RTU Network Address (Slave ID)",
+            pages = listOf(
+                MenuPage(
+                    number = 1,
+                    title = "Network",
+                    registerKeys = listOf("modbus_address"),
+                ),
+            ),
+        ),
+        RESET_TO_FACTORY(
+            index = 8,
+            title = "Reset to Factory",
+            subtitleEn = "Factory Default Reset (Controller Keypad Only)",
+            pages = emptyList(),
+        ),
+    }
+
+    /** Complete deduplicated register key coverage across `1. System` and `4. Hardware`. */
+    val allMenuRegisterKeys: List<String>
+        get() = systemRegisterKeys + MenuCategory.entries.flatMap { cat -> cat.pages.flatMap { it.registerKeys } }
+
+    /** Official allowed options for MFI1–MFI4 (Words 4180–4183, Read-Only over Modbus). */
+    val mfiAllowedOptions: List<String> = listOf(
+        "Disable", "PS", "TS", "MP", "EMG", "CP", "FL", "PR5", "PR6", "Reset", "Fix",
+    )
+
+    /** Official allowed options for MFO1–MFO4 (Words 4184–4187 / Relay OUT 7–10, Read-Only over Modbus). */
+    val mfoAllowedOptions: List<String> = listOf(
+        "Disable", "MC3", "DC4", "MC4", "Fan", "Alarm", "E.Valve", "P.Run", "Ready", "Filler",
+        "P1_ERR", "P2_ERR", "P3_ERR", "P4_ERR",
+    )
+
+    fun mfiOptionLabel(raw: Int?): String = when (raw) {
+        null -> "—"
+        0 -> "Disable"
+        1 -> "PS"
+        2 -> "TS"
+        3 -> "MP"
+        4 -> "EMG"
+        5 -> "CP"
+        6 -> "FL"
+        7 -> "PR5"
+        8 -> "PR6"
+        9 -> "Reset"
+        10 -> "Fix"
+        else -> "Unknown ($raw)"
+    }
+
+    fun mfoOptionLabel(raw: Int?): String = when (raw) {
+        null -> "—"
+        0 -> "Disable"
+        1 -> "MC3"
+        2 -> "DC4"
+        3 -> "MC4"
+        4 -> "Fan"
+        5 -> "Alarm"
+        6 -> "E.Valve"
+        7 -> "P.Run"
+        8 -> "Ready"
+        9 -> "Filler"
+        10 -> "P1_ERR"
+        11 -> "P2_ERR"
+        12 -> "P3_ERR"
+        13 -> "P4_ERR"
+        else -> "Unknown ($raw)"
     }
 
     /** Exact short English parameter name as displayed on the BPC-02 LCD page. */
@@ -306,12 +441,12 @@ object Bpc02Catalog {
         "max_pressure_value" -> "Max Pressure"
         "sensor_calibration_value" -> "Calib Const"
 
-        // Control — Pump & Wiring & Status & Control (BPC-02.pdf p.15–16, p.22)
+        // Control — Pump & Wiring & Status & Control (BPC-02.pdf p.15–16, photo_4)
         "number_of_pump" -> "Main"
         "number_of_variable_pump" -> "Drive"
         "wiring_mode" -> "Wiring Type"
         Bpc02RegisterMap.DRIVE_ACTIVATION -> "Drive"
-        Bpc02RegisterMap.CONTROL_STATUS -> "Status"
+        Bpc02RegisterMap.CONTROL_STATUS -> "1. Status"
         "control_direction" -> "Dir"
         Bpc02RegisterMap.SYSTEM_PRESSURE_SETPOINT -> "Setpoint"
 
@@ -332,7 +467,7 @@ object Bpc02Catalog {
         "start_frequency" -> "Start Frq"
         "stop_frequency" -> "Stop Frq"
 
-        // Control — Off Changing / Time Changing / Reserve Automatic / Full Load / Auto Service / PID (p.18–19)
+        // Control — Off Changing / Time Changing / Reserve Automatic / Full Load / Auto Service / PID (p.18–19, photo_3)
         "off_changing_activation" -> "Status"
         "jockey_type" -> "Jockey"
         "time_changing_activation" -> "Status"
@@ -345,9 +480,9 @@ object Bpc02Catalog {
         "auto_service_off_time" -> "Off Time"
         "auto_service_on_time" -> "On Time"
         "auto_service_interval" -> "Interval Time"
-        "pid_p_value" -> "P"
-        "pid_i_value" -> "I"
-        "pid_d_value" -> "D"
+        "pid_p_value" -> "1. P"
+        "pid_i_value" -> "2. I"
+        "pid_d_value" -> "3. D"
 
         // MFx (BPC-02.pdf p.19–20)
         "ao1_type" -> "AO1 Type"
@@ -355,14 +490,14 @@ object Bpc02Catalog {
         "ao1_gain" -> "AO1 Gain"
         "ao2_gain" -> "AO2 Gain"
 
-        // Serial Number, Network & System (BPC-02.pdf p.12, p.21)
+        // Serial Number, Network & System (photo_5, photo_10)
         "serial_number" -> "Serial Number"
         "modbus_address" -> "Network Address"
         "lcd_contrast" -> "Contrast"
 
         // Live telemetry & dynamic keys
         Bpc02RegisterMap.SYSTEM_PRESSURE -> "System Pressure"
-        Bpc02RegisterMap.DR_STATUS -> "DR Status"
+        Bpc02RegisterMap.DR_STATUS -> "Drive Input (DR)"
         Bpc02RegisterMap.DRIVE_FAIL -> "Drive Fail"
         Bpc02RegisterMap.FLOATER_LOW -> "Floater L"
         Bpc02RegisterMap.FLOATER_HIGH -> "Floater H"
@@ -379,14 +514,11 @@ object Bpc02Catalog {
         else -> when {
             def.key.startsWith("pump_") && def.key.endsWith("_activation") ->
                 "Pump ${def.key.removePrefix("pump_").removeSuffix("_activation")}"
-            def.key.startsWith("pump_") && def.key.endsWith("_on_pressure") ->
-                "Pump ${def.key.removePrefix("pump_").removeSuffix("_on_pressure")} On Pressure"
-            def.key.startsWith("pump_") && def.key.endsWith("_on_delay") ->
-                "Pump ${def.key.removePrefix("pump_").removeSuffix("_on_delay")} On Delay"
-            def.key.startsWith("pump_") && def.key.endsWith("_off_pressure") ->
-                "Pump ${def.key.removePrefix("pump_").removeSuffix("_off_pressure")} Off Pressure"
-            def.key.startsWith("pump_") && def.key.endsWith("_off_delay") ->
-                "Pump ${def.key.removePrefix("pump_").removeSuffix("_off_delay")} Off Delay"
+            // Inside Pump 1..4 pages (`photo_1`, `photo_2`, `photo_7`) exact LCD labels are short:
+            def.key.startsWith("pump_") && def.key.endsWith("_on_pressure") -> "On Pressure"
+            def.key.startsWith("pump_") && def.key.endsWith("_on_delay") -> "On Delay"
+            def.key.startsWith("pump_") && def.key.endsWith("_off_pressure") -> "Off Pressure"
+            def.key.startsWith("pump_") && def.key.endsWith("_off_delay") -> "Off Delay"
             def.key.startsWith("mfi_") && def.key.endsWith("_type") ->
                 "MFI${def.key.removePrefix("mfi_").removeSuffix("_type")} Type"
             def.key.startsWith("mfo_") && def.key.endsWith("_type") ->
@@ -413,10 +545,10 @@ object Bpc02Catalog {
         "number_of_pump" -> "Main (Number of Pumps)"
         "number_of_variable_pump" -> "Drive (Variable Pumps)"
         "wiring_mode" -> "Wiring Mode"
-        Bpc02RegisterMap.DRIVE_ACTIVATION -> "Drive Service Status"
+        Bpc02RegisterMap.DRIVE_ACTIVATION -> "Drive Status (Service Enable)"
         Bpc02RegisterMap.CONTROL_STATUS -> "Control Status"
         "control_direction" -> "Control Dir"
-        Bpc02RegisterMap.SYSTEM_PRESSURE_SETPOINT -> "Setpoint"
+        Bpc02RegisterMap.SYSTEM_PRESSURE_SETPOINT -> "Setpoint / Pump 1 On Pressure"
         "constant_pump_percent" -> "Add/Remove Percent"
         "add_delay" -> "Add Delay"
         "remove_delay" -> "Remove Delay"
@@ -443,18 +575,29 @@ object Bpc02Catalog {
         "pid_p_value" -> "PID P"
         "pid_i_value" -> "PID I"
         "pid_d_value" -> "PID D"
-        else -> lcdParameterName(def)
+        else -> when {
+            def.key.startsWith("pump_") && def.key.endsWith("_on_pressure") ->
+                "Pump ${def.key.removePrefix("pump_").removeSuffix("_on_pressure")} On Pressure"
+            def.key.startsWith("pump_") && def.key.endsWith("_on_delay") ->
+                "Pump ${def.key.removePrefix("pump_").removeSuffix("_on_delay")} On Delay"
+            def.key.startsWith("pump_") && def.key.endsWith("_off_pressure") ->
+                "Pump ${def.key.removePrefix("pump_").removeSuffix("_off_pressure")} Off Pressure"
+            def.key.startsWith("pump_") && def.key.endsWith("_off_delay") ->
+                "Pump ${def.key.removePrefix("pump_").removeSuffix("_off_delay")} Off Delay"
+            else -> lcdParameterName(def)
+        }
     }
 
-    /** Hardware menu breadcrumb path for a register (e.g. `Control › Page 6: Sleep`). */
+    /** Controller menu breadcrumb path for a register (e.g. `Hardware › 4. Control › Sleep`). */
     fun menuPathForKey(key: String): String {
+        if (key in systemRegisterKeys) return "Menu › 1. System"
         for (cat in MenuCategory.entries) {
             for (page in cat.pages) {
                 if (key in page.registerKeys) {
                     return if (cat.pages.size == 1) {
-                        "Hardware › ${cat.title}"
+                        "Hardware › ${cat.index}. ${cat.title}"
                     } else {
-                        "Hardware › ${cat.title} › Page ${page.number}: ${page.title}"
+                        "Hardware › ${cat.index}. ${cat.title} › ${page.title}"
                     }
                 }
             }
@@ -475,15 +618,16 @@ object Bpc02Catalog {
         1 -> "Mode 1"
         2 -> "Mode 2"
         3 -> "Mode 3"
-        else -> "Unknown"
+        else -> "Mode —"
     }
 
-    /** Concise English architectural subtitle for each Wiring Mode from `BPC-02.pdf` p.8. */
-    fun wiringModeArchitecture(mode: Int?): String = when (mode) {
-        1 -> "Mode 1 (Independent VFD / DOL)"
-        2 -> "Mode 2 (Changeover + DOL)"
-        3 -> "Mode 3 (Single-Drive Switch)"
-        else -> "Mode —"
+    /** Station Mode title displaying exact pump and drive counts (`Mode X — تعداد پمپ N / تعداد درایو D`). */
+    fun wiringModeArchitecture(mode: Int?, pumpCount: Int? = null, driveCount: Int? = null): String {
+        val modePart = wiringModeLabel(mode)
+        if (pumpCount == null && driveCount == null) return modePart
+        val pTxt = pumpCount?.toString() ?: "—"
+        val dTxt = driveCount?.toString() ?: "—"
+        return "$modePart — تعداد پمپ: $pTxt / تعداد درایو: $dTxt"
     }
 
     fun driverCountLabel(count: Int?): String = when (count) {
@@ -751,6 +895,37 @@ object Bpc02Catalog {
             rangeHint = "H = High Level / L = Low Level",
         )
         "reset_pump_error" -> helpFor(Bpc02RegisterMap.multiFunctionRegisterDef)
+        "dr_status" -> ParameterHelp(
+            key = Bpc02RegisterMap.DR_STATUS,
+            englishName = "Drive Input (DR)",
+            fullEnglishName = "Drive Feedback Digital Input (Coil 10)",
+            menuPath = "Menu › 2. Input",
+            helpFa = "ورودی دیجیتال فیدبک درایو (ترمینال Drive روی صفحه Inputs کنترلر، آدرس Coil 10، فقط‌خواندنی) است که سیگنال لحظه‌ای آماده/فعال بودن اینورتر را به کنترلر گزارش می‌دهد. این ورودی با «Drive Status» (آدرس Coil 4096 که کلید فعال/غیرفعال سرویس درایو است) متفاوت است.",
+            rangeHint = "ON / OFF (Coil 10 — Read-Only)",
+        )
+        "mfi_overview" -> ParameterHelp(
+            key = topicKey,
+            englishName = "MFI1–MFI4 Options",
+            fullEnglishName = "Multi-Function Digital Inputs (Words 4180–4183)",
+            menuPath = "Hardware › 5. MFx › MFI",
+            helpFa = "ورودی‌های دیجیتال چندمنظوره کنترلر هستند و هرکدام می‌توانند روی یکی از گزینه‌های Disable، PS (پرشر سوئیچ)، TS، MP (حداکثر فشار)، EMG (توقف اضطراری)، CP (کنترل فاز خارجی)، FL (فلوتر خارجی)، PR5/PR6 (فیدبک پمپ ۵ و ۶)، Reset یا Fix تنظیم شوند. نوع عملکرد MFIها در ModBus فقط‌خواندنی است و از منوی روی نمایشگر کنترلر (Hardware › 5. MFx) ویرایش می‌شود.",
+            rangeHint = mfiAllowedOptions.joinToString(" / "),
+        )
+        "mfo_overview" -> ParameterHelp(
+            key = topicKey,
+            englishName = "MFO1–MFO4 (OUT 7–10)",
+            fullEnglishName = "Multi-Function Relay Outputs (Words 4184–4187)",
+            menuPath = "Hardware › 5. MFx › MFO",
+            helpFa = "چهار خروجی رله آخر کنترلر (OUT 7 تا OUT 10، معادل Coils 6 تا 9) به رله‌های چندمنظوره MFO1 تا MFO4 اختصاص دارند و می‌توانند روی گزینه‌های Disable، MC3، DC4، MC4، Fan (فن تابلو)، Alarm (آلارم خطا)، E.Valve (شیر برقی)، P.Run (در حال کار)، Ready (آماده به کار)، Filler یا خطای پمپ‌های ۱ تا ۴ تنظیم شوند. نوع عملکرد MFOها از طریق ModBus فقط‌خواندنی است و از روی نمایشگر کنترلر (Hardware › 5. MFx) قابل تغییر است.",
+            rangeHint = mfoAllowedOptions.joinToString(" / "),
+        )
+        "reset_to_factory" -> ParameterHelp(
+            key = topicKey,
+            englishName = "Reset to Factory",
+            fullEnglishName = "Factory Default Reset (Keypad Only)",
+            menuPath = "Hardware › 8. Reset to Factory",
+            helpFa = "بازنشانی کامل تنظیمات کنترلر به حالت کارخانه است. برای حفظ ایمنی ایستگاه و جلوگیری از پاک‌شدن ناخواسته تنظیمات از راه دور، این دستور در پروتکل ModBus وجود ندارد و تنها از روی صفحه‌کلید خود کنترلر قابل اجراست.",
+        )
         "config_transfer" -> ParameterHelp(
             key = topicKey,
             englishName = "Import / Export Config",
@@ -897,6 +1072,8 @@ object Bpc02Catalog {
         // ---- Live Telemetry & Command ----
         Bpc02RegisterMap.SYSTEM_PRESSURE ->
             "فشار لحظه‌ای آب در کلکتور خروجی ایستگاه است که به‌طور پیوسته از سنسور فشار خوانده می‌شود."
+        Bpc02RegisterMap.DR_STATUS ->
+            "ورودی دیجیتال فیدبک درایو (آدرس Coil 10، فقط‌خواندنی، نمایش‌داده‌شده با عنوان Drive در صفحه Inputs کنترلر) است و وضعیت سیگنال برگشتی از اینورتر را نشان می‌دهد."
         Bpc02RegisterMap.MULTI_FUNCTION_REGISTER ->
             "فرمان پاک‌سازی خطاهای ثبت‌شده پمپ‌ها را به کنترلر ارسال می‌کند. پیش از رفع خطا، از برطرف شدن عامل اصلی خطا (مثل بی‌متال یا منبع آب) مطمئن شوید."
 

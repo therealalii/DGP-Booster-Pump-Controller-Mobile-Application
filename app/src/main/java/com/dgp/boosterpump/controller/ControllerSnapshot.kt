@@ -114,6 +114,8 @@ data class ControllerSnapshot(
     val outputs: List<Boolean?>,
     val prInputs: List<Boolean?>,
     val mfiInputs: List<Boolean?>,
+    val mfiTypes: List<Int?> = List(4) { null },
+    val mfoTypes: List<Int?> = List(4) { null },
     val floaterLowConnected: Boolean?,
     val floaterHighConnected: Boolean?,
     val systemErrorWord: Int?,

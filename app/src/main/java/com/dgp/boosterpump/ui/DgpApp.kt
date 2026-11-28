@@ -460,14 +460,10 @@ private fun MainScadaShell(
                     uiState = uiState,
                     canResetErrors = effectivePermissions.canResetPumpErrors,
                     canOpenGatewaySettings = effectivePermissions.canManageGateway,
-                    canOpenPumps = effectivePermissions.canViewPumpsAndIo,
                     onConnect = monitoringViewModel::connectWithSavedConfig,
                     onResetPumpErrors = monitoringViewModel::resetPumpErrors,
                     onOpenGatewaySettings = {
                         if (effectivePermissions.canManageGateway) navigateTo(Destination.GATEWAY.route)
-                    },
-                    onOpenPumps = {
-                        if (effectivePermissions.canViewPumpsAndIo) navigateTo(Destination.PUMPS.route)
                     },
                 )
             }

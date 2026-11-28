@@ -213,11 +213,35 @@ object Bpc02RegisterMap {
         rangeNote = "Wiring Mode 1–3.",
     )
 
+    val mfiTypeDefs: List<RegisterDefinition> = (1..MFI_INPUT_COUNT).map { n ->
+        cfgEnum(
+            key = "mfi_${n}_type",
+            label = "MFI$n Type",
+            address = 4179 + n,
+            labels = MFI_TYPES,
+            row = 77 + n,
+            access = AccessPolicy.READ,
+            verification = Verification.HARDWARE_VERIFIED,
+        )
+    }
+
+    val mfoTypeDefs: List<RegisterDefinition> = (1..MFO_OUTPUT_COUNT).map { n ->
+        cfgEnum(
+            key = "mfo_${n}_type",
+            label = "MFO$n Type",
+            address = 4183 + n,
+            labels = MFO_TYPES,
+            row = 81 + n,
+            access = AccessPolicy.READ,
+            verification = if (n <= 3) Verification.HARDWARE_VERIFIED else Verification.DOCUMENTED,
+        )
+    }
+
     // ------------------------------------------------------------------ polled bit table (FC01: 0..33 & 4096..4102)
 
     private val bitStatus: List<RegisterDefinition> = buildList {
         for (i in 0 until OUTPUT_COUNT) {
-            add(bit(outputKey(i), "Output $i status", i, RegisterGroup.DIGITAL_IO, ON_OFF, row = i + 1))
+            add(bit(outputKey(i), "Output ${i + 1} status", i, RegisterGroup.DIGITAL_IO, ON_OFF, row = i + 1))
         }
         add(bit(DR_STATUS, "DR status", 10, RegisterGroup.DIGITAL_IO, ON_OFF, row = 11))
         for (n in 1..PR_INPUT_COUNT) {
@@ -305,6 +329,8 @@ object Bpc02RegisterMap {
         add(numberOfVariablePumpDef)
         add(wiringModeDef)
         add(controlStatusDef)
+        addAll(mfiTypeDefs)
+        addAll(mfoTypeDefs)
     }
 
     // ------------------------------------------------------------------ hardware configuration (4096..4210)
@@ -410,12 +436,8 @@ object Bpc02RegisterMap {
         add(cfgWord("auto_service_interval", "Auto Service Interval", 4179, row = 77, unit = "min", scale = 1.0, minValue = 1, maxValue = 99, rangeNote = "Range 1–99 min.", verification = Verification.HARDWARE_VERIFIED))
 
         // ---- Words 4180..4187 (MFI1..4 & MFO1..4 Types — R in official Excel) ----
-        for (n in 1..MFI_INPUT_COUNT) {
-            add(cfgEnum("mfi_${n}_type", "MFI$n Type", 4179 + n, MFI_TYPES, row = 77 + n, access = AccessPolicy.READ, verification = Verification.HARDWARE_VERIFIED))
-        }
-        for (n in 1..MFO_OUTPUT_COUNT) {
-            add(cfgEnum("mfo_${n}_type", "MFO$n Type", 4183 + n, MFO_TYPES, row = 81 + n, access = AccessPolicy.READ, verification = if (n <= 3) Verification.HARDWARE_VERIFIED else Verification.DOCUMENTED))
-        }
+        addAll(mfiTypeDefs)
+        addAll(mfoTypeDefs)
 
         // ---- Words 4188..4195 (System / Drive / Full Load / Modbus Address — R) ----
         add(cfgWord("serial_number", "Serial Number", 4188, row = 86, scale = 1.0, minValue = 0, maxValue = 99999, access = AccessPolicy.READ, rangeNote = "Controller serial number."))
@@ -480,7 +502,7 @@ object Bpc02RegisterMap {
             add(
                 RegisterDefinition(
                     key = "output_${i}_manual",
-                    label = "Output $i manual",
+                    label = "Output ${i + 1} manual",
                     table = VendorTable.BIT,
                     documentedAddress = 50 + i,
                     rawType = RawType.BIT,
@@ -548,6 +570,7 @@ object Bpc02RegisterMap {
         ReadBlock(VendorTable.WORD, 4133, 2), // Number Of Pump (4133) & Number Of Variable Pump / Drivers (4134)
         ReadBlock(VendorTable.WORD, 4170, 1), // Wiring / Operating Mode (1..3)
         ReadBlock(VendorTable.WORD, 4173, 1), // Control Status (0=Disable, 1=PID, 2=ON/OFF)
+        ReadBlock(VendorTable.WORD, 4180, 8), // MFI1..4 (4180..4183) & MFO1..4 (4184..4187) configured types
     )
 
     /** Contiguous on-demand read blocks covering [configuration], skipping all undocumented gaps. */
