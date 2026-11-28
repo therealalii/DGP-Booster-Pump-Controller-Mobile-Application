@@ -866,9 +866,9 @@ fun computeMeasuredThreePhaseKinematics(
 
 /**
  * Compact SCADA 3-phase AC sine waveform oscilloscope (`شکل موج`) plotting live sine waves for
- * `VRN`, `VSN`, and `VTN` at their actual measured phase angles, followed directly by Phase–Phase
- * (`VRS`, `VST`, `VTR`) cards and Phase–Neutral (`VRN`, `VSN`, `VTN`) cards with live measured
- * phase angles (°) and dynamically computed Phase Offsets (ms).
+ * `VRN`, `VSN`, and `VTN` at their actual measured phase angles, followed directly by
+ * Phase–Neutral (`VRN`, `VSN`, `VTN`) cards with live measured angles & Phase Offsets (`ms`),
+ * and Phase–Phase (`VRS`, `VST`, `VTR`, 400V Nominal) cards last at the bottom.
  */
 @Composable
 fun ThreePhaseWaveformGraph(
@@ -1088,44 +1088,7 @@ fun ThreePhaseWaveformGraph(
             }
         }
 
-        // 2. Phase–Phase (400V Nominal): VRS, VST, VTR directly below the waveform graph
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            LtrText(
-                text = "Phase–Phase (400V Nominal)",
-                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                color = palette.textSecondary,
-            )
-            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    LineVoltagePill(
-                        label = "VRS",
-                        pairTag = "R–S",
-                        volts = voltages.rs,
-                        accentColor = phasePhaseColor(voltages.rs),
-                        modifier = Modifier.weight(1f),
-                    )
-                    LineVoltagePill(
-                        label = "VST",
-                        pairTag = "S–T",
-                        volts = voltages.st,
-                        accentColor = phasePhaseColor(voltages.st),
-                        modifier = Modifier.weight(1f),
-                    )
-                    LineVoltagePill(
-                        label = "VTR",
-                        pairTag = "T–R",
-                        volts = voltages.tr,
-                        accentColor = phasePhaseColor(voltages.tr),
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-        }
-
-        // 3. Phase–Neutral (230V Nominal) with Measured Angle & Live Phase Offset (ms) underneath all of this
+        // 2. Phase–Neutral (230V Nominal) with Measured Angle & Live Phase Offset (ms) directly under the graph
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             LtrText(
                 text = "Phase–Neutral (230V) • Phase Offset (ms)",
@@ -1159,6 +1122,43 @@ fun ThreePhaseWaveformGraph(
                         offsetMsTag = formatOffsetMs(kinematics.tn.offsetMs),
                         volts = voltages.tn,
                         accentColor = tnColor,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+
+        // 3. Phase–Phase (400V Nominal): VRS, VST, VTR at the very bottom (last)
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            LtrText(
+                text = "Phase–Phase (400V Nominal)",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = palette.textSecondary,
+            )
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    LineVoltagePill(
+                        label = "VRS",
+                        pairTag = "R–S",
+                        volts = voltages.rs,
+                        accentColor = phasePhaseColor(voltages.rs),
+                        modifier = Modifier.weight(1f),
+                    )
+                    LineVoltagePill(
+                        label = "VST",
+                        pairTag = "S–T",
+                        volts = voltages.st,
+                        accentColor = phasePhaseColor(voltages.st),
+                        modifier = Modifier.weight(1f),
+                    )
+                    LineVoltagePill(
+                        label = "VTR",
+                        pairTag = "T–R",
+                        volts = voltages.tr,
+                        accentColor = phasePhaseColor(voltages.tr),
                         modifier = Modifier.weight(1f),
                     )
                 }

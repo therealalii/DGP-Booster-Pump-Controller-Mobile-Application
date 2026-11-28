@@ -459,7 +459,7 @@ private fun ElectricalAnalyzerPanel(snapshot: ControllerSnapshot) {
     val p = LocalScadaPalette.current
     ScadaPanel(
         title = "Voltmeter (Control Phase)",
-        subtitle = "شکل موج سه‌فاز، ولتاژ خط (VRS/VST/VTR)، فاز به نول (VRN/VSN/VTN) و اختلاف فاز",
+        subtitle = "شکل موج سه‌فاز، فاز به نول (VRN/VSN/VTN) و ولتاژ خط (VRS/VST/VTR)",
         icon = Icons.Outlined.Bolt,
         accentColor = p.cyan,
         trailing = {
