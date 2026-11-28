@@ -54,6 +54,7 @@ import com.dgp.boosterpump.ui.theme.LocalScadaPalette
 import com.dgp.boosterpump.ui.theme.MonoStyle
 import java.util.Locale
 import kotlin.math.PI
+import kotlin.math.acos
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -746,30 +747,147 @@ fun AnimatedImpellerIcon(
 }
 
 /**
- * Computes exact 3-phase time offsets (in milliseconds) for `VRN` (0°), `VSN` (120°), and
- * `VTN` (240°) from the live mains frequency `f` (Hz): `0`, `T/3`, and `2T/3` where `T = 1000 / f` ms
- * (at 50.00 Hz: `0.00 ms`, `6.67 ms`, `13.33 ms`). Returns null if frequency is unavailable or <= 1 Hz.
+ * Measured phase angle (degrees) and time offset (milliseconds) for one phase channel,
+ * derived dynamically from live measured voltages and live mains frequency.
  */
-fun computeThreePhaseOffsetsMs(mainsFrequencyHz: Double?): Triple<Double, Double, Double>? {
-    val hz = mainsFrequencyHz?.takeIf { it > 1.0 } ?: return null
-    val periodMs = 1000.0 / hz
-    return Triple(0.0, periodMs / 3.0, periodMs * 2.0 / 3.0)
+data class MeasuredPhaseChannel(
+    val angleDeg: Double?,
+    val offsetMs: Double?,
+)
+
+/**
+ * Complete dynamically measured 3-phase kinematics for `VRN`, `VSN`, and `VTN`.
+ */
+data class MeasuredThreePhaseKinematics(
+    val rn: MeasuredPhaseChannel,
+    val sn: MeasuredPhaseChannel,
+    val tn: MeasuredPhaseChannel,
+)
+
+/**
+ * Computes actual measured phase angles (°) and live Phase Offsets (ms) for `VRN`, `VSN`, and `VTN`
+ * dynamically from the measured 6-voltage phasor triangles via the Law of Cosines:
+ *
+ *   cos(Δθ_ab) = (V_a² + V_b² − V_ab²) / (2 · V_a · V_b)
+ *   offsetMs   = (θ_deg / 360.0) · (1000.0 / mainsFrequencyHz)
+ *
+ * Strictly dynamic — never assumes fixed 0°/120°/240° angles or a hardcoded 20 ms cycle period:
+ * - Returns `null` angle/offset for any phase lacking valid live voltage readings.
+ * - Returns `null` `offsetMs` whenever live [mainsFrequencyHz] is absent or `<= 1.0 Hz`.
+ * - Honors [phaseSequenceReversed] (`Word 80 bit 6`, `CP_SQUENCY_ERROR`) for R→S→T vs R→T→S order.
+ */
+fun computeMeasuredThreePhaseKinematics(
+    voltages: PhaseVoltages,
+    mainsFrequencyHz: Double?,
+    phaseSequenceReversed: Boolean = false,
+): MeasuredThreePhaseKinematics {
+    fun angleBetweenDeg(v1: Int?, v2: Int?, vLine: Int?): Double? {
+        if (v1 == null || v2 == null || vLine == null) return null
+        if (v1 <= 0 || v2 <= 0 || vLine < 0) return null
+        val a = v1.toDouble()
+        val b = v2.toDouble()
+        val c = vLine.toDouble()
+        val cosTheta = ((a * a + b * b - c * c) / (2.0 * a * b)).coerceIn(-1.0, 1.0)
+        return Math.toDegrees(acos(cosTheta))
+    }
+
+    val rnActive = voltages.rn != null && voltages.rn > 0
+    val snActive = voltages.sn != null && voltages.sn > 0
+    val tnActive = voltages.tn != null && voltages.tn > 0
+
+    val deltaRs = angleBetweenDeg(voltages.rn, voltages.sn, voltages.rs)
+    val deltaSt = angleBetweenDeg(voltages.sn, voltages.tn, voltages.st)
+    val deltaTr = angleBetweenDeg(voltages.tn, voltages.rn, voltages.tr)
+
+    val angleR: Double?
+    val angleS: Double?
+    val angleT: Double?
+
+    when {
+        rnActive -> {
+            // Primary reference: Phase R–N = 0.0°
+            angleR = 0.0
+            angleS = when {
+                !snActive || deltaRs == null -> null
+                deltaRs < 0.05 -> 0.0
+                phaseSequenceReversed -> 360.0 - deltaRs
+                else -> deltaRs
+            }
+            angleT = when {
+                !tnActive -> null
+                deltaTr != null -> when {
+                    deltaTr < 0.05 -> 0.0
+                    phaseSequenceReversed -> deltaTr
+                    else -> 360.0 - deltaTr
+                }
+                angleS != null && deltaSt != null -> {
+                    val raw = if (phaseSequenceReversed) angleS - deltaSt else angleS + deltaSt
+                    ((raw % 360.0) + 360.0) % 360.0
+                }
+                else -> null
+            }
+        }
+        snActive -> {
+            // Phase R lost: reference remaining active phases against S–N = 0.0°
+            angleR = null
+            angleS = 0.0
+            angleT = when {
+                !tnActive || deltaSt == null -> null
+                deltaSt < 0.05 -> 0.0
+                phaseSequenceReversed -> 360.0 - deltaSt
+                else -> deltaSt
+            }
+        }
+        tnActive -> {
+            // Phases R & S lost: single active phase T–N = 0.0°
+            angleR = null
+            angleS = null
+            angleT = 0.0
+        }
+        else -> {
+            angleR = null
+            angleS = null
+            angleT = null
+        }
+    }
+
+    val validFreqHz = mainsFrequencyHz?.takeIf { it > 1.0 }
+    fun toOffsetMs(angleDeg: Double?): Double? {
+        if (angleDeg == null || validFreqHz == null) return null
+        return (angleDeg / 360.0) * (1000.0 / validFreqHz)
+    }
+
+    return MeasuredThreePhaseKinematics(
+        rn = MeasuredPhaseChannel(angleDeg = angleR, offsetMs = toOffsetMs(angleR)),
+        sn = MeasuredPhaseChannel(angleDeg = angleS, offsetMs = toOffsetMs(angleS)),
+        tn = MeasuredPhaseChannel(angleDeg = angleT, offsetMs = toOffsetMs(angleT)),
+    )
 }
 
 /**
- * Compact SCADA 3-phase AC sine waveform oscilloscope (`شکل موج`) plotting live 120°-phase-shifted
- * waveforms for `VRN`, `VSN`, and `VTN`, followed directly by Phase–Phase (`VRS`, `VST`, `VTR`)
- * cards and Phase–Neutral (`VRN`, `VSN`, `VTN`) cards with live angle & Phase Offset (ms).
+ * Compact SCADA 3-phase AC sine waveform oscilloscope (`شکل موج`) plotting live sine waves for
+ * `VRN`, `VSN`, and `VTN` at their actual measured phase angles, followed directly by Phase–Phase
+ * (`VRS`, `VST`, `VTR`) cards and Phase–Neutral (`VRN`, `VSN`, `VTN`) cards with live measured
+ * phase angles (°) and dynamically computed Phase Offsets (ms).
  */
 @Composable
 fun ThreePhaseWaveformGraph(
     voltages: PhaseVoltages,
     mainsFrequencyHz: Double? = null,
+    phaseSequenceReversed: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalScadaPalette.current
     val maxScaleV = 285f
     val nominalV = 230f
+
+    val kinematics = remember(voltages, mainsFrequencyHz, phaseSequenceReversed) {
+        computeMeasuredThreePhaseKinematics(
+            voltages = voltages,
+            mainsFrequencyHz = mainsFrequencyHz,
+            phaseSequenceReversed = phaseSequenceReversed,
+        )
+    }
 
     val rnAmp by animateFloatAsState(
         targetValue = ((voltages.rn ?: 0).toFloat() / maxScaleV).coerceIn(0f, 1f),
@@ -788,10 +906,11 @@ fun ThreePhaseWaveformGraph(
     )
 
     val hasAnyVoltage = (voltages.rn ?: 0) > 0 || (voltages.sn ?: 0) > 0 || (voltages.tn ?: 0) > 0
+    val hasValidFreq = mainsFrequencyHz != null && mainsFrequencyHz > 1.0
     val cycleDurationMs = remember(mainsFrequencyHz) {
-        val hz = (mainsFrequencyHz ?: 50.0).coerceIn(40.0, 65.0)
-        // Smooth, pleasant visual drift scaled subtly with live mains frequency
-        (2600.0 * (50.0 / hz)).toInt().coerceIn(1900, 3400)
+        val hz = (mainsFrequencyHz ?: 50.0).coerceIn(25.0, 75.0)
+        // Visual animation sweep proportional to live mains frequency
+        (130_000.0 / hz).toInt().coerceIn(1600, 5200)
     }
     val waveTransition = rememberInfiniteTransition(label = "three_phase_scope")
     val animatedPhase by waveTransition.animateFloat(
@@ -800,7 +919,7 @@ fun ThreePhaseWaveformGraph(
         animationSpec = infiniteRepeatable(tween(durationMillis = cycleDurationMs, easing = LinearEasing)),
         label = "three_phase_shift",
     )
-    val phaseShift = if (hasAnyVoltage) animatedPhase else 0f
+    val phaseShift = if (hasAnyVoltage && hasValidFreq) animatedPhase else 0f
 
     // Distinct high-contrast oscilloscope phosphor colors for R-N, S-N, T-N
     val rnBaseColor = Color(0xFFF5B73B) // Gold / Amber (Phase R)
@@ -824,24 +943,17 @@ fun ThreePhaseWaveformGraph(
     val snColor = phaseNeutralColor(voltages.sn, snBaseColor)
     val tnColor = phaseNeutralColor(voltages.tn, tnBaseColor)
 
-    val offsetsMs = remember(mainsFrequencyHz) { computeThreePhaseOffsetsMs(mainsFrequencyHz) }
-    val periodLabel = remember(mainsFrequencyHz) {
-        val hz = mainsFrequencyHz?.takeIf { it > 1.0 }
-        if (hz != null) String.format(Locale.US, "T: %.2f ms", 1000.0 / hz) else "T: — ms"
-    }
+    fun formatAngleDeg(angleDeg: Double?): String =
+        angleDeg?.let { String.format(Locale.US, "%.1f°", it) } ?: "—°"
 
-    fun formatOffsetMs(volts: Int?, offsetMs: Double?): String =
-        if (volts != null && volts > 0 && offsetMs != null) {
-            String.format(Locale.US, "%.2f ms", offsetMs)
-        } else {
-            "— ms"
-        }
+    fun formatOffsetMs(offsetMs: Double?): String =
+        offsetMs?.let { String.format(Locale.US, "%.2f ms", it) } ?: "— ms"
 
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        // 1. Mini SCADA Oscilloscope Viewport (VRN, VSN, VTN)
+        // 1. Mini SCADA Oscilloscope Viewport (VRN, VSN, VTN plotted at actual measured phase angles)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -871,7 +983,7 @@ fun ThreePhaseWaveformGraph(
                 val gridColor = Color(0xFF283A56).copy(alpha = 0.55f)
                 val dashEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
 
-                // Vertical phase division lines (90° intervals across 2 cycles)
+                // Vertical phase division lines across 2 cycles
                 for (i in 1..7) {
                     val x = w * i / 8f
                     drawLine(
@@ -907,21 +1019,22 @@ fun ThreePhaseWaveformGraph(
                     strokeWidth = 1.dp.toPx(),
                 )
 
-                fun drawSineChannel(amplitudeFrac: Float, phaseOffsetRad: Double, color: Color) {
+                fun drawSineChannel(amplitudeFrac: Float, measuredAngleDeg: Double?, color: Color) {
                     val samples = 96
                     val cycles = 2.0
                     val path = Path()
-                    val ampPx = maxAmpPx * amplitudeFrac
+                    val effectiveAmp = if (measuredAngleDeg != null) maxAmpPx * amplitudeFrac else 0f
+                    val phaseLagRad = -Math.toRadians(measuredAngleDeg ?: 0.0)
                     for (i in 0..samples) {
                         val frac = i.toFloat() / samples.toFloat()
                         val x = frac * w
-                        val theta = frac * cycles * 2.0 * PI - phaseShift + phaseOffsetRad
-                        val y = midY - (sin(theta).toFloat() * ampPx)
+                        val theta = frac * cycles * 2.0 * PI - phaseShift + phaseLagRad
+                        val y = midY - (sin(theta).toFloat() * effectiveAmp)
                         if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
                     }
 
                     // Soft luminous phosphor glow pass
-                    if (amplitudeFrac > 0.02f) {
+                    if (effectiveAmp > 1.5f) {
                         drawPath(
                             path = path,
                             color = color.copy(alpha = 0.22f),
@@ -931,15 +1044,15 @@ fun ThreePhaseWaveformGraph(
                     // Razor-crisp waveform trace
                     drawPath(
                         path = path,
-                        color = color.copy(alpha = if (amplitudeFrac > 0.02f) 0.96f else 0.45f),
+                        color = color.copy(alpha = if (effectiveAmp > 1.5f) 0.96f else 0.45f),
                         style = Stroke(width = 2.0.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
                     )
                 }
 
-                // Draw VTN (-240°), VSN (-120°), VRN (0°) — 3-phase 120° symmetrical sine waves
-                drawSineChannel(tnAmp, -4.0 * PI / 3.0, tnColor)
-                drawSineChannel(snAmp, -2.0 * PI / 3.0, snColor)
-                drawSineChannel(rnAmp, 0.0, rnColor)
+                // Draw VTN, VSN, VRN using their actual measured live phase angles
+                drawSineChannel(tnAmp, kinematics.tn.angleDeg, tnColor)
+                drawSineChannel(snAmp, kinematics.sn.angleDeg, snColor)
+                drawSineChannel(rnAmp, kinematics.rn.angleDeg, rnColor)
             }
 
             // Subtle compact scope scale labels (LTR)
@@ -961,27 +1074,16 @@ fun ThreePhaseWaveformGraph(
                             color = Color(0xFFE5B55C).copy(alpha = 0.72f),
                         )
                         Text(
-                            "3-Phase Sine (120°)",
+                            if (phaseSequenceReversed) "3-Phase Sine (Rev)" else "3-Phase Sine (Live)",
                             style = MonoStyle.copy(fontSize = 8.5.sp),
-                            color = Color(0xFF94A3B8).copy(alpha = 0.75f),
+                            color = if (phaseSequenceReversed) palette.fault else Color(0xFF94A3B8).copy(alpha = 0.78f),
                         )
                     }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "-230V",
-                            style = MonoStyle.copy(fontSize = 8.5.sp, fontWeight = FontWeight.SemiBold),
-                            color = Color(0xFFE5B55C).copy(alpha = 0.72f),
-                        )
-                        Text(
-                            periodLabel,
-                            style = MonoStyle.copy(fontSize = 8.5.sp, fontWeight = FontWeight.SemiBold),
-                            color = Color(0xFF94A3B8).copy(alpha = 0.82f),
-                        )
-                    }
+                    Text(
+                        "-230V",
+                        style = MonoStyle.copy(fontSize = 8.5.sp, fontWeight = FontWeight.SemiBold),
+                        color = Color(0xFFE5B55C).copy(alpha = 0.72f),
+                    )
                 }
             }
         }
@@ -1023,7 +1125,7 @@ fun ThreePhaseWaveformGraph(
             }
         }
 
-        // 3. Phase–Neutral (230V Nominal) with Angle & Live Phase Offset (ms) underneath all of this
+        // 3. Phase–Neutral (230V Nominal) with Measured Angle & Live Phase Offset (ms) underneath all of this
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             LtrText(
                 text = "Phase–Neutral (230V) • Phase Offset (ms)",
@@ -1037,24 +1139,24 @@ fun ThreePhaseWaveformGraph(
                 ) {
                     PhaseWaveformPill(
                         label = "VRN",
-                        angleTag = "0°",
-                        offsetMsTag = formatOffsetMs(voltages.rn, offsetsMs?.first),
+                        angleTag = formatAngleDeg(kinematics.rn.angleDeg),
+                        offsetMsTag = formatOffsetMs(kinematics.rn.offsetMs),
                         volts = voltages.rn,
                         accentColor = rnColor,
                         modifier = Modifier.weight(1f),
                     )
                     PhaseWaveformPill(
                         label = "VSN",
-                        angleTag = "120°",
-                        offsetMsTag = formatOffsetMs(voltages.sn, offsetsMs?.second),
+                        angleTag = formatAngleDeg(kinematics.sn.angleDeg),
+                        offsetMsTag = formatOffsetMs(kinematics.sn.offsetMs),
                         volts = voltages.sn,
                         accentColor = snColor,
                         modifier = Modifier.weight(1f),
                     )
                     PhaseWaveformPill(
                         label = "VTN",
-                        angleTag = "240°",
-                        offsetMsTag = formatOffsetMs(voltages.tn, offsetsMs?.third),
+                        angleTag = formatAngleDeg(kinematics.tn.angleDeg),
+                        offsetMsTag = formatOffsetMs(kinematics.tn.offsetMs),
                         volts = voltages.tn,
                         accentColor = tnColor,
                         modifier = Modifier.weight(1f),
@@ -1149,7 +1251,7 @@ private fun PhaseWaveformPill(
             }
             Text(
                 text = angleTag,
-                style = MonoStyle.copy(fontSize = 9.sp),
+                style = MonoStyle.copy(fontSize = 8.5.sp),
                 color = palette.textMuted,
             )
         }

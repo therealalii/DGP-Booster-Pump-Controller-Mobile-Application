@@ -215,18 +215,47 @@ class Bpc02CatalogAndSchematicStateTest {
     }
 
     @Test
-    fun threePhaseOffsetsMsComputesExactTimeDelayFromMainsFrequency() {
-        val at50Hz = com.dgp.boosterpump.ui.components.computeThreePhaseOffsetsMs(50.0)!!
-        assertEquals(0.0, at50Hz.first, 1e-6)
-        assertEquals(20.0 / 3.0, at50Hz.second, 1e-4)
-        assertEquals(40.0 / 3.0, at50Hz.third, 1e-4)
+    fun measuredThreePhaseKinematicsComputesDynamicAnglesAndOffsetsFromLiveVoltagesAndFrequency() {
+        // 1. Unbalanced live 3-phase grid at 49.80 Hz — angles & offsets must come from Law of Cosines, NEVER fixed 120°/240° or 20 ms
+        val unbalanced = PhaseVoltages(rn = 231, sn = 229, tn = 230, rs = 400, st = 399, tr = 401)
+        val kin = com.dgp.boosterpump.ui.components.computeMeasuredThreePhaseKinematics(
+            voltages = unbalanced,
+            mainsFrequencyHz = 49.80,
+            phaseSequenceReversed = false,
+        )
+        assertEquals(0.0, kin.rn.angleDeg!!, 1e-6)
+        assertEquals(0.0, kin.rn.offsetMs!!, 1e-6)
+        // cos(Δθ_RS) = (231² + 229² - 400²) / (2 * 231 * 229) => ~120.816°
+        assertEquals(120.816, kin.sn.angleDeg!!, 0.02)
+        assertEquals((kin.sn.angleDeg!! / 360.0) * (1000.0 / 49.80), kin.sn.offsetMs!!, 1e-4)
+        // cos(Δθ_TR) = (230² + 231² - 401²) / (2 * 230 * 231) => Δθ_TR ~120.882° => θ_T = 360 - 120.882 = ~239.118°
+        assertEquals(239.118, kin.tn.angleDeg!!, 0.02)
+        assertEquals((kin.tn.angleDeg!! / 360.0) * (1000.0 / 49.80), kin.tn.offsetMs!!, 1e-4)
 
-        val at60Hz = com.dgp.boosterpump.ui.components.computeThreePhaseOffsetsMs(60.0)!!
-        assertEquals(0.0, at60Hz.first, 1e-6)
-        assertEquals(1000.0 / 180.0, at60Hz.second, 1e-4)
-        assertEquals(2000.0 / 180.0, at60Hz.third, 1e-4)
+        // 2. Reversed phase sequence (Word 80 bit 6): S and T phase angles & ms offsets swap
+        val reversed = com.dgp.boosterpump.ui.components.computeMeasuredThreePhaseKinematics(
+            voltages = unbalanced,
+            mainsFrequencyHz = 50.25,
+            phaseSequenceReversed = true,
+        )
+        assertEquals(360.0 - 120.816, reversed.sn.angleDeg!!, 0.02)
+        assertEquals(120.882, reversed.tn.angleDeg!!, 0.02)
+        assertEquals((reversed.sn.angleDeg!! / 360.0) * (1000.0 / 50.25), reversed.sn.offsetMs!!, 1e-4)
+        assertEquals((reversed.tn.angleDeg!! / 360.0) * (1000.0 / 50.25), reversed.tn.offsetMs!!, 1e-4)
 
-        assertEquals(null, com.dgp.boosterpump.ui.components.computeThreePhaseOffsetsMs(null))
-        assertEquals(null, com.dgp.boosterpump.ui.components.computeThreePhaseOffsetsMs(0.0))
+        // 3. Single-phase jumpered supply (R=S=T=230V, VRS=VST=VTR=0V): must measure 0.0° and 0.00 ms, NOT fixed 120°/6.67 ms
+        val inPhase = PhaseVoltages(rn = 230, sn = 230, tn = 230, rs = 0, st = 0, tr = 0)
+        val inPhaseKin = com.dgp.boosterpump.ui.components.computeMeasuredThreePhaseKinematics(inPhase, 50.0)
+        assertEquals(0.0, inPhaseKin.rn.angleDeg!!, 1e-6)
+        assertEquals(0.0, inPhaseKin.sn.angleDeg!!, 1e-6)
+        assertEquals(0.0, inPhaseKin.tn.angleDeg!!, 1e-6)
+        assertEquals(0.0, inPhaseKin.sn.offsetMs!!, 1e-6)
+        assertEquals(0.0, inPhaseKin.tn.offsetMs!!, 1e-6)
+
+        // 4. Missing or zero live mains frequency: never falls back to hardcoded 20 ms -> offsetMs stays null
+        val noFreq = com.dgp.boosterpump.ui.components.computeMeasuredThreePhaseKinematics(unbalanced, null)
+        assertEquals(null, noFreq.rn.offsetMs)
+        assertEquals(null, noFreq.sn.offsetMs)
+        assertEquals(null, noFreq.tn.offsetMs)
     }
 }

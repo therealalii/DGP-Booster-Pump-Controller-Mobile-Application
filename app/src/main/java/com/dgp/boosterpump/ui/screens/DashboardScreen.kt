@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.sp
 import com.dgp.boosterpump.controller.AlarmSeverity
 import com.dgp.boosterpump.controller.Bpc02Catalog
 import com.dgp.boosterpump.controller.ControllerSnapshot
+import com.dgp.boosterpump.controller.SystemErrorBit
 import com.dgp.boosterpump.gateway.DataSourceMode
 import com.dgp.boosterpump.session.ConnectionState
 import com.dgp.boosterpump.ui.components.BadgeTone
@@ -472,6 +473,7 @@ private fun ElectricalAnalyzerPanel(snapshot: ControllerSnapshot) {
         ThreePhaseWaveformGraph(
             voltages = snapshot.voltages,
             mainsFrequencyHz = snapshot.mainsFrequencyHz,
+            phaseSequenceReversed = SystemErrorBit.PHASE_SEQUENCE in snapshot.activeSystemErrors,
         )
     }
 }
